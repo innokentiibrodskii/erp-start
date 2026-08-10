@@ -198,11 +198,6 @@ export default function App() {
                     <>Продовжити <Arrow /></>
                   )}
                 </button>
-
-                <p className="mt-6 text-center text-xs text-slate-400">
-                  Немає акаунту?{' '}
-                  <a href="#" className="text-blue-500 hover:underline">Зареєструватись</a>
-                </p>
               </form>
             )}
 
