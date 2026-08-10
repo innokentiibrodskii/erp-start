@@ -308,12 +308,12 @@ export default function ProductCatalog({ onNavigate: _onNavigate }: Props) {
         const isMat = quickAction.type === 'materials'
         const closeAll = () => { setQuickAction(null); setMaterialPickerOpen(false); setOperationPickerOpen(false) }
         return (
-          <div className="fixed inset-0 z-50 flex flex-col justify-end"
+          <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center sm:p-4"
             style={{ background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(4px)' }}
             onClick={e => e.target === e.currentTarget && closeAll()}>
-            <div className="rounded-t-3xl bg-white pb-10 max-h-[75vh] overflow-y-auto">
+            <div className="rounded-t-3xl bg-white pb-10 max-h-[75vh] overflow-y-auto sm:rounded-3xl sm:w-full sm:max-w-md">
               <div className="flex justify-center pt-3 pb-2">
-                <button onClick={closeAll} className="h-1 w-10 rounded-full bg-slate-200" />
+                <button onClick={closeAll} className="h-1 w-10 rounded-full bg-slate-200 sm:hidden" />
               </div>
               <div className="flex items-center justify-between gap-3 px-5 pb-4">
                 <div className="flex items-center gap-3">
@@ -448,12 +448,12 @@ function QRModal({ productId, products, onClose }: { productId: string; products
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end"
+    <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center sm:p-4"
       style={{ background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)' }}
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="rounded-t-3xl bg-white pb-10">
+      <div className="rounded-t-3xl bg-white pb-10 sm:rounded-3xl sm:w-full sm:max-w-md">
         <div className="flex justify-center pt-3 pb-4">
-          <button onClick={onClose} className="h-1 w-10 rounded-full bg-slate-200" />
+          <button onClick={onClose} className="h-1 w-10 rounded-full bg-slate-200 sm:hidden" />
         </div>
         <div className="flex flex-col items-center px-6 gap-4">
           <p style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800">{product.name}</p>

@@ -184,12 +184,12 @@ function SubPageHeader({ title, subtitle, onBack, onAdd }: { title: string; subt
 
 function BottomSheet({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end"
+    <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center sm:p-4"
       style={{ background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)' }}
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="rounded-t-3xl bg-white max-h-[92vh] overflow-y-auto">
+      <div className="rounded-t-3xl bg-white max-h-[92vh] overflow-y-auto sm:rounded-3xl sm:w-full sm:max-w-md">
         <div className="sticky top-0 flex justify-center pt-3 pb-1 bg-white z-10">
-          <button onClick={onClose} className="h-1 w-10 rounded-full bg-slate-200" />
+          <button onClick={onClose} className="h-1 w-10 rounded-full bg-slate-200 sm:hidden" />
         </div>
         {children}
       </div>

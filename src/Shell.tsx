@@ -84,52 +84,91 @@ export default function Shell({ onLogout }: Props) {
   const navItems = allNavItems.filter(item => isManager || !MANAGER_ONLY_PAGES.includes(item.id))
 
   return (
-    <div className="flex flex-col min-h-screen max-w-lg mx-auto" style={{ fontFamily: "'DM Sans', sans-serif", background: '#f8fbff' }}>
-      {/* Top header */}
-      <header className="sticky top-0 z-20 flex items-center justify-between px-4 py-3"
-        style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(14px)', borderBottom: '1px solid rgba(157,200,255,0.22)' }}>
-        <span style={{ fontFamily: "'DM Serif Display', serif" }} className="text-lg text-slate-800">
-          <span className="text-blue-500">●</span> R&D
-        </span>
-        <div className="flex items-center gap-2">
-          <div className="h-7 w-7 rounded-full bg-blue-100 flex items-center justify-center text-xs font-semibold text-blue-600">А</div>
-          <button onClick={onLogout} className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:text-red-500 transition-colors">
-            <svg width="15" height="15" viewBox="0 0 14 14" fill="none">
-              <path d="M5 2H2a1 1 0 00-1 1v8a1 1 0 001 1h3M9 10l3-3-3-3M12 7H5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </button>
+    <div className="min-h-screen md:flex" style={{ fontFamily: "'DM Sans', sans-serif", background: '#f8fbff' }}>
+      {/* Sidebar nav — desktop only (md+) */}
+      <aside className="hidden md:flex md:w-56 md:shrink-0 md:flex-col md:sticky md:top-0 md:h-screen"
+        style={{ background: 'rgba(255,255,255,0.92)', borderRight: '1px solid rgba(157,200,255,0.22)' }}>
+        <div className="px-5 py-5">
+          <span style={{ fontFamily: "'DM Serif Display', serif" }} className="text-lg text-slate-800">
+            <span className="text-blue-500">●</span> R&D
+          </span>
         </div>
-      </header>
-
-      {/* Page content */}
-      <main className="flex-1 overflow-y-auto pb-24">
-        {page === 'products'  && isManager && <ProductCatalog onNavigate={p => setPage(p as Page)} />}
-        {page === 'materials' && isManager && <MaterialStock onNavigate={p => setPage(p as Page)} />}
-        {page === 'tasks'     && <AssignmentsPage />}
-        {page === 'directory' && isManager && <DirectoryCatalog onNavigate={p => setPage(p as Page)} />}
-      </main>
-
-      {/* Bottom nav */}
-      <nav className="fixed bottom-0 left-0 right-0 z-30 max-w-lg mx-auto"
-        style={{ background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(16px)', borderTop: '1px solid rgba(157,200,255,0.25)' }}>
-        <div className="flex">
+        <nav className="flex-1 px-3 space-y-1">
           {navItems.map(item => {
             const active = page === item.id
             return (
               <button key={item.id} onClick={() => setPage(item.id)}
-                className="relative flex flex-1 flex-col items-center gap-1 py-3 transition-colors active:scale-95"
-                style={{ color: active ? '#3b82f6' : '#94a3b8' }}>
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all"
+                style={active ? { background: '#eff6ff', color: '#3b82f6' } : { color: '#64748b' }}>
                 {item.icon(active)}
-                <span className="text-[10px] font-medium">{item.label}</span>
-                {active && (
-                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-full" style={{ background: '#3b82f6' }} />
-                )}
+                {item.label}
               </button>
             )
           })}
+        </nav>
+        <div className="px-3 pb-5">
+          <button onClick={onLogout}
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-400 hover:text-red-500 transition-colors">
+            <svg width="16" height="16" viewBox="0 0 14 14" fill="none">
+              <path d="M5 2H2a1 1 0 00-1 1v8a1 1 0 001 1h3M9 10l3-3-3-3M12 7H5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            Вийти
+          </button>
         </div>
-        <div style={{ height: 'env(safe-area-inset-bottom)' }} />
-      </nav>
+      </aside>
+
+      <div className="flex flex-col min-h-screen md:flex-1 md:min-w-0">
+        {/* Top header */}
+        <header className="sticky top-0 z-20 flex items-center justify-between px-4 py-3 md:px-8"
+          style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(14px)', borderBottom: '1px solid rgba(157,200,255,0.22)' }}>
+          <span style={{ fontFamily: "'DM Serif Display', serif" }} className="text-lg text-slate-800 md:hidden">
+            <span className="text-blue-500">●</span> R&D
+          </span>
+          <span className="hidden md:block text-sm font-medium text-slate-500">
+            {navItems.find(i => i.id === page)?.label}
+          </span>
+          <div className="flex items-center gap-2">
+            <div className="h-7 w-7 rounded-full bg-blue-100 flex items-center justify-center text-xs font-semibold text-blue-600">А</div>
+            <button onClick={onLogout} className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:text-red-500 transition-colors md:hidden">
+              <svg width="15" height="15" viewBox="0 0 14 14" fill="none">
+                <path d="M5 2H2a1 1 0 00-1 1v8a1 1 0 001 1h3M9 10l3-3-3-3M12 7H5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        {/* Page content */}
+        <main className="flex-1 overflow-y-auto pb-24 md:pb-8">
+          <div className="max-w-lg mx-auto md:max-w-3xl md:mx-auto">
+            {page === 'products'  && isManager && <ProductCatalog onNavigate={p => setPage(p as Page)} />}
+            {page === 'materials' && isManager && <MaterialStock onNavigate={p => setPage(p as Page)} />}
+            {page === 'tasks'     && <AssignmentsPage />}
+            {page === 'directory' && isManager && <DirectoryCatalog onNavigate={p => setPage(p as Page)} />}
+          </div>
+        </main>
+
+        {/* Bottom nav — mobile only */}
+        <nav className="fixed bottom-0 left-0 right-0 z-30 max-w-lg mx-auto md:hidden"
+          style={{ background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(16px)', borderTop: '1px solid rgba(157,200,255,0.25)' }}>
+          <div className="flex">
+            {navItems.map(item => {
+              const active = page === item.id
+              return (
+                <button key={item.id} onClick={() => setPage(item.id)}
+                  className="relative flex flex-1 flex-col items-center gap-1 py-3 transition-colors active:scale-95"
+                  style={{ color: active ? '#3b82f6' : '#94a3b8' }}>
+                  {item.icon(active)}
+                  <span className="text-[10px] font-medium">{item.label}</span>
+                  {active && (
+                    <span className="absolute bottom-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-full" style={{ background: '#3b82f6' }} />
+                  )}
+                </button>
+              )
+            })}
+          </div>
+          <div style={{ height: 'env(safe-area-inset-bottom)' }} />
+        </nav>
+      </div>
     </div>
   )
 }

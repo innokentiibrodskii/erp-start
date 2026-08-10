@@ -187,12 +187,12 @@ function MaterialForm({ editing, categories, units, suppliers, isSaving, onClose
   const canSave = name.trim().length > 0 && unitId.length > 0
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end"
+    <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center sm:p-4"
       style={{ background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)' }}
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="rounded-t-3xl bg-white pt-2 pb-10 max-h-[92vh] overflow-y-auto">
+      <div className="rounded-t-3xl bg-white pt-2 pb-10 max-h-[92vh] overflow-y-auto sm:rounded-3xl sm:w-full sm:max-w-md">
         <div className="flex justify-center py-3">
-          <button onClick={onClose} className="h-1 w-10 rounded-full bg-slate-200" />
+          <button onClick={onClose} className="h-1 w-10 rounded-full bg-slate-200 sm:hidden" />
         </div>
         <h2 style={{ fontFamily: "'DM Serif Display', serif" }} className="px-5 text-2xl text-slate-800 mb-5">
           {editing ? 'Редагувати матеріал' : 'Новий матеріал'}
