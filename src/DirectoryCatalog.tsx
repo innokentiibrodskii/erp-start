@@ -1,19 +1,28 @@
 import { useState } from 'react'
 import { useCatalog } from './hooks/useCatalog'
 import { PRESET_COLORS } from './lib/colors'
-import type { Department, Position, ProductCategory, ProductAttribute, Operation, Warehouse } from './hooks/useCatalog'
+import type { Department, Position, ProductCategory, ProductAttribute, Operation, Warehouse, MaterialCategory, Unit, Supplier } from './hooks/useCatalog'
+import MaterialCatalog from './MaterialCatalog'
+import { useMaterials } from './hooks/useMaterials'
 
 type SubPage =
   | null
   | 'departments'
   | 'positions'
   | 'categories'
+  | 'materialCategories'
+  | 'materialsCatalog'
   | 'attributes'
   | 'operations'
   | 'warehouses'
+  | 'units'
+  | 'suppliers'
+
+type DirectoryGroup = 'Продукт' | 'Матеріали' | 'Люди'
 
 interface DirectoryTile {
   id: SubPage
+  group: DirectoryGroup
   label: string
   description: string
   color: string
@@ -22,51 +31,82 @@ interface DirectoryTile {
   count: () => number
 }
 
+const GROUP_ORDER: DirectoryGroup[] = ['Продукт', 'Матеріали', 'Люди']
+
 interface Props { onNavigate: (page: string) => void }
 
 export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
   const [page, setPage] = useState<SubPage>(null)
   const catalog = useCatalog()
+  const materialsQ = useMaterials()
+  const materialsCount = materialsQ.data?.length ?? 0
 
   const tiles: DirectoryTile[] = [
+    // ── Продукт ──
     {
-      id: 'categories', label: 'Категорії', description: 'Категорії та підкатегорії продуктів',
+      id: 'categories', group: 'Продукт', label: 'Категорії продуктів', description: 'Категорії та підкатегорії продуктів',
       color: '#7c3aed', bg: '#f5f3ff', count: () => catalog.categories.length,
       icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M2 5a3 3 0 013-3h10a3 3 0 013 3v10a3 3 0 01-3 3H5a3 3 0 01-3-3V5z" stroke="currentColor" strokeWidth="1.5"/><path d="M6 9h8M6 13h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
     },
     {
-      id: 'attributes', label: 'Характеристики', description: 'Групи та значення характеристик',
-      color: '#0891b2', bg: '#ecfeff', count: () => catalog.attributes.length,
-      icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5"/><path d="M10 6v4l3 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
-    },
-    {
-      id: 'operations', label: 'Операції', description: 'Виробничі та технологічні операції',
+      id: 'operations', group: 'Продукт', label: 'Операції', description: 'Виробничі та технологічні операції',
       color: '#ea580c', bg: '#fff7ed', count: () => catalog.operations.length,
       icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.5"/><path d="M10 2v2.5M10 15.5V18M2 10h2.5M15.5 10H18M4.22 4.22l1.77 1.77M14.01 14.01l1.77 1.77M4.22 15.78l1.77-1.77M14.01 5.99l1.77-1.77" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
     },
     {
-      id: 'warehouses', label: 'Склади', description: 'Адреси та відповідальні особи',
+      id: 'attributes', group: 'Продукт', label: 'Характеристики', description: 'Групи та значення характеристик',
+      color: '#0891b2', bg: '#ecfeff', count: () => catalog.attributes.length,
+      icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5"/><path d="M10 6v4l3 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+    },
+    // ── Матеріали ──
+    {
+      id: 'materialsCatalog', group: 'Матеріали', label: 'Каталог матеріалів', description: 'Назва, фото, категорія, одиниця, постачальники',
+      color: '#b45309', bg: '#fffbeb', count: () => materialsCount,
+      icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M8 1L14 4.5V11.5L8 15L2 11.5V4.5L8 1Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/><path d="M2 4.5L8 8L14 4.5M8 15V8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+    },
+    {
+      id: 'materialCategories', group: 'Матеріали', label: 'Категорії матеріалів', description: 'Окремий каталог категорій для матеріалів',
+      color: '#0d9488', bg: '#f0fdfa', count: () => catalog.materialCategories.length,
+      icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="14" height="14" rx="3" stroke="currentColor" strokeWidth="1.5"/><path d="M7 8h6M7 11h6M7 14h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+    },
+    {
+      id: 'warehouses', group: 'Матеріали', label: 'Склади', description: 'Адреси та відповідальні особи',
       color: '#16a34a', bg: '#f0fdf4', count: () => catalog.warehouses.length,
       icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M2 8l8-5 8 5v9a1 1 0 01-1 1H3a1 1 0 01-1-1V8z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/><path d="M7 18V11h6v7" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>,
     },
     {
-      id: 'positions', label: 'Посади', description: "Посади та прив'язка до департаментів",
+      id: 'suppliers', group: 'Матеріали', label: 'Постачальники', description: 'Контакти та реквізити постачальників',
+      color: '#b45309', bg: '#fffbeb', count: () => catalog.suppliers.length,
+      icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 7l7-4 7 4v8l-7 4-7-4V7z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/><path d="M10 3v14M3 7l7 4 7-4" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>,
+    },
+    {
+      id: 'units', group: 'Матеріали', label: 'Одиниці виміру', description: 'Одиниці для матеріалів і операцій',
+      color: '#0284c7', bg: '#f0f9ff', count: () => catalog.units.length,
+      icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 16L16 4M8 4h8v8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+    },
+    // ── Люди ──
+    {
+      id: 'positions', group: 'Люди', label: 'Посади', description: "Посади та прив'язка до департаментів",
       color: '#db2777', bg: '#fdf2f8', count: () => catalog.positions.length,
       icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="6" r="3" stroke="currentColor" strokeWidth="1.5"/><path d="M4 18c0-3.31 2.69-6 6-6s6 2.69 6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
     },
     {
-      id: 'departments', label: 'Департаменти', description: 'Організаційні підрозділи',
+      id: 'departments', group: 'Люди', label: 'Департаменти', description: 'Організаційні підрозділи',
       color: '#2563eb', bg: '#eff6ff', count: () => catalog.departments.length,
       icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="7" y="2" width="6" height="5" rx="1" stroke="currentColor" strokeWidth="1.5"/><rect x="2" y="13" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5"/><rect x="13" y="13" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5"/><path d="M10 7v3M10 10H4.5v3M10 10h5.5v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
     },
   ]
 
-  if (page === 'departments') return <DepartmentsPage onBack={() => setPage(null)} />
-  if (page === 'positions')   return <PositionsPage   onBack={() => setPage(null)} />
-  if (page === 'categories')  return <CategoriesPage  onBack={() => setPage(null)} />
-  if (page === 'attributes')  return <AttributesPage  onBack={() => setPage(null)} />
-  if (page === 'operations')  return <OperationsPage  onBack={() => setPage(null)} />
-  if (page === 'warehouses')  return <WarehousesPage  onBack={() => setPage(null)} />
+  if (page === 'departments')        return <DepartmentsPage        onBack={() => setPage(null)} />
+  if (page === 'positions')          return <PositionsPage          onBack={() => setPage(null)} />
+  if (page === 'categories')         return <CategoriesPage         onBack={() => setPage(null)} />
+  if (page === 'materialCategories') return <MaterialCategoriesPage onBack={() => setPage(null)} />
+  if (page === 'materialsCatalog')   return <MaterialCatalog onBack={() => setPage(null)} />
+  if (page === 'attributes')         return <AttributesPage         onBack={() => setPage(null)} />
+  if (page === 'operations')         return <OperationsPage         onBack={() => setPage(null)} />
+  if (page === 'warehouses')         return <WarehousesPage         onBack={() => setPage(null)} />
+  if (page === 'units')              return <UnitsPage              onBack={() => setPage(null)} />
+  if (page === 'suppliers')          return <SuppliersPage          onBack={() => setPage(null)} />
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -78,25 +118,36 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
       {catalog.isLoading ? (
         <div className="px-4 pb-8 text-sm text-slate-400">Завантаження…</div>
       ) : (
-        <div className="px-4 pb-8 grid grid-cols-2 gap-3">
-          {tiles.map(tile => (
-            <button
-              key={tile.id}
-              onClick={() => setPage(tile.id)}
-              className="flex flex-col items-start rounded-2xl bg-white p-4 text-left active:scale-[0.97] transition-all"
-              style={{ border: '1px solid rgba(157,200,255,0.25)', boxShadow: '0 1px 8px rgba(157,200,255,0.08)' }}
-            >
-              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: tile.bg, color: tile.color }}>
-                {tile.icon}
+        <div className="px-4 pb-8 space-y-6">
+          {GROUP_ORDER.map(group => {
+            const groupTiles = tiles.filter(t => t.group === group)
+            if (groupTiles.length === 0) return null
+            return (
+              <div key={group}>
+                <p className="mb-2.5 text-xs font-semibold uppercase tracking-widest text-slate-400">{group}</p>
+                <div className="grid grid-cols-2 gap-3">
+                  {groupTiles.map(tile => (
+                    <button
+                      key={tile.id}
+                      onClick={() => setPage(tile.id)}
+                      className="flex flex-col items-start rounded-2xl bg-white p-4 text-left active:scale-[0.97] transition-all"
+                      style={{ border: '1px solid rgba(157,200,255,0.25)', boxShadow: '0 1px 8px rgba(157,200,255,0.08)' }}
+                    >
+                      <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: tile.bg, color: tile.color }}>
+                        {tile.icon}
+                      </div>
+                      <p className="text-sm font-semibold text-slate-800 leading-tight">{tile.label}</p>
+                      <p className="mt-0.5 text-xs text-slate-400 leading-snug">{tile.description}</p>
+                      <div className="mt-3 flex items-center gap-1">
+                        <span className="text-lg font-bold" style={{ color: tile.color }}>{tile.count()}</span>
+                        <span className="text-xs text-slate-400">записів</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
-              <p className="text-sm font-semibold text-slate-800 leading-tight">{tile.label}</p>
-              <p className="mt-0.5 text-xs text-slate-400 leading-snug">{tile.description}</p>
-              <div className="mt-3 flex items-center gap-1">
-                <span className="text-lg font-bold" style={{ color: tile.color }}>{tile.count()}</span>
-                <span className="text-xs text-slate-400">записів</span>
-              </div>
-            </button>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
@@ -462,6 +513,94 @@ function CategoriesPage({ onBack }: { onBack: () => void }) {
   )
 }
 
+/* ─── MATERIAL CATEGORIES (окремий каталог, не пов'язаний з categories) ─── */
+function MaterialCategoriesPage({ onBack }: { onBack: () => void }) {
+  const { materialCategories, addMaterialCategory, updateMaterialCategory, removeMaterialCategory } = useCatalog()
+  const [form, setForm] = useState<{ open: boolean; editing: MaterialCategory | null; name: string; color: string; parentId: string | null }>
+    ({ open: false, editing: null, name: '', color: PRESET_COLORS[0].text, parentId: null })
+
+  const openAdd  = () => setForm({ open: true, editing: null, name: '', color: PRESET_COLORS[0].text, parentId: null })
+  const openEdit = (c: MaterialCategory) => setForm({ open: true, editing: c, name: c.name, color: c.color, parentId: c.parentId })
+  const close    = () => setForm(f => ({ ...f, open: false }))
+
+  const save = () => {
+    if (!form.name.trim()) return
+    if (form.editing) updateMaterialCategory(form.editing.id, form.name.trim(), form.color, form.parentId)
+    else addMaterialCategory(form.name.trim(), form.color, form.parentId)
+    close()
+  }
+
+  const roots = materialCategories.filter(c => c.parentId === null)
+  const children = (id: string) => materialCategories.filter(c => c.parentId === id)
+  const bgOf = (color: string) => PRESET_COLORS.find(c => c.text === color)?.bg ?? '#f0fdfa'
+
+  return (
+    <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
+      <SubPageHeader title="Категорії матеріалів" subtitle={`${materialCategories.length} записів`} onBack={onBack} onAdd={openAdd} />
+      <div className="px-4 py-4 space-y-2 pb-8">
+        {materialCategories.length === 0 && (
+          <p className="py-10 text-center text-sm text-slate-400">Категорій матеріалів ще немає</p>
+        )}
+        {roots.map(root => (
+          <div key={root.id}>
+            <div className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3.5 mb-2"
+              style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
+              <div className="h-9 w-9 shrink-0 rounded-xl flex items-center justify-center" style={{ background: bgOf(root.color) }}>
+                <div className="h-3 w-3 rounded-full" style={{ background: root.color }} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-slate-800">{root.name}</p>
+                <p className="text-xs text-slate-400">{children(root.id).length} підкатегорій</p>
+              </div>
+              <EditButton onEdit={() => openEdit(root)} />
+              <DeleteButton onDelete={() => removeMaterialCategory(root.id)} />
+            </div>
+            {children(root.id).map(child => (
+              <div key={child.id} className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3 ml-5 mb-2"
+                style={{ border: '1px solid rgba(157,200,255,0.15)' }}>
+                <div className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: child.color }} />
+                <p className="flex-1 text-sm text-slate-700">{child.name}</p>
+                <EditButton onEdit={() => openEdit(child)} />
+                <DeleteButton onDelete={() => removeMaterialCategory(child.id)} />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      {form.open && (
+        <BottomSheet onClose={close}>
+          <SheetTitle>{form.editing ? 'Редагувати категорію' : 'Нова категорія матеріалу'}</SheetTitle>
+          <div className="px-5 space-y-4">
+            <Field label="Назва"><Input value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} placeholder="Назва категорії" /></Field>
+            <Field label="Батьківська категорія">
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => setForm(f => ({ ...f, parentId: null }))}
+                  className="rounded-xl px-3 py-2 text-xs font-medium border transition-all"
+                  style={form.parentId === null ? { background: '#1e293b', color: '#fff', borderColor: '#1e293b' } : { background: '#f8fafc', color: '#94a3b8', borderColor: '#e2e8f0' }}>
+                  Коренева
+                </button>
+                {roots.filter(r => r.id !== form.editing?.id).map(r => {
+                  const bg = bgOf(r.color)
+                  const active = form.parentId === r.id
+                  return (
+                    <button key={r.id} onClick={() => setForm(f => ({ ...f, parentId: r.id }))}
+                      className="rounded-xl px-3 py-2 text-xs font-medium border transition-all"
+                      style={active ? { background: r.color, color: '#fff', borderColor: r.color } : { background: bg, color: r.color, borderColor: 'transparent' }}>
+                      {r.name}
+                    </button>
+                  )
+                })}
+              </div>
+            </Field>
+            <Field label="Колір"><ColorPicker value={form.color} onChange={v => setForm(f => ({ ...f, color: v }))} /></Field>
+          </div>
+          <SheetActions onCancel={close} onSave={save} saveLabel={form.editing ? 'Зберегти' : 'Додати'} disabled={!form.name.trim()} />
+        </BottomSheet>
+      )}
+    </div>
+  )
+}
+
 /* ─── ATTRIBUTES ─── */
 function AttributesPage({ onBack }: { onBack: () => void }) {
   const { attributes, addAttribute, updateAttribute, removeAttribute, addAttributeValue, removeAttributeValue } = useCatalog()
@@ -561,18 +700,18 @@ function AttributesPage({ onBack }: { onBack: () => void }) {
 
 /* ─── OPERATIONS ─── */
 function OperationsPage({ onBack }: { onBack: () => void }) {
-  const { operations, addOperation, updateOperation, removeOperation } = useCatalog()
-  const [form, setForm] = useState<{ open: boolean; editing: Operation | null; name: string; description: string; unit: string }>
-    ({ open: false, editing: null, name: '', description: '', unit: 'шт' })
+  const { operations, units, addOperation, updateOperation, removeOperation } = useCatalog()
+  const [form, setForm] = useState<{ open: boolean; editing: Operation | null; name: string; description: string; unitId: string }>
+    ({ open: false, editing: null, name: '', description: '', unitId: '' })
 
-  const openAdd  = () => setForm({ open: true, editing: null, name: '', description: '', unit: 'шт' })
-  const openEdit = (o: Operation) => setForm({ open: true, editing: o, name: o.name, description: o.description, unit: o.unit })
+  const openAdd  = () => setForm({ open: true, editing: null, name: '', description: '', unitId: units[0]?.id ?? '' })
+  const openEdit = (o: Operation) => setForm({ open: true, editing: o, name: o.name, description: o.description, unitId: o.unitId })
   const close    = () => setForm(f => ({ ...f, open: false }))
 
   const save = () => {
-    if (!form.name.trim()) return
-    if (form.editing) updateOperation(form.editing.id, form.name.trim(), form.description, form.unit)
-    else addOperation(form.name.trim(), form.description, form.unit)
+    if (!form.name.trim() || !form.unitId) return
+    if (form.editing) updateOperation(form.editing.id, form.name.trim(), form.description, form.unitId)
+    else addOperation(form.name.trim(), form.description, form.unitId)
     close()
   }
 
@@ -592,7 +731,7 @@ function OperationsPage({ onBack }: { onBack: () => void }) {
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-slate-800">{op.name}</p>
               {op.description && <p className="text-xs text-slate-400 truncate mt-0.5">{op.description}</p>}
-              <span className="mt-1 inline-block rounded-full bg-orange-50 px-2 py-0.5 text-[10px] text-orange-500">{op.unit}</span>
+              <span className="mt-1 inline-block rounded-full bg-orange-50 px-2 py-0.5 text-[10px] text-orange-500">{op.unitShortName}</span>
             </div>
             <EditButton onEdit={() => openEdit(op)} />
             <DeleteButton onDelete={() => removeOperation(op.id)} />
@@ -608,7 +747,182 @@ function OperationsPage({ onBack }: { onBack: () => void }) {
               <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Короткий опис операції…" rows={3}
                 className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all resize-none" />
             </Field>
-            <Field label="Одиниця виміру"><Input value={form.unit} onChange={v => setForm(f => ({ ...f, unit: v }))} placeholder="шт, год, м…" /></Field>
+            <Field label="Одиниця виміру">
+              {units.length === 0 ? (
+                <p className="text-xs text-red-500">Спочатку додайте одиниці виміру</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {units.map(u => {
+                    const active = form.unitId === u.id
+                    return (
+                      <button key={u.id} onClick={() => setForm(f => ({ ...f, unitId: u.id }))}
+                        className="rounded-xl px-3 py-2 text-sm transition-all"
+                        style={active ? { background: '#1e293b', color: '#fff' } : { background: '#f1f5f9', color: '#64748b' }}>
+                        <span className="font-medium">{u.shortName}</span>
+                        <span className="ml-1 text-xs opacity-60">{u.name}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </Field>
+          </div>
+          <SheetActions onCancel={close} onSave={save} saveLabel={form.editing ? 'Зберегти' : 'Додати'} disabled={!form.name.trim() || !form.unitId} />
+        </BottomSheet>
+      )}
+    </div>
+  )
+}
+
+/* ─── UNITS ─── */
+function UnitsPage({ onBack }: { onBack: () => void }) {
+  const { units, addUnit, updateUnit, removeUnit } = useCatalog()
+  const [form, setForm] = useState<{ open: boolean; editing: Unit | null; name: string; shortName: string }>
+    ({ open: false, editing: null, name: '', shortName: '' })
+
+  const openAdd  = () => setForm({ open: true, editing: null, name: '', shortName: '' })
+  const openEdit = (u: Unit) => setForm({ open: true, editing: u, name: u.name, shortName: u.shortName })
+  const close    = () => setForm(f => ({ ...f, open: false }))
+
+  const save = () => {
+    if (!form.name.trim() || !form.shortName.trim()) return
+    if (form.editing) updateUnit(form.editing.id, form.name.trim(), form.shortName.trim())
+    else addUnit(form.name.trim(), form.shortName.trim())
+    close()
+  }
+
+  return (
+    <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
+      <SubPageHeader title="Одиниці виміру" subtitle={`${units.length} одиниць`} onBack={onBack} onAdd={openAdd} />
+      <div className="px-4 py-4 space-y-3 pb-8">
+        {units.length === 0 && (
+          <p className="py-10 text-center text-sm text-slate-400">Одиниць ще немає</p>
+        )}
+        {units.map(u => (
+          <div key={u.id} className="rounded-2xl bg-white px-4 py-4 flex items-center gap-3"
+            style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
+            <div className="h-10 w-10 shrink-0 rounded-xl flex items-center justify-center bg-sky-50">
+              <span className="text-sm font-bold text-sky-600">{u.shortName}</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-slate-800">{u.name}</p>
+              <p className="text-xs text-slate-400">{u.shortName}</p>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <EditButton onEdit={() => openEdit(u)} />
+              <DeleteButton onDelete={() => removeUnit(u.id)} />
+            </div>
+          </div>
+        ))}
+      </div>
+      {form.open && (
+        <BottomSheet onClose={close}>
+          <SheetTitle>{form.editing ? 'Редагувати одиницю' : 'Нова одиниця'}</SheetTitle>
+          <div className="px-5 space-y-4">
+            <Field label="Назва">
+              <Input value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} placeholder="Напр. Кілограм" />
+            </Field>
+            <Field label="Скорочення">
+              <Input value={form.shortName} onChange={v => setForm(f => ({ ...f, shortName: v }))} placeholder="Напр. кг" />
+            </Field>
+          </div>
+          <SheetActions onCancel={close} onSave={save} saveLabel={form.editing ? 'Зберегти' : 'Додати'} disabled={!form.name.trim() || !form.shortName.trim()} />
+        </BottomSheet>
+      )}
+    </div>
+  )
+}
+
+/* ─── SUPPLIERS ─── */
+function SuppliersPage({ onBack }: { onBack: () => void }) {
+  const { suppliers, addSupplier, updateSupplier, removeSupplier } = useCatalog()
+  const [form, setForm] = useState<{
+    open: boolean; editing: Supplier | null
+    name: string; contactPerson: string; phone: string; email: string; address: string
+  }>({ open: false, editing: null, name: '', contactPerson: '', phone: '', email: '', address: '' })
+
+  const openAdd  = () => setForm({ open: true, editing: null, name: '', contactPerson: '', phone: '', email: '', address: '' })
+  const openEdit = (s: Supplier) => setForm({ open: true, editing: s, name: s.name, contactPerson: s.contactPerson, phone: s.phone, email: s.email, address: s.address })
+  const close    = () => setForm(f => ({ ...f, open: false }))
+
+  const save = () => {
+    if (!form.name.trim()) return
+    if (form.editing) updateSupplier(form.editing.id, form.name.trim(), form.contactPerson, form.phone, form.email, form.address)
+    else addSupplier(form.name.trim(), form.contactPerson, form.phone, form.email, form.address)
+    close()
+  }
+
+  return (
+    <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
+      <SubPageHeader title="Постачальники" subtitle={`${suppliers.length} записів`} onBack={onBack} onAdd={openAdd} />
+      <div className="px-4 py-4 space-y-3 pb-8">
+        {suppliers.length === 0 && (
+          <p className="py-10 text-center text-sm text-slate-400">Постачальників ще немає</p>
+        )}
+        {suppliers.map(s => (
+          <div key={s.id} className="rounded-2xl bg-white px-4 py-4"
+            style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 shrink-0 rounded-xl flex items-center justify-center bg-amber-50 text-amber-700">
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                  <path d="M3 7l7-4 7 4v8l-7 4-7-4V7z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+                  <path d="M10 3v14M3 7l7 4 7-4" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0 space-y-0.5">
+                <p className="text-sm font-semibold text-slate-800">{s.name}</p>
+                {s.contactPerson && (
+                  <p className="text-xs text-slate-500 flex items-center gap-1">
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="3.5" r="1.5" stroke="currentColor" strokeWidth="1.1"/><path d="M1.5 9c0-1.93 1.57-3.5 3.5-3.5S8.5 7.07 8.5 9" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/></svg>
+                    {s.contactPerson}
+                  </p>
+                )}
+                {s.phone && (
+                  <p className="text-xs text-slate-400 flex items-center gap-1">
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2h2l1 2.5L3.5 6a6.5 6.5 0 003.5 3.5l1.5-1.5L11 9v2a1 1 0 01-1 1A9 9 0 011 3a1 1 0 011-1z" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    {s.phone}
+                  </p>
+                )}
+                {s.email && (
+                  <p className="text-xs text-slate-400 flex items-center gap-1">
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="1" y="2.5" width="8" height="6" rx="1" stroke="currentColor" strokeWidth="1"/><path d="M1 3.5l4 2.5 4-2.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/></svg>
+                    {s.email}
+                  </p>
+                )}
+                {s.address && (
+                  <p className="text-xs text-slate-400 flex items-center gap-1">
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 1C3.34 1 2 2.34 2 4c0 2.5 3 6 3 6s3-3.5 3-6c0-1.66-1.34-3-3-3zm0 4a1 1 0 110-2 1 1 0 010 2z" fill="currentColor" fillOpacity="0.5"/></svg>
+                    {s.address}
+                  </p>
+                )}
+              </div>
+              <div className="flex gap-2 shrink-0">
+                <EditButton onEdit={() => openEdit(s)} />
+                <DeleteButton onDelete={() => removeSupplier(s.id)} />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      {form.open && (
+        <BottomSheet onClose={close}>
+          <SheetTitle>{form.editing ? 'Редагувати постачальника' : 'Новий постачальник'}</SheetTitle>
+          <div className="px-5 space-y-4">
+            <Field label="Назва компанії *">
+              <Input value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} placeholder="ТОВ «Назва»" />
+            </Field>
+            <Field label="Контактна особа">
+              <Input value={form.contactPerson} onChange={v => setForm(f => ({ ...f, contactPerson: v }))} placeholder="Ім'я та прізвище" />
+            </Field>
+            <Field label="Телефон">
+              <Input value={form.phone} onChange={v => setForm(f => ({ ...f, phone: v }))} placeholder="+380" />
+            </Field>
+            <Field label="Email">
+              <Input value={form.email} onChange={v => setForm(f => ({ ...f, email: v }))} placeholder="info@company.ua" />
+            </Field>
+            <Field label="Адреса">
+              <Input value={form.address} onChange={v => setForm(f => ({ ...f, address: v }))} placeholder="вул., місто" />
+            </Field>
           </div>
           <SheetActions onCancel={close} onSave={save} saveLabel={form.editing ? 'Зберегти' : 'Додати'} disabled={!form.name.trim()} />
         </BottomSheet>

@@ -40,7 +40,14 @@ export interface Operation {
   id: string
   name: string
   description: string
-  unit: string
+  unitId: string
+  unitShortName: string
+}
+
+export interface Unit {
+  id: string
+  name: string
+  shortName: string
 }
 
 export interface Warehouse {
@@ -50,7 +57,31 @@ export interface Warehouse {
   responsible: string
 }
 
+export interface MaterialCategory {
+  id: string
+  name: string
+  color: string
+  parentId: string | null
+}
+
+export interface Supplier {
+  id: string
+  name: string
+  contactPerson: string
+  phone: string
+  email: string
+  address: string
+}
+
 const DEFAULT_COLOR = PRESET_COLORS[0].text
+
+/** Пряме створення операції (з поверненням id) — використовується інлайн-формою
+ *  додавання операції прямо з інтерфейсу додавання матеріалів до продукту. */
+export async function createOperationDirect(name: string, unitId: string, description = ''): Promise<string> {
+  const { data, error } = await supabase.from('operations').insert({ name, description, unit_id: unitId }).select('id').single()
+  if (error) throw error
+  return data.id as string
+}
 
 function friendlyError(error: { message: string; code?: string }): string {
   if (error.code === '23503') return 'Неможливо видалити: запис використовується в інших довідниках'
@@ -133,9 +164,30 @@ function useOperationsQuery() {
   return useQuery({
     queryKey: ['operations'],
     queryFn: async (): Promise<Operation[]> => {
-      const { data, error } = await supabase.from('operations').select('id, name, description, unit').order('name')
+      const { data, error } = await supabase.from('operations').select('id, name, description, unit_id, units(short_name)').order('name')
       if (error) throw error
-      return data.map(o => ({ id: o.id, name: o.name, description: o.description ?? '', unit: o.unit }))
+      return data.map(o => ({
+        id: o.id,
+        name: o.name,
+        description: o.description ?? '',
+        unitId: o.unit_id,
+        unitShortName: (o.units as unknown as { short_name: string } | null)?.short_name ?? '',
+      }))
+    },
+  })
+}
+
+/* ───────────────────────────────────────────────────────────
+   Units
+─────────────────────────────────────────────────────────── */
+
+function useUnitsQuery() {
+  return useQuery({
+    queryKey: ['units'],
+    queryFn: async (): Promise<Unit[]> => {
+      const { data, error } = await supabase.from('units').select('id, name, short_name').order('name')
+      if (error) throw error
+      return data.map(u => ({ id: u.id, name: u.name, shortName: u.short_name }))
     },
   })
 }
@@ -156,6 +208,40 @@ function useWarehousesQuery() {
 }
 
 /* ───────────────────────────────────────────────────────────
+   Suppliers
+─────────────────────────────────────────────────────────── */
+
+function useSuppliersQuery() {
+  return useQuery({
+    queryKey: ['suppliers'],
+    queryFn: async (): Promise<Supplier[]> => {
+      const { data, error } = await supabase.from('suppliers').select('id, name, contact_person, phone, email, address').order('name')
+      if (error) throw error
+      return data.map(s => ({
+        id: s.id, name: s.name,
+        contactPerson: s.contact_person ?? '', phone: s.phone ?? '', email: s.email ?? '', address: s.address ?? '',
+      }))
+    },
+  })
+}
+
+/* ───────────────────────────────────────────────────────────
+   Material Categories (окремий каталог — НЕ пов'язаний з categories,
+   який належить виключно продуктам)
+─────────────────────────────────────────────────────────── */
+
+function useMaterialCategoriesQuery() {
+  return useQuery({
+    queryKey: ['material-categories'],
+    queryFn: async (): Promise<MaterialCategory[]> => {
+      const { data, error } = await supabase.from('material_categories').select('id, name, color, parent_id').order('name')
+      if (error) throw error
+      return data.map(c => ({ id: c.id, name: c.name, color: c.color ?? DEFAULT_COLOR, parentId: c.parent_id }))
+    },
+  })
+}
+
+/* ───────────────────────────────────────────────────────────
    Unified hook — той самий інтерфейс, що й раніше в catalogContext,
    але дані читаються/пишуться напряму в Supabase через React Query.
 ─────────────────────────────────────────────────────────── */
@@ -169,10 +255,14 @@ export function useCatalog() {
   const attributesQ = useAttributesQuery()
   const operationsQ = useOperationsQuery()
   const warehousesQ = useWarehousesQuery()
+  const materialCategoriesQ = useMaterialCategoriesQuery()
+  const unitsQ = useUnitsQuery()
+  const suppliersQ = useSuppliersQuery()
 
   const isLoading =
     departmentsQ.isLoading || positionsQ.isLoading || categoriesQ.isLoading ||
-    attributesQ.isLoading || operationsQ.isLoading || warehousesQ.isLoading
+    attributesQ.isLoading || operationsQ.isLoading || warehousesQ.isLoading ||
+    materialCategoriesQ.isLoading || unitsQ.isLoading || suppliersQ.isLoading
 
   const invalidate = (key: string) => qc.invalidateQueries({ queryKey: [key] })
   const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error))
@@ -307,16 +397,16 @@ export function useCatalog() {
 
   /* Operations */
   const addOperationM = useMutation({
-    mutationFn: async ({ name, description, unit }: { name: string; description: string; unit: string }) => {
-      const { error } = await supabase.from('operations').insert({ name, description, unit })
+    mutationFn: async ({ name, description, unitId }: { name: string; description: string; unitId: string }) => {
+      const { error } = await supabase.from('operations').insert({ name, description, unit_id: unitId })
       if (error) throw error
     },
     onSuccess: () => invalidate('operations'),
     onError: onErr,
   })
   const updateOperationM = useMutation({
-    mutationFn: async ({ id, name, description, unit }: { id: string; name: string; description: string; unit: string }) => {
-      const { error } = await supabase.from('operations').update({ name, description, unit }).eq('id', id)
+    mutationFn: async ({ id, name, description, unitId }: { id: string; name: string; description: string; unitId: string }) => {
+      const { error } = await supabase.from('operations').update({ name, description, unit_id: unitId }).eq('id', id)
       if (error) throw error
     },
     onSuccess: () => invalidate('operations'),
@@ -357,6 +447,84 @@ export function useCatalog() {
     onError: onErr,
   })
 
+  /* Material Categories */
+  const addMaterialCategoryM = useMutation({
+    mutationFn: async ({ name, color, parentId }: { name: string; color: string; parentId: string | null }) => {
+      const { error } = await supabase.from('material_categories').insert({ name, color, parent_id: parentId })
+      if (error) throw error
+    },
+    onSuccess: () => invalidate('material-categories'),
+    onError: onErr,
+  })
+  const updateMaterialCategoryM = useMutation({
+    mutationFn: async ({ id, name, color, parentId }: { id: string; name: string; color: string; parentId: string | null }) => {
+      const { error } = await supabase.from('material_categories').update({ name, color, parent_id: parentId }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => invalidate('material-categories'),
+    onError: onErr,
+  })
+  const removeMaterialCategoryM = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('material_categories').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => invalidate('material-categories'),
+    onError: onErr,
+  })
+
+  /* Suppliers */
+  const addSupplierM = useMutation({
+    mutationFn: async ({ name, contactPerson, phone, email, address }: { name: string; contactPerson: string; phone: string; email: string; address: string }) => {
+      const { error } = await supabase.from('suppliers').insert({ name, contact_person: contactPerson, phone, email, address })
+      if (error) throw error
+    },
+    onSuccess: () => invalidate('suppliers'),
+    onError: onErr,
+  })
+  const updateSupplierM = useMutation({
+    mutationFn: async ({ id, name, contactPerson, phone, email, address }: { id: string; name: string; contactPerson: string; phone: string; email: string; address: string }) => {
+      const { error } = await supabase.from('suppliers').update({ name, contact_person: contactPerson, phone, email, address }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => invalidate('suppliers'),
+    onError: onErr,
+  })
+  const removeSupplierM = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('suppliers').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => invalidate('suppliers'),
+    onError: onErr,
+  })
+
+  /* Units */
+  const addUnitM = useMutation({
+    mutationFn: async ({ name, shortName }: { name: string; shortName: string }) => {
+      const { error } = await supabase.from('units').insert({ name, short_name: shortName })
+      if (error) throw error
+    },
+    onSuccess: () => invalidate('units'),
+    onError: onErr,
+  })
+  const updateUnitM = useMutation({
+    mutationFn: async ({ id, name, shortName }: { id: string; name: string; shortName: string }) => {
+      const { error } = await supabase.from('units').update({ name, short_name: shortName }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => invalidate('units'),
+    onError: onErr,
+  })
+  const removeUnitM = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('units').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => invalidate('units'),
+    onError: onErr,
+  })
+
   return {
     isLoading,
     departments: departmentsQ.data ?? [],
@@ -365,6 +533,9 @@ export function useCatalog() {
     attributes: attributesQ.data ?? [],
     operations: operationsQ.data ?? [],
     warehouses: warehousesQ.data ?? [],
+    materialCategories: materialCategoriesQ.data ?? [],
+    units: unitsQ.data ?? [],
+    suppliers: suppliersQ.data ?? [],
 
     addDepartment: (name: string, color: string) => addDepartmentM.mutate({ name, color }),
     updateDepartment: (id: string, name: string, color: string) => updateDepartmentM.mutate({ id, name, color }),
@@ -378,6 +549,14 @@ export function useCatalog() {
     updateCategory: (id: string, name: string, color: string, parentId: string | null) => updateCategoryM.mutate({ id, name, color, parentId }),
     removeCategory: (id: string) => removeCategoryM.mutate(id),
 
+    addSupplier: (name: string, contactPerson: string, phone: string, email: string, address: string) => addSupplierM.mutate({ name, contactPerson, phone, email, address }),
+    updateSupplier: (id: string, name: string, contactPerson: string, phone: string, email: string, address: string) => updateSupplierM.mutate({ id, name, contactPerson, phone, email, address }),
+    removeSupplier: (id: string) => removeSupplierM.mutate(id),
+
+    addUnit: (name: string, shortName: string) => addUnitM.mutate({ name, shortName }),
+    updateUnit: (id: string, name: string, shortName: string) => updateUnitM.mutate({ id, name, shortName }),
+    removeUnit: (id: string) => removeUnitM.mutate(id),
+
     addAttribute: (name: string) => addAttributeM.mutate(name),
     updateAttribute: (id: string, name: string) => updateAttributeM.mutate({ id, name }),
     removeAttribute: (id: string) => removeAttributeM.mutate(id),
@@ -385,12 +564,16 @@ export function useCatalog() {
     updateAttributeValue: (attrId: string, valueId: string, value: string) => updateAttributeValueM.mutate({ attrId, valueId, value }),
     removeAttributeValue: (attrId: string, valueId: string) => removeAttributeValueM.mutate({ attrId, valueId }),
 
-    addOperation: (name: string, description: string, unit: string) => addOperationM.mutate({ name, description, unit }),
-    updateOperation: (id: string, name: string, description: string, unit: string) => updateOperationM.mutate({ id, name, description, unit }),
+    addOperation: (name: string, description: string, unitId: string) => addOperationM.mutate({ name, description, unitId }),
+    updateOperation: (id: string, name: string, description: string, unitId: string) => updateOperationM.mutate({ id, name, description, unitId }),
     removeOperation: (id: string) => removeOperationM.mutate(id),
 
     addWarehouse: (name: string, address: string, responsible: string) => addWarehouseM.mutate({ name, address, responsible }),
     updateWarehouse: (id: string, name: string, address: string, responsible: string) => updateWarehouseM.mutate({ id, name, address, responsible }),
     removeWarehouse: (id: string) => removeWarehouseM.mutate(id),
+
+    addMaterialCategory: (name: string, color: string, parentId: string | null) => addMaterialCategoryM.mutate({ name, color, parentId }),
+    updateMaterialCategory: (id: string, name: string, color: string, parentId: string | null) => updateMaterialCategoryM.mutate({ id, name, color, parentId }),
+    removeMaterialCategory: (id: string) => removeMaterialCategoryM.mutate(id),
   }
 }

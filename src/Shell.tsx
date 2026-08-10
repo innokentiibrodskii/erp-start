@@ -1,15 +1,16 @@
 import { useState } from 'react'
-import ComingSoon from './ComingSoon'
 import DirectoryCatalog from './DirectoryCatalog'
+import ProductCatalog from './ProductCatalog'
+import MaterialStock from './MaterialStock'
 
-type Page = 'products' | 'materials' | 'users' | 'directory'
+type Page = 'products' | 'materials' | 'directory'
 
 interface Props {
   onLogout: () => void
 }
 
 export default function Shell({ onLogout }: Props) {
-  const [page, setPage] = useState<Page>('directory')
+  const [page, setPage] = useState<Page>('products')
 
   const navItems: { id: Page; label: string; icon: (active: boolean) => React.ReactNode }[] = [
     {
@@ -31,17 +32,6 @@ export default function Shell({ onLogout }: Props) {
         <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
           <path d="M11 2L19 6.5V15.5L11 20L3 15.5V6.5L11 2Z" stroke="currentColor" strokeWidth={a ? 2 : 1.5} fill={a ? 'currentColor' : 'none'} fillOpacity="0.12"/>
           <path d="M3 6.5L11 11L19 6.5M11 20V11" stroke="currentColor" strokeWidth={a ? 2 : 1.5} strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      ),
-    },
-    {
-      id: 'users',
-      label: 'Команда',
-      icon: a => (
-        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-          <circle cx="9" cy="7" r="3.5" stroke="currentColor" strokeWidth={a ? 2 : 1.5} fill={a ? 'currentColor' : 'none'} fillOpacity="0.12"/>
-          <path d="M2 19c0-3.87 3.13-7 7-7s7 3.13 7 7" stroke="currentColor" strokeWidth={a ? 2 : 1.5} strokeLinecap="round"/>
-          <path d="M16 5c1.66 0 3 1.34 3 3s-1.34 3-3 3M20 19c0-2.76-1.79-5.11-4.27-5.81" stroke="currentColor" strokeWidth={a ? 1.5 : 1.3} strokeLinecap="round"/>
         </svg>
       ),
     },
@@ -77,9 +67,8 @@ export default function Shell({ onLogout }: Props) {
 
       {/* Page content */}
       <main className="flex-1 overflow-y-auto pb-24">
-        {page === 'products'   && <ComingSoon title="Продукти" />}
-        {page === 'materials'  && <ComingSoon title="Матеріали" />}
-        {page === 'users'      && <ComingSoon title="Команда" />}
+        {page === 'products'   && <ProductCatalog onNavigate={p => setPage(p as Page)} />}
+        {page === 'materials'  && <MaterialStock onNavigate={p => setPage(p as Page)} />}
         {page === 'directory'  && <DirectoryCatalog onNavigate={p => setPage(p as Page)} />}
       </main>
 
