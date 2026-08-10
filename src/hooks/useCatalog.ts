@@ -33,6 +33,8 @@ export interface AttributeValue {
 export interface ProductAttribute {
   id: string
   name: string
+  /** Чи формує ця характеристика варіанти товару (напр. Колір, Розмір) */
+  isVariant: boolean
   values: AttributeValue[]
 }
 
@@ -40,8 +42,6 @@ export interface Operation {
   id: string
   name: string
   description: string
-  unitId: string
-  unitShortName: string
 }
 
 export interface Unit {
@@ -77,8 +77,8 @@ const DEFAULT_COLOR = PRESET_COLORS[0].text
 
 /** Пряме створення операції (з поверненням id) — використовується інлайн-формою
  *  додавання операції прямо з інтерфейсу додавання матеріалів до продукту. */
-export async function createOperationDirect(name: string, unitId: string, description = ''): Promise<string> {
-  const { data, error } = await supabase.from('operations').insert({ name, description, unit_id: unitId }).select('id').single()
+export async function createOperationDirect(name: string, description = ''): Promise<string> {
+  const { data, error } = await supabase.from('operations').insert({ name, description }).select('id').single()
   if (error) throw error
   return data.id as string
 }
@@ -144,12 +144,13 @@ function useAttributesQuery() {
     queryFn: async (): Promise<ProductAttribute[]> => {
       const { data, error } = await supabase
         .from('attributes')
-        .select('id, name, attribute_values(id, value)')
+        .select('id, name, is_variant, attribute_values(id, value)')
         .order('name')
       if (error) throw error
       return data.map(a => ({
         id: a.id,
         name: a.name,
+        isVariant: a.is_variant,
         values: (a.attribute_values ?? []).map((v: { id: string; value: string }) => ({ id: v.id, value: v.value })),
       }))
     },
@@ -164,14 +165,12 @@ function useOperationsQuery() {
   return useQuery({
     queryKey: ['operations'],
     queryFn: async (): Promise<Operation[]> => {
-      const { data, error } = await supabase.from('operations').select('id, name, description, unit_id, units(short_name)').order('name')
+      const { data, error } = await supabase.from('operations').select('id, name, description').order('name')
       if (error) throw error
       return data.map(o => ({
         id: o.id,
         name: o.name,
         description: o.description ?? '',
-        unitId: o.unit_id,
-        unitShortName: (o.units as unknown as { short_name: string } | null)?.short_name ?? '',
       }))
     },
   })
@@ -347,16 +346,16 @@ export function useCatalog() {
 
   /* Attributes */
   const addAttributeM = useMutation({
-    mutationFn: async (name: string) => {
-      const { error } = await supabase.from('attributes').insert({ name })
+    mutationFn: async ({ name, isVariant }: { name: string; isVariant: boolean }) => {
+      const { error } = await supabase.from('attributes').insert({ name, is_variant: isVariant })
       if (error) throw error
     },
     onSuccess: () => invalidate('attributes'),
     onError: onErr,
   })
   const updateAttributeM = useMutation({
-    mutationFn: async ({ id, name }: { id: string; name: string }) => {
-      const { error } = await supabase.from('attributes').update({ name }).eq('id', id)
+    mutationFn: async ({ id, name, isVariant }: { id: string; name: string; isVariant: boolean }) => {
+      const { error } = await supabase.from('attributes').update({ name, is_variant: isVariant }).eq('id', id)
       if (error) throw error
     },
     onSuccess: () => invalidate('attributes'),
@@ -397,16 +396,16 @@ export function useCatalog() {
 
   /* Operations */
   const addOperationM = useMutation({
-    mutationFn: async ({ name, description, unitId }: { name: string; description: string; unitId: string }) => {
-      const { error } = await supabase.from('operations').insert({ name, description, unit_id: unitId })
+    mutationFn: async ({ name, description }: { name: string; description: string }) => {
+      const { error } = await supabase.from('operations').insert({ name, description })
       if (error) throw error
     },
     onSuccess: () => invalidate('operations'),
     onError: onErr,
   })
   const updateOperationM = useMutation({
-    mutationFn: async ({ id, name, description, unitId }: { id: string; name: string; description: string; unitId: string }) => {
-      const { error } = await supabase.from('operations').update({ name, description, unit_id: unitId }).eq('id', id)
+    mutationFn: async ({ id, name, description }: { id: string; name: string; description: string }) => {
+      const { error } = await supabase.from('operations').update({ name, description }).eq('id', id)
       if (error) throw error
     },
     onSuccess: () => invalidate('operations'),
@@ -557,15 +556,15 @@ export function useCatalog() {
     updateUnit: (id: string, name: string, shortName: string) => updateUnitM.mutate({ id, name, shortName }),
     removeUnit: (id: string) => removeUnitM.mutate(id),
 
-    addAttribute: (name: string) => addAttributeM.mutate(name),
-    updateAttribute: (id: string, name: string) => updateAttributeM.mutate({ id, name }),
+    addAttribute: (name: string, isVariant: boolean) => addAttributeM.mutate({ name, isVariant }),
+    updateAttribute: (id: string, name: string, isVariant: boolean) => updateAttributeM.mutate({ id, name, isVariant }),
     removeAttribute: (id: string) => removeAttributeM.mutate(id),
     addAttributeValue: (attrId: string, value: string) => addAttributeValueM.mutate({ attrId, value }),
     updateAttributeValue: (attrId: string, valueId: string, value: string) => updateAttributeValueM.mutate({ attrId, valueId, value }),
     removeAttributeValue: (attrId: string, valueId: string) => removeAttributeValueM.mutate({ attrId, valueId }),
 
-    addOperation: (name: string, description: string, unitId: string) => addOperationM.mutate({ name, description, unitId }),
-    updateOperation: (id: string, name: string, description: string, unitId: string) => updateOperationM.mutate({ id, name, description, unitId }),
+    addOperation: (name: string, description: string) => addOperationM.mutate({ name, description }),
+    updateOperation: (id: string, name: string, description: string) => updateOperationM.mutate({ id, name, description }),
     removeOperation: (id: string) => removeOperationM.mutate(id),
 
     addWarehouse: (name: string, address: string, responsible: string) => addWarehouseM.mutate({ name, address, responsible }),

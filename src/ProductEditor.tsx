@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useCatalog } from './hooks/useCatalog'
 import { useProducts, useProductPhotos, useProductMutations, useProductStatuses, type PhotoItem } from './hooks/useProducts'
+import { useProductAttributeMutations } from './hooks/useProductAttributes'
 
 interface Props {
   productId: string | null
@@ -8,11 +9,12 @@ interface Props {
 }
 
 export default function ProductEditor({ productId, onBack }: Props) {
-  const { categories } = useCatalog()
+  const { categories, attributes } = useCatalog()
   const productsQ = useProducts()
   const photosQ = useProductPhotos(productId)
   const statusesQ = useProductStatuses()
   const { createProduct, updateProduct, isSaving } = useProductMutations()
+  const { addAttributeValue, removeAttributeValue } = useProductAttributeMutations()
 
   const products = productsQ.data ?? []
   const statuses = statusesQ.data ?? []
@@ -325,6 +327,46 @@ export default function ProductEditor({ productId, onBack }: Props) {
             </div>
           )}
         </div>
+
+        {/* ── Characteristics (edit only) ── */}
+        {!isNew && existing && (
+          <div>
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-widest text-slate-400">Характеристики</label>
+            {attributes.length === 0 ? (
+              <p className="text-xs text-slate-400 italic">Характеристик ще немає — додайте у Довідниках</p>
+            ) : (
+              <div className="space-y-4">
+                {attributes.map(attr => {
+                  const selectedIds = new Set(existing.attributes.map(a => a.valueId))
+                  return (
+                    <div key={attr.id}>
+                      <p className="mb-1.5 text-xs font-medium text-slate-500">{attr.name}</p>
+                      {attr.values.length === 0 ? (
+                        <p className="text-xs text-slate-400">Немає значень у цій характеристиці</p>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {attr.values.map(v => {
+                            const active = selectedIds.has(v.id)
+                            return (
+                              <button key={v.id} type="button"
+                                onClick={() => active
+                                  ? removeAttributeValue({ productId: existing.id, attributeValueId: v.id })
+                                  : addAttributeValue({ productId: existing.id, attributeValueId: v.id })}
+                                className="rounded-xl px-3 py-2 text-xs font-medium border transition-all"
+                                style={active ? { background: '#7c3aed', color: '#fff', borderColor: '#7c3aed' } : { background: '#f5f3ff', color: '#7c3aed', borderColor: 'transparent' }}>
+                                {v.value}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Save */}
         <button onClick={handleSave} disabled={!canSave}

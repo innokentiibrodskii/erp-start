@@ -81,7 +81,7 @@ export function useProductMaterialMutations() {
   })
 
   const createOperation = useMutation({
-    mutationFn: async ({ name, unitId }: { name: string; unitId: string }) => createOperationDirect(name, unitId),
+    mutationFn: async ({ name }: { name: string }) => createOperationDirect(name),
     onSuccess: invalidateOperations,
     onError: onErr,
   })
@@ -90,7 +90,7 @@ export function useProductMaterialMutations() {
     addMaterial: (args: { productId: string; materialId: string; qty: number; unitId: string; operationId: string | null }) => add.mutateAsync(args),
     updateMaterial: (args: { productId: string; materialId: string; qty: number; operationId: string | null }) => update.mutateAsync(args),
     removeMaterial: (args: { productId: string; materialId: string }) => remove.mutate(args),
-    createOperation: (args: { name: string; unitId: string }) => createOperation.mutateAsync(args),
+    createOperation: (args: { name: string }) => createOperation.mutateAsync(args),
     isSaving: add.isPending || update.isPending || createOperation.isPending,
   }
 }

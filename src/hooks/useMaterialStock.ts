@@ -16,6 +16,7 @@ export interface StockMovement {
   productId: string | null
   type: MovementType
   qty: number
+  cost: number | null
   createdAt: number
 }
 
@@ -36,7 +37,7 @@ export function useStockMovements() {
     queryFn: async (): Promise<StockMovement[]> => {
       const { data, error } = await supabase
         .from('material_stock_movements')
-        .select('id, material_id, warehouse_id, product_id, type, qty, created_at')
+        .select('id, material_id, warehouse_id, product_id, type, qty, cost, created_at')
         .order('created_at', { ascending: false })
       if (error) throw error
       return data.map(m => ({
@@ -46,6 +47,7 @@ export function useStockMovements() {
         productId: m.product_id,
         type: m.type as MovementType,
         qty: Number(m.qty),
+        cost: m.cost !== null ? Number(m.cost) : null,
         createdAt: new Date(m.created_at).getTime(),
       }))
     },
@@ -80,8 +82,8 @@ export function useStockMutations() {
   const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error))
 
   const move = useMutation({
-    mutationFn: async ({ materialId, warehouseId, type, qty, productId }: { materialId: string; warehouseId: string; type: MovementType; qty: number; productId: string | null }) => {
-      const { error } = await supabase.from('material_stock_movements').insert({ material_id: materialId, warehouse_id: warehouseId, type, qty, product_id: productId })
+    mutationFn: async ({ materialId, warehouseId, type, qty, productId, cost }: { materialId: string; warehouseId: string; type: MovementType; qty: number; productId: string | null; cost: number | null }) => {
+      const { error } = await supabase.from('material_stock_movements').insert({ material_id: materialId, warehouse_id: warehouseId, type, qty, product_id: productId, cost })
       if (error) throw error
     },
     onSuccess: invalidate,
@@ -89,8 +91,8 @@ export function useStockMutations() {
   })
 
   return {
-    addStock: (args: { materialId: string; warehouseId: string; qty: number }) => move.mutateAsync({ ...args, type: 'in', productId: null }),
-    writeOffStock: (args: { materialId: string; warehouseId: string; qty: number; productId: string }) => move.mutateAsync({ ...args, type: 'out' }),
+    addStock: (args: { materialId: string; warehouseId: string; qty: number; cost: number | null }) => move.mutateAsync({ ...args, type: 'in', productId: null }),
+    writeOffStock: (args: { materialId: string; warehouseId: string; qty: number; productId: string }) => move.mutateAsync({ ...args, type: 'out', cost: null }),
     isSaving: move.isPending,
   }
 }

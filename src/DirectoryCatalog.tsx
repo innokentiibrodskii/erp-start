@@ -607,16 +607,17 @@ function AttributesPage({ onBack }: { onBack: () => void }) {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<ProductAttribute | null>(null)
   const [attrName, setAttrName] = useState('')
+  const [attrIsVariant, setAttrIsVariant] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [newValueInputs, setNewValueInputs] = useState<Record<string, string>>({})
 
-  const openAdd  = () => { setEditing(null); setAttrName(''); setFormOpen(true) }
-  const openEdit = (a: ProductAttribute) => { setEditing(a); setAttrName(a.name); setFormOpen(true) }
+  const openAdd  = () => { setEditing(null); setAttrName(''); setAttrIsVariant(false); setFormOpen(true) }
+  const openEdit = (a: ProductAttribute) => { setEditing(a); setAttrName(a.name); setAttrIsVariant(a.isVariant); setFormOpen(true) }
   const close    = () => setFormOpen(false)
   const save = () => {
     if (!attrName.trim()) return
-    if (editing) updateAttribute(editing.id, attrName.trim())
-    else addAttribute(attrName.trim())
+    if (editing) updateAttribute(editing.id, attrName.trim(), attrIsVariant)
+    else addAttribute(attrName.trim(), attrIsVariant)
     close()
   }
 
@@ -645,7 +646,12 @@ function AttributesPage({ onBack }: { onBack: () => void }) {
                     {attr.name[0]}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-800">{attr.name}</p>
+                    <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
+                      {attr.name}
+                      {attr.isVariant && (
+                        <span className="rounded-md px-1.5 py-0.5 text-[9px] font-medium" style={{ background: '#f5f3ff', color: '#7c3aed' }}>варіант</span>
+                      )}
+                    </p>
                     <p className="text-xs text-slate-400">{attr.values.length} значень</p>
                   </div>
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className={`ml-auto shrink-0 text-slate-400 transition-transform ${expanded ? 'rotate-180' : ''}`}>
@@ -686,10 +692,15 @@ function AttributesPage({ onBack }: { onBack: () => void }) {
       {formOpen && (
         <BottomSheet onClose={close}>
           <SheetTitle>{editing ? 'Редагувати групу' : 'Нова характеристика'}</SheetTitle>
-          <div className="px-5">
+          <div className="px-5 space-y-4">
             <Field label="Назва групи">
               <Input value={attrName} onChange={setAttrName} placeholder="Напр. Колір, Розмір" />
             </Field>
+            <label className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3 cursor-pointer">
+              <span className="text-sm text-slate-600">Формує варіант товару</span>
+              <input type="checkbox" checked={attrIsVariant} onChange={e => setAttrIsVariant(e.target.checked)}
+                className="h-4 w-4 rounded accent-slate-800" />
+            </label>
           </div>
           <SheetActions onCancel={close} onSave={save} saveLabel={editing ? 'Зберегти' : 'Додати'} disabled={!attrName.trim()} />
         </BottomSheet>
@@ -700,18 +711,18 @@ function AttributesPage({ onBack }: { onBack: () => void }) {
 
 /* ─── OPERATIONS ─── */
 function OperationsPage({ onBack }: { onBack: () => void }) {
-  const { operations, units, addOperation, updateOperation, removeOperation } = useCatalog()
-  const [form, setForm] = useState<{ open: boolean; editing: Operation | null; name: string; description: string; unitId: string }>
-    ({ open: false, editing: null, name: '', description: '', unitId: '' })
+  const { operations, addOperation, updateOperation, removeOperation } = useCatalog()
+  const [form, setForm] = useState<{ open: boolean; editing: Operation | null; name: string; description: string }>
+    ({ open: false, editing: null, name: '', description: '' })
 
-  const openAdd  = () => setForm({ open: true, editing: null, name: '', description: '', unitId: units[0]?.id ?? '' })
-  const openEdit = (o: Operation) => setForm({ open: true, editing: o, name: o.name, description: o.description, unitId: o.unitId })
+  const openAdd  = () => setForm({ open: true, editing: null, name: '', description: '' })
+  const openEdit = (o: Operation) => setForm({ open: true, editing: o, name: o.name, description: o.description })
   const close    = () => setForm(f => ({ ...f, open: false }))
 
   const save = () => {
-    if (!form.name.trim() || !form.unitId) return
-    if (form.editing) updateOperation(form.editing.id, form.name.trim(), form.description, form.unitId)
-    else addOperation(form.name.trim(), form.description, form.unitId)
+    if (!form.name.trim()) return
+    if (form.editing) updateOperation(form.editing.id, form.name.trim(), form.description)
+    else addOperation(form.name.trim(), form.description)
     close()
   }
 
@@ -731,7 +742,6 @@ function OperationsPage({ onBack }: { onBack: () => void }) {
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-slate-800">{op.name}</p>
               {op.description && <p className="text-xs text-slate-400 truncate mt-0.5">{op.description}</p>}
-              <span className="mt-1 inline-block rounded-full bg-orange-50 px-2 py-0.5 text-[10px] text-orange-500">{op.unitShortName}</span>
             </div>
             <EditButton onEdit={() => openEdit(op)} />
             <DeleteButton onDelete={() => removeOperation(op.id)} />
@@ -747,27 +757,8 @@ function OperationsPage({ onBack }: { onBack: () => void }) {
               <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Короткий опис операції…" rows={3}
                 className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all resize-none" />
             </Field>
-            <Field label="Одиниця виміру">
-              {units.length === 0 ? (
-                <p className="text-xs text-red-500">Спочатку додайте одиниці виміру</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {units.map(u => {
-                    const active = form.unitId === u.id
-                    return (
-                      <button key={u.id} onClick={() => setForm(f => ({ ...f, unitId: u.id }))}
-                        className="rounded-xl px-3 py-2 text-sm transition-all"
-                        style={active ? { background: '#1e293b', color: '#fff' } : { background: '#f1f5f9', color: '#64748b' }}>
-                        <span className="font-medium">{u.shortName}</span>
-                        <span className="ml-1 text-xs opacity-60">{u.name}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </Field>
           </div>
-          <SheetActions onCancel={close} onSave={save} saveLabel={form.editing ? 'Зберегти' : 'Додати'} disabled={!form.name.trim() || !form.unitId} />
+          <SheetActions onCancel={close} onSave={save} saveLabel={form.editing ? 'Зберегти' : 'Додати'} disabled={!form.name.trim()} />
         </BottomSheet>
       )}
     </div>

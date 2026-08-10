@@ -142,7 +142,7 @@ export default function App() {
               style={{ fontFamily: "'DM Serif Display', serif" }}
               className="text-2xl tracking-tight text-slate-800 select-none"
             >
-              <span className="text-blue-500">●</span> Аплікація
+              <span className="text-blue-500">●</span> R&D
             </div>
           </div>
 

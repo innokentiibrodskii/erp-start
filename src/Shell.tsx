@@ -1,18 +1,42 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import DirectoryCatalog from './DirectoryCatalog'
 import ProductCatalog from './ProductCatalog'
 import MaterialStock from './MaterialStock'
+import AssignmentsPage from './AssignmentsPage'
+import { useCurrentUser } from './hooks/useCurrentUser'
 
-type Page = 'products' | 'materials' | 'directory'
+type Page = 'products' | 'materials' | 'tasks' | 'directory'
+
+/** Сторінки, доступні лише менеджеру */
+const MANAGER_ONLY_PAGES: Page[] = ['products', 'materials', 'directory']
 
 interface Props {
   onLogout: () => void
 }
 
 export default function Shell({ onLogout }: Props) {
-  const [page, setPage] = useState<Page>('products')
+  const { data: currentUser } = useCurrentUser()
+  const isManager = currentUser?.role === 'manager'
 
-  const navItems: { id: Page; label: string; icon: (active: boolean) => React.ReactNode }[] = [
+  const [page, setPage] = useState<Page>('tasks')
+
+  // Виконавцю недоступні "Продукти" й "Матеріали" — якщо туди потрапили
+  // (наприклад дефолтний стан до завантаження ролі), повертаємо на "Завдання".
+  useEffect(() => {
+    if (currentUser && !isManager && MANAGER_ONLY_PAGES.includes(page)) {
+      setPage('tasks')
+    }
+  }, [currentUser, isManager, page])
+
+  // Менеджеру за замовчуванням відкриваємо "Продукти", щойно роль відома.
+  useEffect(() => {
+    if (currentUser && isManager) {
+      setPage(p => (p === 'tasks' ? 'products' : p))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id, isManager])
+
+  const allNavItems: { id: Page; label: string; icon: (active: boolean) => React.ReactNode }[] = [
     {
       id: 'products',
       label: 'Продукти',
@@ -36,6 +60,16 @@ export default function Shell({ onLogout }: Props) {
       ),
     },
     {
+      id: 'tasks',
+      label: 'Завдання',
+      icon: a => (
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+          <rect x="4" y="2.5" width="14" height="17" rx="2.5" stroke="currentColor" strokeWidth={a ? 2 : 1.5} fill={a ? 'currentColor' : 'none'} fillOpacity="0.1"/>
+          <path d="M7.5 8.5l2 2 3.5-4M7.5 14.5h6" stroke="currentColor" strokeWidth={a ? 2 : 1.5} strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      ),
+    },
+    {
       id: 'directory',
       label: 'Довідники',
       icon: a => (
@@ -47,13 +81,15 @@ export default function Shell({ onLogout }: Props) {
     },
   ]
 
+  const navItems = allNavItems.filter(item => isManager || !MANAGER_ONLY_PAGES.includes(item.id))
+
   return (
     <div className="flex flex-col min-h-screen max-w-lg mx-auto" style={{ fontFamily: "'DM Sans', sans-serif", background: '#f8fbff' }}>
       {/* Top header */}
       <header className="sticky top-0 z-20 flex items-center justify-between px-4 py-3"
         style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(14px)', borderBottom: '1px solid rgba(157,200,255,0.22)' }}>
         <span style={{ fontFamily: "'DM Serif Display', serif" }} className="text-lg text-slate-800">
-          <span className="text-blue-500">●</span> Аплікація
+          <span className="text-blue-500">●</span> R&D
         </span>
         <div className="flex items-center gap-2">
           <div className="h-7 w-7 rounded-full bg-blue-100 flex items-center justify-center text-xs font-semibold text-blue-600">А</div>
@@ -67,9 +103,10 @@ export default function Shell({ onLogout }: Props) {
 
       {/* Page content */}
       <main className="flex-1 overflow-y-auto pb-24">
-        {page === 'products'   && <ProductCatalog onNavigate={p => setPage(p as Page)} />}
-        {page === 'materials'  && <MaterialStock onNavigate={p => setPage(p as Page)} />}
-        {page === 'directory'  && <DirectoryCatalog onNavigate={p => setPage(p as Page)} />}
+        {page === 'products'  && isManager && <ProductCatalog onNavigate={p => setPage(p as Page)} />}
+        {page === 'materials' && isManager && <MaterialStock onNavigate={p => setPage(p as Page)} />}
+        {page === 'tasks'     && <AssignmentsPage />}
+        {page === 'directory' && isManager && <DirectoryCatalog onNavigate={p => setPage(p as Page)} />}
       </main>
 
       {/* Bottom nav */}

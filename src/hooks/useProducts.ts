@@ -22,6 +22,13 @@ export interface ProductOperationLink {
   cost: number | null
 }
 
+export interface ProductAttributeLink {
+  valueId: string
+  value: string
+  attributeId: string
+  attributeName: string
+}
+
 export interface Product {
   id: string
   name: string
@@ -34,6 +41,7 @@ export interface Product {
   updatedAt: number
   materials: ProductMaterialLink[]
   operations: ProductOperationLink[]
+  attributes: ProductAttributeLink[]
 }
 
 export type { Material } from './useMaterials'
@@ -90,7 +98,8 @@ export function useProducts() {
           id, name, description, sku, category_id, status_id, created_at, updated_at,
           product_images(url, position),
           product_materials(material_id, qty, unit_id, operation_id, units(short_name)),
-          product_operations(id, operation_id, task_id, tasks!product_operations_task_id_fkey(name, duration_minutes, cost))
+          product_operations(id, operation_id, task_id, tasks!product_operations_task_id_fkey(name, duration_minutes, cost)),
+          product_attribute_values(attribute_value_id, attribute_values(value, attribute_id, attributes(name)))
         `)
         .order('name')
       if (error) throw error
@@ -123,6 +132,15 @@ export function useProducts() {
               taskName: task?.name ?? '',
               durationMinutes: task?.duration_minutes !== undefined && task?.duration_minutes !== null ? Number(task.duration_minutes) : null,
               cost: task?.cost !== undefined && task?.cost !== null ? Number(task.cost) : null,
+            }
+          }),
+          attributes: (p.product_attribute_values ?? []).map(pav => {
+            const av = pav.attribute_values as unknown as { value: string; attribute_id: string; attributes: { name: string } | null } | null
+            return {
+              valueId: pav.attribute_value_id,
+              value: av?.value ?? '',
+              attributeId: av?.attribute_id ?? '',
+              attributeName: av?.attributes?.name ?? '',
             }
           }),
         }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Operation, Unit } from './hooks/useCatalog'
+import type { Operation } from './hooks/useCatalog'
 import { createOperationDirect } from './hooks/useCatalog'
 import { useProductTasks, useProductOperationMutations, type ProductTask } from './hooks/useProductOperations'
 
@@ -10,11 +10,10 @@ import { useProductTasks, useProductOperationMutations, type ProductTask } from 
    створити нову прямо тут.
 ─────────────────────────────────────────────────────────── */
 
-export default function OperationPickerSheet({ productId, allOperations, alreadyAddedIds, units, onClose, onAdded }: {
+export default function OperationPickerSheet({ productId, allOperations, alreadyAddedIds, onClose, onAdded }: {
   productId: string
   allOperations: Operation[]
   alreadyAddedIds: string[]
-  units: Unit[]
   onClose: () => void
   onAdded: () => void
 }) {
@@ -34,7 +33,6 @@ export default function OperationPickerSheet({ productId, allOperations, already
 
   const [newOpMode, setNewOpMode] = useState(false)
   const [newOpName, setNewOpName] = useState('')
-  const [newOpUnitId, setNewOpUnitId] = useState<string>(units[0]?.id ?? '')
   const [creatingOp, setCreatingOp] = useState(false)
 
   const available = operations.filter(o => o.name.toLowerCase().includes(search.toLowerCase()))
@@ -49,11 +47,11 @@ export default function OperationPickerSheet({ productId, allOperations, already
   }
 
   const handleCreateOperation = async () => {
-    if (!newOpName.trim() || !newOpUnitId) return
+    if (!newOpName.trim()) return
     setCreatingOp(true)
     try {
-      const id = await createOperationDirect(newOpName.trim(), newOpUnitId)
-      const created: Operation = { id, name: newOpName.trim(), description: '', unitId: newOpUnitId, unitShortName: units.find(u => u.id === newOpUnitId)?.shortName ?? '' }
+      const id = await createOperationDirect(newOpName.trim())
+      const created: Operation = { id, name: newOpName.trim(), description: '' }
       setOperations(prev => [...prev, created])
       selectOperation(id, created.name)
       setNewOpMode(false)
@@ -126,7 +124,7 @@ export default function OperationPickerSheet({ productId, allOperations, already
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-800 truncate">{o.name}</p>
-                    <p className="text-xs text-slate-400">{o.unitShortName}{o.description ? ` · ${o.description}` : ''}</p>
+                    {o.description && <p className="text-xs text-slate-400">{o.description}</p>}
                   </div>
                   {addedCount(o.id) > 0 && (
                     <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
@@ -147,7 +145,7 @@ export default function OperationPickerSheet({ productId, allOperations, already
                   className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-all" />
                 <div className="flex gap-2">
                   <button onClick={() => setNewOpMode(false)} className="flex-1 rounded-xl border border-slate-200 py-2 text-xs text-slate-600">Скасувати</button>
-                  <button onClick={handleCreateOperation} disabled={!newOpName.trim() || !newOpUnitId || creatingOp}
+                  <button onClick={handleCreateOperation} disabled={!newOpName.trim() || creatingOp}
                     className="flex-1 rounded-xl bg-slate-800 py-2 text-xs font-medium text-white disabled:opacity-40">
                     {creatingOp ? 'Створення…' : 'Створити і обрати'}
                   </button>
@@ -166,7 +164,7 @@ export default function OperationPickerSheet({ productId, allOperations, already
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-slate-800 truncate">{selectedOperation.name}</p>
-                <p className="text-xs text-slate-400">{selectedOperation.unitShortName}</p>
+                {selectedOperation.description && <p className="text-xs text-slate-400">{selectedOperation.description}</p>}
               </div>
               <button onClick={() => { setOperationId(null); resetAddErrors() }} className="text-xs text-blue-500 font-medium shrink-0">Змінити</button>
             </div>

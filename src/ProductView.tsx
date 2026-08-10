@@ -1,6 +1,9 @@
+import { useState } from 'react'
 import QRCodeLib from 'react-qr-code'
 import { useCatalog } from './hooks/useCatalog'
 import { useProducts, useMaterials, useProductStatuses } from './hooks/useProducts'
+import { useAssignments, type AssignmentStatus } from './hooks/useAssignments'
+import { useStockMovements } from './hooks/useMaterialStock'
 
 interface Props {
   productId: string
@@ -8,21 +11,71 @@ interface Props {
   onEdit: () => void
 }
 
+const STATUS_LABEL: Record<AssignmentStatus, string> = {
+  pending: 'В очікуванні', in_progress: 'В роботі', paused: 'Перерва', done: 'Завершено', cancelled: 'Скасовано',
+}
+const STATUS_STYLE: Record<AssignmentStatus, { bg: string; text: string }> = {
+  pending: { bg: '#e0f2fe', text: '#0284c7' },
+  in_progress: { bg: '#dbeafe', text: '#2563eb' },
+  paused: { bg: '#fef3c7', text: '#d97706' },
+  done: { bg: '#dcfce7', text: '#16a34a' },
+  cancelled: { bg: '#f1f5f9', text: '#64748b' },
+}
+
+/** Декартів добуток значень варіантоутворюючих характеристик продукту —
+ *  кожна комбінація значень (по одному з кожної групи) є окремим варіантом товару. */
+function buildVariants(
+  productAttributes: { attributeId: string; attributeName: string; value: string }[],
+  variantAttributeIds: Set<string>
+): string[][] {
+  const groups = new Map<string, { attributeName: string; values: string[] }>()
+  for (const pa of productAttributes) {
+    if (!variantAttributeIds.has(pa.attributeId)) continue
+    if (!groups.has(pa.attributeId)) groups.set(pa.attributeId, { attributeName: pa.attributeName, values: [] })
+    groups.get(pa.attributeId)!.values.push(pa.value)
+  }
+  const groupList = Array.from(groups.values())
+  if (groupList.length === 0) return []
+
+  let combos: string[][] = [[]]
+  for (const g of groupList) {
+    const next: string[][] = []
+    for (const combo of combos) {
+      for (const val of g.values) next.push([...combo, `${g.attributeName}: ${val}`])
+    }
+    combos = next
+  }
+  return combos
+}
+
 export default function ProductView({ productId, onBack, onEdit }: Props) {
-  const { categories, operations } = useCatalog()
+  const { categories, operations, warehouses, attributes: catalogAttributes } = useCatalog()
   const productsQ = useProducts()
   const materialsQ = useMaterials()
   const statusesQ = useProductStatuses()
+  const assignmentsQ = useAssignments()
+  const movementsQ = useStockMovements()
   const products = productsQ.data ?? []
   const materials = materialsQ.data ?? []
   const statuses = statusesQ.data ?? []
+  const assignments = assignmentsQ.data ?? []
+  const movements = movementsQ.data ?? []
+
+  const [tab, setTab] = useState<'tasks' | 'writeoffs'>('tasks')
+  const [variantsOpen, setVariantsOpen] = useState(false)
 
   const product = products.find(p => p.id === productId)
   if (!product) return null
 
+  const productAssignments = assignments.filter(a => a.productId === productId)
+  const productWriteoffs = movements.filter(m => m.productId === productId && m.type === 'out')
+
   const cat = categories.find(c => c.id === product.categoryId)
   const status = statuses.find(s => s.id === product.statusId)
   const qrUrl = `${window.location.origin}/?product=${product.id}`
+
+  const variantAttributeIds = new Set(catalogAttributes.filter(a => a.isVariant).map(a => a.id))
+  const variants = buildVariants(product.attributes, variantAttributeIds)
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -76,6 +129,128 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
               )}
             </div>
           </div>
+        </div>
+
+        {/* Characteristics */}
+        {product.attributes.length > 0 && (
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-400">Характеристики</p>
+            <div className="flex flex-wrap gap-2 rounded-2xl bg-white px-4 py-3" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>
+              {product.attributes.map(a => (
+                <span key={a.valueId} className="rounded-xl px-3 py-1.5 text-xs font-medium" style={{ background: '#f5f3ff', color: '#7c3aed' }}>
+                  {a.attributeName}: {a.value}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Variants — декартів добуток значень варіантоутворюючих характеристик (згорнуто за замовчуванням) */}
+        {variants.length > 0 && (
+          <div className="rounded-2xl bg-white overflow-hidden" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>
+            <button onClick={() => setVariantsOpen(v => !v)}
+              className="flex w-full items-center justify-between px-4 py-3.5 text-left">
+              <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+                Варіанти {`(${variants.length})`}
+              </p>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
+                className={`shrink-0 text-slate-400 transition-transform ${variantsOpen ? 'rotate-180' : ''}`}>
+                <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+            {variantsOpen && (
+              <div className="px-4 pb-4 space-y-2" style={{ borderTop: '1px solid rgba(157,200,255,0.15)' }}>
+                {variants.map((combo, i) => (
+                  <div key={i} className="flex flex-wrap items-center gap-1.5 rounded-2xl px-4 py-3 mt-3"
+                    style={{ background: '#fafbff', border: '1px solid rgba(157,200,255,0.18)' }}>
+                    {combo.map((label, j) => (
+                      <span key={j} className="rounded-lg px-2 py-1 text-[10px] font-medium" style={{ background: '#f5f3ff', color: '#7c3aed' }}>
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* QR */}
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-400">QR-код</p>
+          <div className="flex items-center gap-4 rounded-2xl bg-white px-5 py-4" style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
+            <QRCodeLib value={qrUrl} size={80} />
+            <div>
+              <p className="text-sm font-medium text-slate-700">Відкриє картку продукту</p>
+              <p className="text-xs text-slate-400 mt-0.5 break-all">{qrUrl}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Tabs: Завдання / Списані матеріали */}
+        <div>
+          <div className="mb-2 flex gap-1.5 rounded-2xl bg-white p-1" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>
+            <button onClick={() => setTab('tasks')}
+              className="flex-1 rounded-xl py-2 text-xs font-medium transition-all"
+              style={tab === 'tasks' ? { background: '#1e293b', color: '#fff' } : { color: '#64748b' }}>
+              Завдання {productAssignments.length > 0 ? `(${productAssignments.length})` : ''}
+            </button>
+            <button onClick={() => setTab('writeoffs')}
+              className="flex-1 rounded-xl py-2 text-xs font-medium transition-all"
+              style={tab === 'writeoffs' ? { background: '#1e293b', color: '#fff' } : { color: '#64748b' }}>
+              Списані матеріали {productWriteoffs.length > 0 ? `(${productWriteoffs.length})` : ''}
+            </button>
+          </div>
+
+          {tab === 'tasks' ? (
+            productAssignments.length === 0 ? (
+              <div className="rounded-2xl bg-white py-8 text-center" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>
+                <p className="text-sm text-slate-400">Завдань для цього продукту ще немає</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {productAssignments.map(a => {
+                  const style = STATUS_STYLE[a.status]
+                  return (
+                    <div key={a.id} className="rounded-2xl bg-white px-4 py-3" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-medium text-slate-800 truncate">{a.name}</p>
+                        <span className="shrink-0 rounded-lg px-2 py-1 text-[10px] font-medium" style={{ background: style.bg, color: style.text }}>
+                          {STATUS_LABEL[a.status]}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-xs text-slate-400 truncate">{a.operationName} · {a.assigneeName}</p>
+                      {a.durationMinutes !== null && (
+                        <p className="mt-1 text-xs font-mono text-slate-500">{a.durationMinutes} хв</p>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          ) : (
+            productWriteoffs.length === 0 ? (
+              <div className="rounded-2xl bg-white py-8 text-center" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>
+                <p className="text-sm text-slate-400">Списань матеріалів для цього продукту ще немає</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {productWriteoffs.map(m => {
+                  const mat = materials.find(x => x.id === m.materialId)
+                  const wh = warehouses.find(w => w.id === m.warehouseId)
+                  return (
+                    <div key={m.id} className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-800 truncate">{mat?.name ?? '—'}</p>
+                        <p className="text-xs text-slate-400 truncate">{wh?.name ?? '—'} · {new Date(m.createdAt).toLocaleDateString('uk-UA')}</p>
+                      </div>
+                      <span className="text-sm font-mono text-slate-600 shrink-0">−{m.qty}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          )}
         </div>
 
         {/* Materials */}
@@ -138,17 +313,6 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
           </div>
         )}
 
-        {/* QR */}
-        <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-400">QR-код</p>
-          <div className="flex items-center gap-4 rounded-2xl bg-white px-5 py-4" style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
-            <QRCodeLib value={qrUrl} size={80} />
-            <div>
-              <p className="text-sm font-medium text-slate-700">Відкриє картку продукту</p>
-              <p className="text-xs text-slate-400 mt-0.5 break-all">{qrUrl}</p>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   )

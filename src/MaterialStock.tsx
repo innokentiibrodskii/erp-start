@@ -154,6 +154,7 @@ function StockMovementSheet({ mode, materials, warehouses, balances, onClose, on
   const [productSearch, setProductSearch] = useState('')
   const [productId, setProductId] = useState<string | null>(null)
   const [qty, setQty] = useState('')
+  const [cost, setCost] = useState('')
 
   const selectedMaterial = materialId ? materials.find(m => m.id === materialId) ?? null : null
   const filteredMaterials = materials.filter(m => m.name.toLowerCase().includes(materialSearch.toLowerCase()))
@@ -166,9 +167,11 @@ function StockMovementSheet({ mode, materials, warehouses, balances, onClose, on
   const canConfirm = materialId !== null && warehouseId !== null && qty.trim() !== '' && qtyNum > 0 &&
     (mode === 'in' || (qtyNum <= currentBalance && productId !== null))
 
+  const costNum = cost.trim() === '' ? null : Number(cost)
+
   const handleConfirm = async () => {
     if (!canConfirm || !materialId || !warehouseId) return
-    if (mode === 'in') await addStock({ materialId, warehouseId, qty: qtyNum })
+    if (mode === 'in') await addStock({ materialId, warehouseId, qty: qtyNum, cost: costNum })
     else if (productId) await writeOffStock({ materialId, warehouseId, qty: qtyNum, productId })
     onDone()
   }
@@ -319,6 +322,17 @@ function StockMovementSheet({ mode, materials, warehouses, balances, onClose, on
               {mode === 'out' && qtyNum > currentBalance && qty.trim() !== '' && (
                 <p className="mt-1.5 text-xs text-red-500">Кількість перевищує наявний залишок</p>
               )}
+            </div>
+          )}
+
+          {/* Cost — лише для приходу */}
+          {mode === 'in' && selectedMaterial && warehouseId && (
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">
+                Вартість, ₴ <span className="normal-case text-slate-400 font-normal">(необов'язково)</span>
+              </label>
+              <input type="number" min="0" step="any" value={cost} onChange={e => setCost(e.target.value)} placeholder="0"
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
             </div>
           )}
         </div>

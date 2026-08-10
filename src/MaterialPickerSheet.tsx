@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Material } from './hooks/useMaterials'
-import type { Operation, Unit } from './hooks/useCatalog'
+import type { Operation } from './hooks/useCatalog'
 import { useProductMaterialMutations } from './hooks/useProductMaterials'
 
 /* ───────────────────────────────────────────────────────────
@@ -8,12 +8,11 @@ import { useProductMaterialMutations } from './hooks/useProductMaterials'
    операція (обрати наявну / без операції / створити нову інлайн)
 ─────────────────────────────────────────────────────────── */
 
-export default function MaterialPickerSheet({ productId, allMaterials, alreadyAddedIds, operations, units, onClose, onAdd }: {
+export default function MaterialPickerSheet({ productId, allMaterials, alreadyAddedIds, operations, onClose, onAdd }: {
   productId: string
   allMaterials: Material[]
   alreadyAddedIds: string[]
   operations: Operation[]
-  units: Unit[]
   onClose: () => void
   onAdd: (args: { productId: string; materialId: string; qty: number; unitId: string; operationId: string | null }) => Promise<void>
 }) {
@@ -24,15 +23,14 @@ export default function MaterialPickerSheet({ productId, allMaterials, alreadyAd
   const [operationId, setOperationId] = useState<string | null>(null)
   const [newOpMode, setNewOpMode] = useState(false)
   const [newOpName, setNewOpName] = useState('')
-  const [newOpUnitId, setNewOpUnitId] = useState<string>(units[0]?.id ?? '')
   const [saving, setSaving] = useState(false)
 
   const available = allMaterials.filter(m => !alreadyAddedIds.includes(m.id) && m.name.toLowerCase().includes(search.toLowerCase()))
   const selectedMaterial = materialId ? allMaterials.find(m => m.id === materialId) ?? null : null
 
   const handleCreateOperation = async () => {
-    if (!newOpName.trim() || !newOpUnitId) return
-    const id = await createOperation({ name: newOpName.trim(), unitId: newOpUnitId })
+    if (!newOpName.trim()) return
+    const id = await createOperation({ name: newOpName.trim() })
     setOperationId(id)
     setNewOpMode(false)
     setNewOpName('')
@@ -141,18 +139,9 @@ export default function MaterialPickerSheet({ productId, allMaterials, alreadyAd
                 <div className="rounded-2xl border border-slate-200 p-3 space-y-3 mt-2">
                   <input type="text" value={newOpName} onChange={e => setNewOpName(e.target.value)} placeholder="Назва операції"
                     className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-all" />
-                  <div className="flex flex-wrap gap-2">
-                    {units.map(u => (
-                      <button key={u.id} onClick={() => setNewOpUnitId(u.id)}
-                        className="rounded-lg px-2.5 py-1.5 text-xs transition-all"
-                        style={newOpUnitId === u.id ? { background: '#1e293b', color: '#fff' } : { background: '#f1f5f9', color: '#64748b' }}>
-                        {u.shortName}
-                      </button>
-                    ))}
-                  </div>
                   <div className="flex gap-2">
                     <button onClick={() => setNewOpMode(false)} className="flex-1 rounded-xl border border-slate-200 py-2 text-xs text-slate-600">Скасувати</button>
-                    <button onClick={handleCreateOperation} disabled={!newOpName.trim() || !newOpUnitId}
+                    <button onClick={handleCreateOperation} disabled={!newOpName.trim()}
                       className="flex-1 rounded-xl bg-slate-800 py-2 text-xs font-medium text-white disabled:opacity-40">
                       Створити і обрати
                     </button>

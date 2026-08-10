@@ -9,7 +9,7 @@ import ProductView from './ProductView'
 import MaterialPickerSheet from './MaterialPickerSheet'
 import OperationPickerSheet from './OperationPickerSheet'
 
-type QuickActionType = 'materials' | 'operations'
+type QuickActionType = 'materials' | 'operations' | 'attributes'
 
 const LS_SORT_BY  = 'products_sortBy'
 const LS_SORT_DIR = 'products_sortDir'
@@ -25,7 +25,7 @@ function lsSet(key: string, val: unknown) {
 interface Props { onNavigate: (page: string) => void }
 
 export default function ProductCatalog({ onNavigate: _onNavigate }: Props) {
-  const { categories, operations, units } = useCatalog()
+  const { categories, operations } = useCatalog()
   const productsQ = useProducts()
   const materialsQ = useMaterials()
   const statusesQ = useProductStatuses()
@@ -256,6 +256,11 @@ export default function ProductCatalog({ onNavigate: _onNavigate }: Props) {
                           {product.operations.length} опер.
                         </span>
                       )}
+                      {product.attributes.length > 0 && (
+                        <span className="rounded-full px-2 py-0.5 text-[10px]" style={{ background: '#f5f3ff', color: '#7c3aed' }}>
+                          {product.attributes.length} характ.
+                        </span>
+                      )}
                     </div>
                   </div>
                   {/* QR + Edit — stop propagation so card tap still works */}
@@ -396,7 +401,6 @@ export default function ProductCatalog({ onNavigate: _onNavigate }: Props) {
                   allMaterials={materials}
                   alreadyAddedIds={product.materials.map(m => m.materialId)}
                   operations={operations}
-                  units={units}
                   onClose={() => setMaterialPickerOpen(false)}
                   onAdd={async args => { await addMaterial(args); setMaterialPickerOpen(false) }}
                 />
@@ -407,7 +411,6 @@ export default function ProductCatalog({ onNavigate: _onNavigate }: Props) {
                   productId={product.id}
                   allOperations={operations}
                   alreadyAddedIds={product.operations.map(o => o.operationId)}
-                  units={units}
                   onClose={() => setOperationPickerOpen(false)}
                   onAdded={() => setOperationPickerOpen(false)}
                 />
