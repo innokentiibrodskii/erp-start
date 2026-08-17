@@ -1,11 +1,18 @@
 import { useEffect, useState, type CSSProperties, type PointerEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
+import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from './lib/supabase'
 import Shell from './Shell'
+import { OrgContext, type OrgMembership } from './OrgContext'
+import CompanyPicker from './CompanyPicker'
+import CompanyBlocked from './CompanyBlocked'
 
-type Step = 'email' | 'password'
+const ACTIVE_ORG_STORAGE_KEY = 'rd_active_org'
+
+type Step = 'email' | 'password' | 'forgot'
 
 export default function App() {
+  const queryClient = useQueryClient()
   const [hovering, setHovering] = useState(false)
   const [cursor, setCursor] = useState({ x: 0, y: 0 })
   const [step, setStep] = useState<Step>('email')
@@ -16,8 +23,27 @@ export default function App() {
   const [passwordError, setPasswordError] = useState('')
   const [loading, setLoading] = useState(false)
 
+  // Відновлення паролю: запит листа з посиланням.
+  const [resetSent, setResetSent] = useState(false)
+  const [resetError, setResetError] = useState('')
+  const [resetLoading, setResetLoading] = useState(false)
+
+  // Відновлення паролю: сесія, отримана переходом за посиланням з листа —
+  // до встановлення нового пароля показуємо окремий екран замість звичайного входу.
+  const [passwordRecovery, setPasswordRecovery] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState('')
+  const [newPasswordError, setNewPasswordError] = useState('')
+  const [newPasswordLoading, setNewPasswordLoading] = useState(false)
+
   const [session, setSession] = useState<Session | null>(null)
   const [checkingSession, setCheckingSession] = useState(true)
+
+  // Мультитенантність: компанії, до яких належить користувач, і яку з них
+  // обрано активною в цій сесії роботи із застосунком.
+  const [memberships, setMemberships] = useState<OrgMembership[] | null>(null)
+  const [orgError, setOrgError] = useState<string | null>(null)
+  const [activeOrgId, setActiveOrgIdState] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -25,12 +51,53 @@ export default function App() {
       setCheckingSession(false)
     })
 
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, newSession) => {
       setSession(newSession)
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true)
     })
 
     return () => subscription.subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+    if (!session) {
+      setMemberships(null)
+      setActiveOrgIdState(null)
+      setOrgError(null)
+      return
+    }
+    let cancelled = false
+    supabase
+      .from('user_organizations')
+      .select('organization_id, organizations(name)')
+      .eq('user_id', session.user.id)
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error) {
+          setOrgError(error.message)
+          return
+        }
+        const list: OrgMembership[] = (data ?? []).map(row => {
+          const org = row.organizations as unknown as { name: string } | null
+          return { id: row.organization_id as string, name: org?.name ?? '—' }
+        })
+        setMemberships(list)
+        if (list.length === 1) {
+          setActiveOrgIdState(list[0].id)
+          try { localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, list[0].id) } catch { /* ignore */ }
+        }
+      })
+    return () => { cancelled = true }
+  }, [session])
+
+  const handleSelectOrg = (id: string) => {
+    setActiveOrgIdState(id)
+    try { localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, id) } catch { /* ignore */ }
+  }
+
+  const handleRequestSwitch = () => {
+    setActiveOrgIdState(null)
+  }
 
   const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -103,8 +170,47 @@ export default function App() {
     }
   }
 
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const err = validateEmail(email)
+    if (err) { setEmailError(err); return }
+    setEmailError('')
+    setResetError('')
+    setResetLoading(true)
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    })
+
+    setResetLoading(false)
+    if (error) setResetError(translateAuthError(error.message))
+    else setResetSent(true)
+  }
+
+  const handleSetNewPassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newPassword) { setNewPasswordError('Введіть новий пароль'); return }
+    if (newPassword.length < 6) { setNewPasswordError('Пароль має містити щонайменше 6 символів'); return }
+    if (newPassword !== newPasswordConfirm) { setNewPasswordError('Паролі не співпадають'); return }
+    setNewPasswordError('')
+    setNewPasswordLoading(true)
+
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+
+    setNewPasswordLoading(false)
+    if (error) { setNewPasswordError(translateAuthError(error.message)); return }
+    setPasswordRecovery(false)
+    setNewPassword('')
+    setNewPasswordConfirm('')
+  }
+
   const handleSignOut = async () => {
-    await supabase.auth.signOut()
+    const { error } = await supabase.auth.signOut()
+    if (error) console.error('Помилка виходу:', error.message)
+    // Не покладаємось лише на onAuthStateChange — примусово скидаємо сесію
+    // й кеш react-query, щоб кнопка "Вийти" завжди миттєво повертала на екран входу.
+    queryClient.clear()
+    setSession(null)
     setStep('email')
     setEmail('')
     setPassword('')
@@ -118,8 +224,107 @@ export default function App() {
     )
   }
 
+  if (passwordRecovery) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#f8fbff] px-4" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+        <div className="w-full max-w-sm">
+          <div className="mb-10 flex justify-center">
+            <div style={{ fontFamily: "'DM Serif Display', serif" }} className="text-2xl tracking-tight text-slate-800 select-none">
+              <span className="text-blue-500">●</span> R&D
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-white/80 backdrop-blur-md px-8 py-10 shadow-sm" style={{ border: '1px solid rgba(157,200,255,0.35)' }}>
+            <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="mb-1 text-[1.65rem] leading-tight text-slate-800">
+              Новий пароль
+            </h1>
+            <p className="mb-8 text-sm text-slate-500 font-light">
+              Придумайте новий пароль для входу
+            </p>
+
+            <form onSubmit={handleSetNewPassword} noValidate>
+              <label className="mb-1 block text-xs font-medium uppercase tracking-widest text-slate-400">
+                Новий пароль
+              </label>
+              <input
+                type="password"
+                autoFocus
+                value={newPassword}
+                onChange={e => { setNewPassword(e.target.value); setNewPasswordError('') }}
+                placeholder="••••••••"
+                className={`w-full rounded-xl border px-4 py-3 text-sm text-slate-800 outline-none transition-all placeholder:text-slate-300
+                  focus:border-blue-400 focus:ring-2 focus:ring-blue-100
+                  ${newPasswordError ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white'}`}
+              />
+
+              <label className="mb-1 mt-4 block text-xs font-medium uppercase tracking-widest text-slate-400">
+                Підтвердіть пароль
+              </label>
+              <input
+                type="password"
+                value={newPasswordConfirm}
+                onChange={e => { setNewPasswordConfirm(e.target.value); setNewPasswordError('') }}
+                placeholder="••••••••"
+                className={`w-full rounded-xl border px-4 py-3 text-sm text-slate-800 outline-none transition-all placeholder:text-slate-300
+                  focus:border-blue-400 focus:ring-2 focus:ring-blue-100
+                  ${newPasswordError ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white'}`}
+              />
+              {newPasswordError && (
+                <p className="mt-2 text-xs text-red-500">{newPasswordError}</p>
+              )}
+
+              <button
+                type="submit"
+                disabled={newPasswordLoading}
+                className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 py-3 text-sm font-medium text-white transition-all hover:bg-slate-700 active:scale-[0.98] disabled:opacity-60"
+              >
+                {newPasswordLoading ? (
+                  <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                ) : 'Зберегти пароль'}
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (session) {
-    return <Shell onLogout={handleSignOut} />
+    if (orgError) {
+      return <CompanyBlocked message={`Помилка завантаження компаній: ${orgError}`} onLogout={handleSignOut} />
+    }
+    if (memberships === null) {
+      return (
+        <div style={container} className="flex items-center justify-center">
+          <span className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-blue-200 border-t-blue-500" />
+        </div>
+      )
+    }
+    if (memberships.length === 0) {
+      return (
+        <CompanyBlocked
+          message="Ваш обліковий запис поки не прив'язаний до жодної компанії. Зверніться до адміністратора."
+          onLogout={handleSignOut}
+        />
+      )
+    }
+    if (!activeOrgId) {
+      return <CompanyPicker memberships={memberships} onSelect={handleSelectOrg} onLogout={handleSignOut} />
+    }
+    const activeOrgName = memberships.find(m => m.id === activeOrgId)?.name ?? ''
+    return (
+      <OrgContext.Provider
+        value={{
+          activeOrgId,
+          activeOrgName,
+          memberships,
+          canSwitch: memberships.length > 1,
+          requestSwitch: handleRequestSwitch,
+        }}
+      >
+        <Shell onLogout={handleSignOut} />
+      </OrgContext.Provider>
+    )
   }
 
   return (
@@ -151,10 +356,11 @@ export default function App() {
             className="rounded-2xl bg-white/80 backdrop-blur-md px-8 py-10 shadow-sm"
             style={{ border: '1px solid rgba(157,200,255,0.35)' }}
           >
-            {/* Step indicator */}
+            {/* Step indicator — 3 кроки: email → пароль → компанія */}
             <div className="mb-7 flex items-center gap-2">
-              <div className={`h-1 flex-1 rounded-full transition-all duration-500 ${step === 'email' || step === 'password' ? 'bg-blue-400' : 'bg-slate-200'}`} />
-              <div className={`h-1 flex-1 rounded-full transition-all duration-500 ${step === 'password' ? 'bg-blue-400' : 'bg-slate-200'}`} />
+              <div className={`h-1 flex-1 rounded-full transition-all duration-500 ${step === 'email' || step === 'password' || step === 'forgot' ? 'bg-blue-400' : 'bg-slate-200'}`} />
+              <div className={`h-1 flex-1 rounded-full transition-all duration-500 ${step === 'password' || step === 'forgot' ? 'bg-blue-400' : 'bg-slate-200'}`} />
+              <div className="h-1 flex-1 rounded-full bg-slate-200" />
             </div>
 
             {/* Email step */}
@@ -251,7 +457,13 @@ export default function App() {
                 )}
 
                 <div className="mt-3 flex justify-end">
-                  <a href="#" className="text-xs text-blue-500 hover:underline">Забули пароль?</a>
+                  <button
+                    type="button"
+                    onClick={() => { setStep('forgot'); setResetSent(false); setResetError('') }}
+                    className="text-xs text-blue-500 hover:underline"
+                  >
+                    Забули пароль?
+                  </button>
                 </div>
 
                 <button
@@ -264,6 +476,76 @@ export default function App() {
                   ) : 'Увійти'}
                 </button>
               </form>
+            )}
+
+            {/* Forgot password step */}
+            {step === 'forgot' && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => { setStep('password'); setResetSent(false); setResetError('') }}
+                  className="mb-5 flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  <BackArrow /> Назад
+                </button>
+
+                <h1
+                  style={{ fontFamily: "'DM Serif Display', serif" }}
+                  className="mb-1 text-[1.65rem] leading-tight text-slate-800"
+                >
+                  Відновлення паролю
+                </h1>
+
+                {!resetSent ? (
+                  <form onSubmit={handleForgotSubmit} noValidate>
+                    <p className="mb-8 text-sm text-slate-500 font-light">
+                      Надішлемо на вашу пошту посилання для встановлення нового пароля
+                    </p>
+
+                    <label className="mb-1 block text-xs font-medium uppercase tracking-widest text-slate-400">
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      autoFocus
+                      value={email}
+                      onChange={e => { setEmail(e.target.value); setEmailError(''); setResetError('') }}
+                      placeholder="you@example.com"
+                      className={`w-full rounded-xl border px-4 py-3 text-sm text-slate-800 outline-none transition-all placeholder:text-slate-300
+                        focus:border-blue-400 focus:ring-2 focus:ring-blue-100
+                        ${emailError || resetError ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white'}`}
+                    />
+                    {(emailError || resetError) && (
+                      <p className="mt-2 text-xs text-red-500">{emailError || resetError}</p>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={resetLoading}
+                      className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 py-3 text-sm font-medium text-white transition-all hover:bg-slate-700 active:scale-[0.98] disabled:opacity-60"
+                    >
+                      {resetLoading ? (
+                        <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                      ) : 'Надіслати посилання'}
+                    </button>
+                  </form>
+                ) : (
+                  <div>
+                    <p className="mb-8 text-sm text-slate-500 font-light">
+                      Ми надіслали посилання для відновлення паролю на{' '}
+                      <span className="font-medium text-blue-500">{email}</span>.
+                      Перейдіть за ним, щоб встановити новий пароль.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => { setStep('email'); setResetSent(false) }}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 py-3 text-sm font-medium text-slate-600 transition-all hover:bg-slate-50 active:scale-[0.98]"
+                    >
+                      На головну
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
