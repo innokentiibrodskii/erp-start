@@ -2,8 +2,6 @@ import { useState } from 'react'
 import { useCatalog } from './hooks/useCatalog'
 import { PRESET_COLORS } from './lib/colors'
 import type { Department, Position, ProductCategory, ProductAttribute, Operation, Warehouse, MaterialCategory, Unit, Supplier } from './hooks/useCatalog'
-import MaterialCatalog from './MaterialCatalog'
-import { useMaterials } from './hooks/useMaterials'
 import { useProductStatuses, useProductStatusMutations, type ProductStatus } from './hooks/useProducts'
 import { useCustomFieldDefinitions, useCustomFieldDefinitionMutations, type CustomFieldDefinition, type EntityType, type FieldType } from './hooks/useCustomFields'
 
@@ -13,7 +11,6 @@ type SubPage =
   | 'positions'
   | 'categories'
   | 'materialCategories'
-  | 'materialsCatalog'
   | 'attributes'
   | 'operations'
   | 'warehouses'
@@ -43,12 +40,10 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
   const [page, setPage] = useState<SubPage>(null)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<DirectoryGroup>>(new Set(['Системні каталоги']))
   const catalog = useCatalog()
-  const materialsQ = useMaterials()
   const statusesQ = useProductStatuses()
   const materialFieldsQ = useCustomFieldDefinitions('material')
   const supplierFieldsQ = useCustomFieldDefinitions('supplier')
   const productFieldsQ = useCustomFieldDefinitions('product')
-  const materialsCount = materialsQ.data?.length ?? 0
   const customFieldsCount = (materialFieldsQ.data?.length ?? 0) + (supplierFieldsQ.data?.length ?? 0) + (productFieldsQ.data?.length ?? 0)
 
   const toggleGroup = (g: DirectoryGroup) => setCollapsedGroups(prev => {
@@ -75,11 +70,6 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
       icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5"/><path d="M10 6v4l3 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
     },
     // ── Матеріали ──
-    {
-      id: 'materialsCatalog', group: 'Матеріали', label: 'Каталог матеріалів', description: 'Назва, фото, категорія, одиниця, постачальники',
-      color: '#b45309', bg: '#fffbeb', count: () => materialsCount,
-      icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M8 1L14 4.5V11.5L8 15L2 11.5V4.5L8 1Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/><path d="M2 4.5L8 8L14 4.5M8 15V8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
-    },
     {
       id: 'materialCategories', group: 'Матеріали', label: 'Категорії матеріалів', description: 'Окремий каталог категорій для матеріалів',
       color: '#0d9488', bg: '#f0fdfa', count: () => catalog.materialCategories.length,
@@ -128,7 +118,6 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
   if (page === 'positions')          return <PositionsPage          onBack={() => setPage(null)} />
   if (page === 'categories')         return <CategoriesPage         onBack={() => setPage(null)} />
   if (page === 'materialCategories') return <MaterialCategoriesPage onBack={() => setPage(null)} />
-  if (page === 'materialsCatalog')   return <MaterialCatalog onBack={() => setPage(null)} />
   if (page === 'attributes')         return <AttributesPage         onBack={() => setPage(null)} />
   if (page === 'operations')         return <OperationsPage         onBack={() => setPage(null)} />
   if (page === 'warehouses')         return <WarehousesPage         onBack={() => setPage(null)} />

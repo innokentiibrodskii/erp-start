@@ -10,13 +10,17 @@ import { useActiveOrgId } from '../OrgContext'
 export interface Material {
   id: string
   name: string
+  code: string | null
   photo: string | null
   categoryId: string | null
   categoryName: string
   unitId: string
   unitShortName: string
   supplierIds: string[]
+  archived: boolean
 }
+
+function genCode() { return `MAT-${Math.floor(100 + Math.random() * 900)}` }
 
 function friendlyError(error: { message: string; code?: string }): string {
   if (error.code === '23503') return 'Неможливо видалити: запис використовується в інших довідниках'
@@ -32,7 +36,7 @@ export function useMaterials() {
       const { data, error } = await supabase
         .from('materials')
         .select(`
-          id, name, photo_url, category_id, unit_id,
+          id, name, code, photo_url, category_id, unit_id, archived,
           material_categories(name),
           units(short_name),
           material_suppliers(supplier_id)
@@ -43,12 +47,14 @@ export function useMaterials() {
       return data.map(m => ({
         id: m.id,
         name: m.name,
+        code: m.code,
         photo: m.photo_url,
         categoryId: m.category_id,
         categoryName: (m.material_categories as unknown as { name: string } | null)?.name ?? '',
         unitId: m.unit_id,
         unitShortName: (m.units as unknown as { short_name: string } | null)?.short_name ?? '',
         supplierIds: (m.material_suppliers ?? []).map((s: { supplier_id: string }) => s.supplier_id),
+        archived: m.archived,
       }))
     },
   })
@@ -91,7 +97,7 @@ export function useMaterialMutations() {
     mutationFn: async ({ name, categoryId, unitId, photoFile, supplierIds }: MaterialFormArgs) => {
       const { data, error } = await supabase
         .from('materials')
-        .insert({ name, category_id: categoryId, unit_id: unitId, organization_id: orgId })
+        .insert({ name, code: genCode(), category_id: categoryId, unit_id: unitId, organization_id: orgId })
         .select('id')
         .single()
       if (error) throw error
@@ -132,10 +138,20 @@ export function useMaterialMutations() {
     onError: onErr,
   })
 
+  const setArchived = useMutation({
+    mutationFn: async ({ id, archived }: { id: string; archived: boolean }) => {
+      const { error } = await supabase.from('materials').update({ archived }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+    onError: onErr,
+  })
+
   return {
     createMaterial: (args: MaterialFormArgs) => create.mutateAsync(args),
     updateMaterial: (args: MaterialFormArgs & { id: string }) => update.mutateAsync(args),
     removeMaterial: (id: string) => remove.mutate(id),
+    archiveMaterial: (id: string, archived: boolean) => setArchived.mutate({ id, archived }),
     isSaving: create.isPending || update.isPending,
   }
 }
