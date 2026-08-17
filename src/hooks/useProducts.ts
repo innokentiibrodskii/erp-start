@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { useActiveOrgId } from '../OrgContext'
 
 /* ───────────────────────────────────────────────────────────
    Types
@@ -56,17 +57,85 @@ export interface ProductStatus {
 }
 
 export function useProductStatuses() {
+  const orgId = useActiveOrgId()
   return useQuery({
-    queryKey: ['product-statuses'],
+    queryKey: ['product-statuses', orgId],
     queryFn: async (): Promise<ProductStatus[]> => {
       const { data, error } = await supabase
         .from('product_statuses')
         .select('id, code, name, color, is_default')
+        .eq('organization_id', orgId)
         .order('name')
       if (error) throw error
       return data.map(s => ({ id: s.id, code: s.code, name: s.name, color: s.color ?? '#94a3b8', isDefault: s.is_default }))
     },
   })
+}
+
+/** Стабільний внутрішній код на основі назви (унікальність — через фолбек-суфікс при колізії).
+ *  Використовується лише як службовий ключ; не показується користувачу і ніколи не змінюється при редагуванні. */
+function slugifyStatusCode(name: string): string {
+  const base = name.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '')
+  return base || 'status'
+}
+
+export function useProductStatusMutations() {
+  const qc = useQueryClient()
+  const orgId = useActiveOrgId()
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['product-statuses', orgId] })
+  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error))
+
+  const add = useMutation({
+    mutationFn: async ({ name, color }: { name: string; color: string }) => {
+      const base = slugifyStatusCode(name)
+      let code = base
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const { error } = await supabase.from('product_statuses').insert({ name, color, code, organization_id: orgId })
+        if (!error) return
+        if (error.code === '23505') { code = `${base}-${attempt + 2}`; continue }
+        throw error
+      }
+    },
+    onSuccess: invalidate,
+    onError: onErr,
+  })
+
+  const update = useMutation({
+    mutationFn: async ({ id, name, color }: { id: string; name: string; color: string }) => {
+      const { error } = await supabase.from('product_statuses').update({ name, color }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+    onError: onErr,
+  })
+
+  const remove = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('product_statuses').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+    onError: onErr,
+  })
+
+  const setDefault = useMutation({
+    mutationFn: async (id: string) => {
+      const { error: e1 } = await supabase.from('product_statuses').update({ is_default: false }).eq('organization_id', orgId).neq('id', id)
+      if (e1) throw e1
+      const { error: e2 } = await supabase.from('product_statuses').update({ is_default: true }).eq('id', id)
+      if (e2) throw e2
+    },
+    onSuccess: invalidate,
+    onError: onErr,
+  })
+
+  return {
+    addStatus: (name: string, color: string) => add.mutateAsync({ name, color }),
+    updateStatus: (id: string, name: string, color: string) => update.mutateAsync({ id, name, color }),
+    removeStatus: (id: string) => remove.mutate(id),
+    setDefaultStatus: (id: string) => setDefault.mutate(id),
+    isSaving: add.isPending || update.isPending,
+  }
 }
 
 export interface PhotoItem {
@@ -89,8 +158,9 @@ function friendlyError(error: { message: string; code?: string }): string {
 ─────────────────────────────────────────────────────────── */
 
 export function useProducts() {
+  const orgId = useActiveOrgId()
   return useQuery({
-    queryKey: ['products'],
+    queryKey: ['products', orgId],
     queryFn: async (): Promise<Product[]> => {
       const { data, error } = await supabase
         .from('products')
@@ -101,6 +171,7 @@ export function useProducts() {
           product_operations(id, operation_id, task_id, tasks!product_operations_task_id_fkey(name, duration_minutes, cost)),
           product_attribute_values(attribute_value_id, attribute_values(value, attribute_id, attributes(name)))
         `)
+        .eq('organization_id', orgId)
         .order('name')
       if (error) throw error
 
@@ -149,7 +220,7 @@ export function useProducts() {
   })
 }
 
-async function persistPhotos(productId: string, photos: PhotoItem[]) {
+async function persistPhotos(orgId: string, productId: string, photos: PhotoItem[]) {
   const resolvedUrls = await Promise.all(
     photos.map(async (p, i) => {
       if (!p.file) return p.url
@@ -165,34 +236,35 @@ async function persistPhotos(productId: string, photos: PhotoItem[]) {
   if (deleteError) throw deleteError
 
   if (resolvedUrls.length > 0) {
-    const rows = resolvedUrls.map((url, position) => ({ product_id: productId, url, position }))
+    const rows = resolvedUrls.map((url, position) => ({ product_id: productId, url, position, organization_id: orgId }))
     const { error: insertError } = await supabase.from('product_images').insert(rows)
     if (insertError) throw insertError
   }
 }
 
-async function getDefaultStatusId(): Promise<string | null> {
-  const { data, error } = await supabase.from('product_statuses').select('id').eq('is_default', true).limit(1).maybeSingle()
+async function getDefaultStatusId(orgId: string): Promise<string | null> {
+  const { data, error } = await supabase.from('product_statuses').select('id').eq('organization_id', orgId).eq('is_default', true).limit(1).maybeSingle()
   if (error) throw error
   return data?.id ?? null
 }
 
 export function useProductMutations() {
   const qc = useQueryClient()
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['products'] })
+  const orgId = useActiveOrgId()
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['products', orgId] })
   const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error))
 
   const create = useMutation({
     mutationFn: async ({ name, description, categoryId, photos }: { name: string; description: string; categoryId: string | null; photos: PhotoItem[] }) => {
       // Новий продукт завжди отримує дефолтний статус каталогу (зазвичай "Активний")
-      const statusId = await getDefaultStatusId()
+      const statusId = await getDefaultStatusId(orgId)
       const { data, error } = await supabase
         .from('products')
-        .insert({ name, description, category_id: categoryId, status_id: statusId })
+        .insert({ name, description, category_id: categoryId, status_id: statusId, organization_id: orgId })
         .select('id')
         .single()
       if (error) throw error
-      await persistPhotos(data.id, photos)
+      await persistPhotos(orgId, data.id, photos)
       return data.id as string
     },
     onSuccess: invalidate,
@@ -203,7 +275,7 @@ export function useProductMutations() {
     mutationFn: async ({ id, name, description, categoryId, statusId, photos }: { id: string; name: string; description: string; categoryId: string | null; statusId: string | null; photos: PhotoItem[] }) => {
       const { error } = await supabase.from('products').update({ name, description, category_id: categoryId, status_id: statusId }).eq('id', id)
       if (error) throw error
-      await persistPhotos(id, photos)
+      await persistPhotos(orgId, id, photos)
     },
     onSuccess: invalidate,
     onError: onErr,

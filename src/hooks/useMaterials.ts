@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { useActiveOrgId } from '../OrgContext'
 
 /* ───────────────────────────────────────────────────────────
    Каталог матеріалів (повний CRUD): назва, фото, категорія
@@ -24,8 +25,9 @@ function friendlyError(error: { message: string; code?: string }): string {
 }
 
 export function useMaterials() {
+  const orgId = useActiveOrgId()
   return useQuery({
-    queryKey: ['materials'],
+    queryKey: ['materials', orgId],
     queryFn: async (): Promise<Material[]> => {
       const { data, error } = await supabase
         .from('materials')
@@ -35,6 +37,7 @@ export function useMaterials() {
           units(short_name),
           material_suppliers(supplier_id)
         `)
+        .eq('organization_id', orgId)
         .order('name')
       if (error) throw error
       return data.map(m => ({
@@ -68,11 +71,11 @@ async function uploadMaterialPhoto(materialId: string, file: File): Promise<stri
   return data.publicUrl
 }
 
-async function syncSuppliers(materialId: string, supplierIds: string[]) {
+async function syncSuppliers(orgId: string, materialId: string, supplierIds: string[]) {
   const { error: deleteError } = await supabase.from('material_suppliers').delete().eq('material_id', materialId)
   if (deleteError) throw deleteError
   if (supplierIds.length > 0) {
-    const rows = supplierIds.map(supplierId => ({ material_id: materialId, supplier_id: supplierId }))
+    const rows = supplierIds.map(supplierId => ({ material_id: materialId, supplier_id: supplierId, organization_id: orgId }))
     const { error: insertError } = await supabase.from('material_suppliers').insert(rows)
     if (insertError) throw insertError
   }
@@ -80,14 +83,15 @@ async function syncSuppliers(materialId: string, supplierIds: string[]) {
 
 export function useMaterialMutations() {
   const qc = useQueryClient()
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['materials'] })
+  const orgId = useActiveOrgId()
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['materials', orgId] })
   const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error))
 
   const create = useMutation({
     mutationFn: async ({ name, categoryId, unitId, photoFile, supplierIds }: MaterialFormArgs) => {
       const { data, error } = await supabase
         .from('materials')
-        .insert({ name, category_id: categoryId, unit_id: unitId })
+        .insert({ name, category_id: categoryId, unit_id: unitId, organization_id: orgId })
         .select('id')
         .single()
       if (error) throw error
@@ -97,7 +101,7 @@ export function useMaterialMutations() {
         const { error: photoError } = await supabase.from('materials').update({ photo_url: url }).eq('id', materialId)
         if (photoError) throw photoError
       }
-      await syncSuppliers(materialId, supplierIds)
+      await syncSuppliers(orgId, materialId, supplierIds)
       return materialId
     },
     onSuccess: invalidate,
@@ -113,7 +117,7 @@ export function useMaterialMutations() {
         .update({ name, category_id: categoryId, unit_id: unitId, photo_url: finalPhotoUrl })
         .eq('id', id)
       if (error) throw error
-      await syncSuppliers(id, supplierIds)
+      await syncSuppliers(orgId, id, supplierIds)
     },
     onSuccess: invalidate,
     onError: onErr,

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { useActiveOrgId } from '../OrgContext'
 
 /* ───────────────────────────────────────────────────────────
    Залишки матеріалів на складах: журнал рухів (прихід/списання),
@@ -32,12 +33,14 @@ function friendlyError(error: { message: string; code?: string }): string {
 }
 
 export function useStockMovements() {
+  const orgId = useActiveOrgId()
   return useQuery({
-    queryKey: ['material-stock-movements'],
+    queryKey: ['material-stock-movements', orgId],
     queryFn: async (): Promise<StockMovement[]> => {
       const { data, error } = await supabase
         .from('material_stock_movements')
         .select('id, material_id, warehouse_id, product_id, type, qty, cost, created_at')
+        .eq('organization_id', orgId)
         .order('created_at', { ascending: false })
       if (error) throw error
       return data.map(m => ({
@@ -78,12 +81,13 @@ export function totalFor(balances: StockBalance[], materialId: string): number {
 
 export function useStockMutations() {
   const qc = useQueryClient()
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['material-stock-movements'] })
+  const orgId = useActiveOrgId()
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['material-stock-movements', orgId] })
   const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error))
 
   const move = useMutation({
     mutationFn: async ({ materialId, warehouseId, type, qty, productId, cost }: { materialId: string; warehouseId: string; type: MovementType; qty: number; productId: string | null; cost: number | null }) => {
-      const { error } = await supabase.from('material_stock_movements').insert({ material_id: materialId, warehouse_id: warehouseId, type, qty, product_id: productId, cost })
+      const { error } = await supabase.from('material_stock_movements').insert({ material_id: materialId, warehouse_id: warehouseId, type, qty, product_id: productId, cost, organization_id: orgId })
       if (error) throw error
     },
     onSuccess: invalidate,

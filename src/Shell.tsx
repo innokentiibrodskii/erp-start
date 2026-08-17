@@ -4,6 +4,7 @@ import ProductCatalog from './ProductCatalog'
 import MaterialStock from './MaterialStock'
 import AssignmentsPage from './AssignmentsPage'
 import { useCurrentUser } from './hooks/useCurrentUser'
+import { useOrg } from './OrgContext'
 
 type Page = 'products' | 'materials' | 'tasks' | 'directory'
 
@@ -17,6 +18,7 @@ interface Props {
 export default function Shell({ onLogout }: Props) {
   const { data: currentUser } = useCurrentUser()
   const isManager = currentUser?.role === 'manager'
+  const { activeOrgName, canSwitch, requestSwitch } = useOrg()
 
   const [page, setPage] = useState<Page>('tasks')
 
@@ -88,10 +90,26 @@ export default function Shell({ onLogout }: Props) {
       {/* Sidebar nav — desktop only (md+) */}
       <aside className="hidden md:flex md:w-56 md:shrink-0 md:flex-col md:sticky md:top-0 md:h-screen"
         style={{ background: 'rgba(255,255,255,0.92)', borderRight: '1px solid rgba(157,200,255,0.22)' }}>
-        <div className="px-5 py-5">
+        <div className="px-5 pt-5 pb-3">
           <span style={{ fontFamily: "'DM Serif Display', serif" }} className="text-lg text-slate-800">
             <span className="text-blue-500">●</span> R&D
           </span>
+        </div>
+        <div className="px-3 pb-3">
+          {canSwitch ? (
+            <button
+              onClick={requestSwitch}
+              className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+              title="Змінити компанію"
+            >
+              <span className="truncate">{activeOrgName}</span>
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="none" className="shrink-0">
+                <path d="M4 5.5L7 8.5L10 5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+          ) : (
+            <div className="px-2.5 py-1.5 text-xs font-medium text-slate-400 truncate">{activeOrgName}</div>
+          )}
         </div>
         <nav className="flex-1 px-3 space-y-1">
           {navItems.map(item => {
@@ -121,9 +139,18 @@ export default function Shell({ onLogout }: Props) {
         {/* Top header */}
         <header className="sticky top-0 z-20 flex items-center justify-between px-4 py-3 md:px-8"
           style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(14px)', borderBottom: '1px solid rgba(157,200,255,0.22)' }}>
-          <span style={{ fontFamily: "'DM Serif Display', serif" }} className="text-lg text-slate-800 md:hidden">
-            <span className="text-blue-500">●</span> R&D
-          </span>
+          <div className="flex items-center gap-2 md:hidden">
+            <span style={{ fontFamily: "'DM Serif Display', serif" }} className="text-lg text-slate-800">
+              <span className="text-blue-500">●</span> R&D
+            </span>
+            {canSwitch ? (
+              <button onClick={requestSwitch} className="text-[11px] font-medium text-slate-400 hover:text-slate-600 transition-colors">
+                {activeOrgName}
+              </button>
+            ) : (
+              <span className="text-[11px] font-medium text-slate-400">{activeOrgName}</span>
+            )}
+          </div>
           <span className="hidden md:block text-sm font-medium text-slate-500">
             {navItems.find(i => i.id === page)?.label}
           </span>

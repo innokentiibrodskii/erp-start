@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { PRESET_COLORS } from '../lib/colors'
+import { useActiveOrgId } from '../OrgContext'
 
 /* ───────────────────────────────────────────────────────────
    Types (id — uuid-рядок з Supabase)
@@ -77,8 +78,8 @@ const DEFAULT_COLOR = PRESET_COLORS[0].text
 
 /** Пряме створення операції (з поверненням id) — використовується інлайн-формою
  *  додавання операції прямо з інтерфейсу додавання матеріалів до продукту. */
-export async function createOperationDirect(name: string, description = ''): Promise<string> {
-  const { data, error } = await supabase.from('operations').insert({ name, description }).select('id').single()
+export async function createOperationDirect(organizationId: string, name: string, description = ''): Promise<string> {
+  const { data, error } = await supabase.from('operations').insert({ name, description, organization_id: organizationId }).select('id').single()
   if (error) throw error
   return data.id as string
 }
@@ -93,11 +94,11 @@ function friendlyError(error: { message: string; code?: string }): string {
    Departments
 ─────────────────────────────────────────────────────────── */
 
-function useDepartmentsQuery() {
+function useDepartmentsQuery(orgId: string) {
   return useQuery({
-    queryKey: ['departments'],
+    queryKey: ['departments', orgId],
     queryFn: async (): Promise<Department[]> => {
-      const { data, error } = await supabase.from('departments').select('id, name, color').order('name')
+      const { data, error } = await supabase.from('departments').select('id, name, color').eq('organization_id', orgId).order('name')
       if (error) throw error
       return data.map(d => ({ id: d.id, name: d.name, color: d.color ?? DEFAULT_COLOR }))
     },
@@ -108,11 +109,11 @@ function useDepartmentsQuery() {
    Positions
 ─────────────────────────────────────────────────────────── */
 
-function usePositionsQuery() {
+function usePositionsQuery(orgId: string) {
   return useQuery({
-    queryKey: ['positions'],
+    queryKey: ['positions', orgId],
     queryFn: async (): Promise<Position[]> => {
-      const { data, error } = await supabase.from('positions').select('id, name, department_id').order('name')
+      const { data, error } = await supabase.from('positions').select('id, name, department_id').eq('organization_id', orgId).order('name')
       if (error) throw error
       return data.map(p => ({ id: p.id, title: p.name, departmentId: p.department_id }))
     },
@@ -123,11 +124,11 @@ function usePositionsQuery() {
    Categories
 ─────────────────────────────────────────────────────────── */
 
-function useCategoriesQuery() {
+function useCategoriesQuery(orgId: string) {
   return useQuery({
-    queryKey: ['categories'],
+    queryKey: ['categories', orgId],
     queryFn: async (): Promise<ProductCategory[]> => {
-      const { data, error } = await supabase.from('categories').select('id, name, color, parent_id').order('name')
+      const { data, error } = await supabase.from('categories').select('id, name, color, parent_id').eq('organization_id', orgId).order('name')
       if (error) throw error
       return data.map(c => ({ id: c.id, name: c.name, color: c.color ?? DEFAULT_COLOR, parentId: c.parent_id }))
     },
@@ -138,13 +139,14 @@ function useCategoriesQuery() {
    Attributes (+ nested values)
 ─────────────────────────────────────────────────────────── */
 
-function useAttributesQuery() {
+function useAttributesQuery(orgId: string) {
   return useQuery({
-    queryKey: ['attributes'],
+    queryKey: ['attributes', orgId],
     queryFn: async (): Promise<ProductAttribute[]> => {
       const { data, error } = await supabase
         .from('attributes')
         .select('id, name, is_variant, attribute_values(id, value)')
+        .eq('organization_id', orgId)
         .order('name')
       if (error) throw error
       return data.map(a => ({
@@ -161,11 +163,11 @@ function useAttributesQuery() {
    Operations
 ─────────────────────────────────────────────────────────── */
 
-function useOperationsQuery() {
+function useOperationsQuery(orgId: string) {
   return useQuery({
-    queryKey: ['operations'],
+    queryKey: ['operations', orgId],
     queryFn: async (): Promise<Operation[]> => {
-      const { data, error } = await supabase.from('operations').select('id, name, description').order('name')
+      const { data, error } = await supabase.from('operations').select('id, name, description').eq('organization_id', orgId).order('name')
       if (error) throw error
       return data.map(o => ({
         id: o.id,
@@ -180,11 +182,11 @@ function useOperationsQuery() {
    Units
 ─────────────────────────────────────────────────────────── */
 
-function useUnitsQuery() {
+function useUnitsQuery(orgId: string) {
   return useQuery({
-    queryKey: ['units'],
+    queryKey: ['units', orgId],
     queryFn: async (): Promise<Unit[]> => {
-      const { data, error } = await supabase.from('units').select('id, name, short_name').order('name')
+      const { data, error } = await supabase.from('units').select('id, name, short_name').eq('organization_id', orgId).order('name')
       if (error) throw error
       return data.map(u => ({ id: u.id, name: u.name, shortName: u.short_name }))
     },
@@ -195,11 +197,11 @@ function useUnitsQuery() {
    Warehouses
 ─────────────────────────────────────────────────────────── */
 
-function useWarehousesQuery() {
+function useWarehousesQuery(orgId: string) {
   return useQuery({
-    queryKey: ['warehouses'],
+    queryKey: ['warehouses', orgId],
     queryFn: async (): Promise<Warehouse[]> => {
-      const { data, error } = await supabase.from('warehouses').select('id, name, address, responsible').order('name')
+      const { data, error } = await supabase.from('warehouses').select('id, name, address, responsible').eq('organization_id', orgId).order('name')
       if (error) throw error
       return data.map(w => ({ id: w.id, name: w.name, address: w.address ?? '', responsible: w.responsible ?? '' }))
     },
@@ -210,11 +212,11 @@ function useWarehousesQuery() {
    Suppliers
 ─────────────────────────────────────────────────────────── */
 
-function useSuppliersQuery() {
+function useSuppliersQuery(orgId: string) {
   return useQuery({
-    queryKey: ['suppliers'],
+    queryKey: ['suppliers', orgId],
     queryFn: async (): Promise<Supplier[]> => {
-      const { data, error } = await supabase.from('suppliers').select('id, name, contact_person, phone, email, address').order('name')
+      const { data, error } = await supabase.from('suppliers').select('id, name, contact_person, phone, email, address').eq('organization_id', orgId).order('name')
       if (error) throw error
       return data.map(s => ({
         id: s.id, name: s.name,
@@ -229,11 +231,11 @@ function useSuppliersQuery() {
    який належить виключно продуктам)
 ─────────────────────────────────────────────────────────── */
 
-function useMaterialCategoriesQuery() {
+function useMaterialCategoriesQuery(orgId: string) {
   return useQuery({
-    queryKey: ['material-categories'],
+    queryKey: ['material-categories', orgId],
     queryFn: async (): Promise<MaterialCategory[]> => {
-      const { data, error } = await supabase.from('material_categories').select('id, name, color, parent_id').order('name')
+      const { data, error } = await supabase.from('material_categories').select('id, name, color, parent_id').eq('organization_id', orgId).order('name')
       if (error) throw error
       return data.map(c => ({ id: c.id, name: c.name, color: c.color ?? DEFAULT_COLOR, parentId: c.parent_id }))
     },
@@ -247,29 +249,30 @@ function useMaterialCategoriesQuery() {
 
 export function useCatalog() {
   const qc = useQueryClient()
+  const orgId = useActiveOrgId()
 
-  const departmentsQ = useDepartmentsQuery()
-  const positionsQ = usePositionsQuery()
-  const categoriesQ = useCategoriesQuery()
-  const attributesQ = useAttributesQuery()
-  const operationsQ = useOperationsQuery()
-  const warehousesQ = useWarehousesQuery()
-  const materialCategoriesQ = useMaterialCategoriesQuery()
-  const unitsQ = useUnitsQuery()
-  const suppliersQ = useSuppliersQuery()
+  const departmentsQ = useDepartmentsQuery(orgId)
+  const positionsQ = usePositionsQuery(orgId)
+  const categoriesQ = useCategoriesQuery(orgId)
+  const attributesQ = useAttributesQuery(orgId)
+  const operationsQ = useOperationsQuery(orgId)
+  const warehousesQ = useWarehousesQuery(orgId)
+  const materialCategoriesQ = useMaterialCategoriesQuery(orgId)
+  const unitsQ = useUnitsQuery(orgId)
+  const suppliersQ = useSuppliersQuery(orgId)
 
   const isLoading =
     departmentsQ.isLoading || positionsQ.isLoading || categoriesQ.isLoading ||
     attributesQ.isLoading || operationsQ.isLoading || warehousesQ.isLoading ||
     materialCategoriesQ.isLoading || unitsQ.isLoading || suppliersQ.isLoading
 
-  const invalidate = (key: string) => qc.invalidateQueries({ queryKey: [key] })
+  const invalidate = (key: string) => qc.invalidateQueries({ queryKey: [key, orgId] })
   const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error))
 
   /* Departments */
   const addDepartmentM = useMutation({
     mutationFn: async ({ name, color }: { name: string; color: string }) => {
-      const { error } = await supabase.from('departments').insert({ name, color })
+      const { error } = await supabase.from('departments').insert({ name, color, organization_id: orgId })
       if (error) throw error
     },
     onSuccess: () => invalidate('departments'),
@@ -295,7 +298,7 @@ export function useCatalog() {
   /* Positions */
   const addPositionM = useMutation({
     mutationFn: async ({ title, departmentId }: { title: string; departmentId: string }) => {
-      const { error } = await supabase.from('positions').insert({ name: title, department_id: departmentId })
+      const { error } = await supabase.from('positions').insert({ name: title, department_id: departmentId, organization_id: orgId })
       if (error) throw error
     },
     onSuccess: () => invalidate('positions'),
@@ -321,7 +324,7 @@ export function useCatalog() {
   /* Categories */
   const addCategoryM = useMutation({
     mutationFn: async ({ name, color, parentId }: { name: string; color: string; parentId: string | null }) => {
-      const { error } = await supabase.from('categories').insert({ name, color, parent_id: parentId })
+      const { error } = await supabase.from('categories').insert({ name, color, parent_id: parentId, organization_id: orgId })
       if (error) throw error
     },
     onSuccess: () => invalidate('categories'),
@@ -347,7 +350,7 @@ export function useCatalog() {
   /* Attributes */
   const addAttributeM = useMutation({
     mutationFn: async ({ name, isVariant }: { name: string; isVariant: boolean }) => {
-      const { error } = await supabase.from('attributes').insert({ name, is_variant: isVariant })
+      const { error } = await supabase.from('attributes').insert({ name, is_variant: isVariant, organization_id: orgId })
       if (error) throw error
     },
     onSuccess: () => invalidate('attributes'),
@@ -371,7 +374,7 @@ export function useCatalog() {
   })
   const addAttributeValueM = useMutation({
     mutationFn: async ({ attrId, value }: { attrId: string; value: string }) => {
-      const { error } = await supabase.from('attribute_values').insert({ attribute_id: attrId, value })
+      const { error } = await supabase.from('attribute_values').insert({ attribute_id: attrId, value, organization_id: orgId })
       if (error) throw error
     },
     onSuccess: () => invalidate('attributes'),
@@ -397,7 +400,7 @@ export function useCatalog() {
   /* Operations */
   const addOperationM = useMutation({
     mutationFn: async ({ name, description }: { name: string; description: string }) => {
-      const { error } = await supabase.from('operations').insert({ name, description })
+      const { error } = await supabase.from('operations').insert({ name, description, organization_id: orgId })
       if (error) throw error
     },
     onSuccess: () => invalidate('operations'),
@@ -423,7 +426,7 @@ export function useCatalog() {
   /* Warehouses */
   const addWarehouseM = useMutation({
     mutationFn: async ({ name, address, responsible }: { name: string; address: string; responsible: string }) => {
-      const { error } = await supabase.from('warehouses').insert({ name, address, responsible })
+      const { error } = await supabase.from('warehouses').insert({ name, address, responsible, organization_id: orgId })
       if (error) throw error
     },
     onSuccess: () => invalidate('warehouses'),
@@ -449,7 +452,7 @@ export function useCatalog() {
   /* Material Categories */
   const addMaterialCategoryM = useMutation({
     mutationFn: async ({ name, color, parentId }: { name: string; color: string; parentId: string | null }) => {
-      const { error } = await supabase.from('material_categories').insert({ name, color, parent_id: parentId })
+      const { error } = await supabase.from('material_categories').insert({ name, color, parent_id: parentId, organization_id: orgId })
       if (error) throw error
     },
     onSuccess: () => invalidate('material-categories'),
@@ -475,7 +478,7 @@ export function useCatalog() {
   /* Suppliers */
   const addSupplierM = useMutation({
     mutationFn: async ({ name, contactPerson, phone, email, address }: { name: string; contactPerson: string; phone: string; email: string; address: string }) => {
-      const { error } = await supabase.from('suppliers').insert({ name, contact_person: contactPerson, phone, email, address })
+      const { error } = await supabase.from('suppliers').insert({ name, contact_person: contactPerson, phone, email, address, organization_id: orgId })
       if (error) throw error
     },
     onSuccess: () => invalidate('suppliers'),
@@ -501,7 +504,7 @@ export function useCatalog() {
   /* Units */
   const addUnitM = useMutation({
     mutationFn: async ({ name, shortName }: { name: string; shortName: string }) => {
-      const { error } = await supabase.from('units').insert({ name, short_name: shortName })
+      const { error } = await supabase.from('units').insert({ name, short_name: shortName, organization_id: orgId })
       if (error) throw error
     },
     onSuccess: () => invalidate('units'),

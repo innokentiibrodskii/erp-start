@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { useActiveOrgId } from '../OrgContext'
 
 /* ───────────────────────────────────────────────────────────
    Завдання для виконавців: конкретне доручення співробітнику —
@@ -82,8 +83,9 @@ export function isArchivedCompleted(a: Assignment): boolean {
 }
 
 export function useAssignments() {
+  const orgId = useActiveOrgId()
   return useQuery({
-    queryKey: ['assignments'],
+    queryKey: ['assignments', orgId],
     queryFn: async (): Promise<Assignment[]> => {
       const { data, error } = await supabase
         .from('assignments')
@@ -95,6 +97,7 @@ export function useAssignments() {
           assignee:users!assignments_assignee_id_fkey(first_name, last_name),
           assigner:users!assignments_assigned_by_fkey(first_name, last_name)
         `)
+        .eq('organization_id', orgId)
         .order('created_at', { ascending: false })
       if (error) throw error
 
@@ -130,7 +133,8 @@ export function useAssignments() {
 
 export function useAssignmentMutations() {
   const qc = useQueryClient()
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['assignments'] })
+  const orgId = useActiveOrgId()
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['assignments', orgId] })
   const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error))
 
   const create = useMutation({
@@ -147,6 +151,7 @@ export function useAssignmentMutations() {
         assigned_by: args.assignedById,
         duration_minutes: args.durationMinutes,
         cost: args.cost,
+        organization_id: orgId,
       })
       if (error) throw error
     },

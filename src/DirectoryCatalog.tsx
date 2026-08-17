@@ -4,6 +4,8 @@ import { PRESET_COLORS } from './lib/colors'
 import type { Department, Position, ProductCategory, ProductAttribute, Operation, Warehouse, MaterialCategory, Unit, Supplier } from './hooks/useCatalog'
 import MaterialCatalog from './MaterialCatalog'
 import { useMaterials } from './hooks/useMaterials'
+import { useProductStatuses, useProductStatusMutations, type ProductStatus } from './hooks/useProducts'
+import { useCustomFieldDefinitions, useCustomFieldDefinitionMutations, type CustomFieldDefinition, type EntityType, type FieldType } from './hooks/useCustomFields'
 
 type SubPage =
   | null
@@ -17,8 +19,10 @@ type SubPage =
   | 'warehouses'
   | 'units'
   | 'suppliers'
+  | 'productStatuses'
+  | 'customFields'
 
-type DirectoryGroup = 'Продукт' | 'Матеріали' | 'Люди'
+type DirectoryGroup = 'Продукт' | 'Матеріали' | 'Люди' | 'Системні каталоги'
 
 interface DirectoryTile {
   id: SubPage
@@ -31,15 +35,27 @@ interface DirectoryTile {
   count: () => number
 }
 
-const GROUP_ORDER: DirectoryGroup[] = ['Продукт', 'Матеріали', 'Люди']
+const GROUP_ORDER: DirectoryGroup[] = ['Продукт', 'Матеріали', 'Люди', 'Системні каталоги']
 
 interface Props { onNavigate: (page: string) => void }
 
 export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
   const [page, setPage] = useState<SubPage>(null)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<DirectoryGroup>>(new Set(['Системні каталоги']))
   const catalog = useCatalog()
   const materialsQ = useMaterials()
+  const statusesQ = useProductStatuses()
+  const materialFieldsQ = useCustomFieldDefinitions('material')
+  const supplierFieldsQ = useCustomFieldDefinitions('supplier')
+  const productFieldsQ = useCustomFieldDefinitions('product')
   const materialsCount = materialsQ.data?.length ?? 0
+  const customFieldsCount = (materialFieldsQ.data?.length ?? 0) + (supplierFieldsQ.data?.length ?? 0) + (productFieldsQ.data?.length ?? 0)
+
+  const toggleGroup = (g: DirectoryGroup) => setCollapsedGroups(prev => {
+    const next = new Set(prev)
+    if (next.has(g)) next.delete(g); else next.add(g)
+    return next
+  })
 
   const tiles: DirectoryTile[] = [
     // ── Продукт ──
@@ -95,6 +111,17 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
       color: '#2563eb', bg: '#eff6ff', count: () => catalog.departments.length,
       icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="7" y="2" width="6" height="5" rx="1" stroke="currentColor" strokeWidth="1.5"/><rect x="2" y="13" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5"/><rect x="13" y="13" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5"/><path d="M10 7v3M10 10H4.5v3M10 10h5.5v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
     },
+    // ── Системні каталоги ──
+    {
+      id: 'productStatuses', group: 'Системні каталоги', label: 'Статуси продуктів', description: 'Статуси каталогу продуктів (активний, неактивний тощо)',
+      color: '#64748b', bg: '#f1f5f9', count: () => statusesQ.data?.length ?? 0,
+      icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.5"/><path d="M6.8 10l2.2 2.2 4.2-4.4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+    },
+    {
+      id: 'customFields', group: 'Системні каталоги', label: 'Кастомні поля', description: 'Додаткові поля для матеріалів, постачальників і продуктів',
+      color: '#4f46e5', bg: '#eef2ff', count: () => customFieldsCount,
+      icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2.5" y="4" width="15" height="3" rx="1" stroke="currentColor" strokeWidth="1.5"/><rect x="2.5" y="9.5" width="15" height="3" rx="1" stroke="currentColor" strokeWidth="1.5"/><rect x="2.5" y="15" width="9" height="3" rx="1" stroke="currentColor" strokeWidth="1.5"/></svg>,
+    },
   ]
 
   if (page === 'departments')        return <DepartmentsPage        onBack={() => setPage(null)} />
@@ -107,6 +134,8 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
   if (page === 'warehouses')         return <WarehousesPage         onBack={() => setPage(null)} />
   if (page === 'units')              return <UnitsPage              onBack={() => setPage(null)} />
   if (page === 'suppliers')          return <SuppliersPage          onBack={() => setPage(null)} />
+  if (page === 'productStatuses')    return <ProductStatusesPage    onBack={() => setPage(null)} />
+  if (page === 'customFields')       return <CustomFieldsPage       onBack={() => setPage(null)} />
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -122,29 +151,38 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
           {GROUP_ORDER.map(group => {
             const groupTiles = tiles.filter(t => t.group === group)
             if (groupTiles.length === 0) return null
+            const isCollapsed = collapsedGroups.has(group)
             return (
               <div key={group}>
-                <p className="mb-2.5 text-xs font-semibold uppercase tracking-widest text-slate-400">{group}</p>
-                <div className="grid grid-cols-2 gap-3">
-                  {groupTiles.map(tile => (
-                    <button
-                      key={tile.id}
-                      onClick={() => setPage(tile.id)}
-                      className="flex flex-col items-start rounded-2xl bg-white p-4 text-left active:scale-[0.97] transition-all"
-                      style={{ border: '1px solid rgba(157,200,255,0.25)', boxShadow: '0 1px 8px rgba(157,200,255,0.08)' }}
-                    >
-                      <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: tile.bg, color: tile.color }}>
-                        {tile.icon}
-                      </div>
-                      <p className="text-sm font-semibold text-slate-800 leading-tight">{tile.label}</p>
-                      <p className="mt-0.5 text-xs text-slate-400 leading-snug">{tile.description}</p>
-                      <div className="mt-3 flex items-center gap-1">
-                        <span className="text-lg font-bold" style={{ color: tile.color }}>{tile.count()}</span>
-                        <span className="text-xs text-slate-400">записів</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
+                <button onClick={() => toggleGroup(group)} className="mb-2.5 flex w-full items-center justify-between text-left">
+                  <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">{group}</p>
+                  <svg width="13" height="13" viewBox="0 0 14 14" fill="none"
+                    className={`shrink-0 text-slate-400 transition-transform ${isCollapsed ? '-rotate-90' : ''}`}>
+                    <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+                {!isCollapsed && (
+                  <div className="grid grid-cols-2 gap-3">
+                    {groupTiles.map(tile => (
+                      <button
+                        key={tile.id}
+                        onClick={() => setPage(tile.id)}
+                        className="flex flex-col items-start rounded-2xl bg-white p-4 text-left active:scale-[0.97] transition-all"
+                        style={{ border: '1px solid rgba(157,200,255,0.25)', boxShadow: '0 1px 8px rgba(157,200,255,0.08)' }}
+                      >
+                        <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: tile.bg, color: tile.color }}>
+                          {tile.icon}
+                        </div>
+                        <p className="text-sm font-semibold text-slate-800 leading-tight">{tile.label}</p>
+                        <p className="mt-0.5 text-xs text-slate-400 leading-snug">{tile.description}</p>
+                        <div className="mt-3 flex items-center gap-1">
+                          <span className="text-lg font-bold" style={{ color: tile.color }}>{tile.count()}</span>
+                          <span className="text-xs text-slate-400">записів</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )
           })}
@@ -914,6 +952,238 @@ function SuppliersPage({ onBack }: { onBack: () => void }) {
             <Field label="Адреса">
               <Input value={form.address} onChange={v => setForm(f => ({ ...f, address: v }))} placeholder="вул., місто" />
             </Field>
+          </div>
+          <SheetActions onCancel={close} onSave={save} saveLabel={form.editing ? 'Зберегти' : 'Додати'} disabled={!form.name.trim()} />
+        </BottomSheet>
+      )}
+    </div>
+  )
+}
+
+/* ─── PRODUCT STATUSES (системний каталог) ─── */
+function ProductStatusesPage({ onBack }: { onBack: () => void }) {
+  const statusesQ = useProductStatuses()
+  const statuses = statusesQ.data ?? []
+  const { addStatus, updateStatus, removeStatus, setDefaultStatus } = useProductStatusMutations()
+  const [form, setForm] = useState<{ open: boolean; editing: ProductStatus | null; name: string; color: string }>
+    ({ open: false, editing: null, name: '', color: PRESET_COLORS[0].text })
+
+  const openAdd  = () => setForm({ open: true, editing: null, name: '', color: PRESET_COLORS[0].text })
+  const openEdit = (s: ProductStatus) => setForm({ open: true, editing: s, name: s.name, color: s.color })
+  const close    = () => setForm(f => ({ ...f, open: false }))
+
+  const save = () => {
+    if (!form.name.trim()) return
+    if (form.editing) updateStatus(form.editing.id, form.name.trim(), form.color)
+    else addStatus(form.name.trim(), form.color)
+    close()
+  }
+
+  const bgOf = (color: string) => PRESET_COLORS.find(c => c.text === color)?.bg ?? '#f1f5f9'
+
+  return (
+    <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
+      <SubPageHeader title="Статуси продуктів" subtitle={`${statuses.length} статусів`} onBack={onBack} onAdd={openAdd} />
+      <div className="px-4 py-4 space-y-2 pb-8">
+        {statuses.length === 0 && (
+          <p className="py-10 text-center text-sm text-slate-400">Статусів ще немає</p>
+        )}
+        {statuses.map(s => (
+          <div key={s.id} className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3.5"
+            style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
+            <div className="h-9 w-9 shrink-0 rounded-xl flex items-center justify-center" style={{ background: bgOf(s.color) }}>
+              <div className="h-3 w-3 rounded-full" style={{ background: s.color }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="flex items-center gap-1.5 text-sm font-medium text-slate-800">
+                {s.name}
+                {s.isDefault && (
+                  <span className="rounded-md px-1.5 py-0.5 text-[9px] font-medium" style={{ background: bgOf(s.color), color: s.color }}>за замовчуванням</span>
+                )}
+              </p>
+              {!s.isDefault && (
+                <button onClick={() => setDefaultStatus(s.id)} className="mt-0.5 text-xs text-blue-500 hover:underline">
+                  Зробити основним
+                </button>
+              )}
+            </div>
+            <EditButton onEdit={() => openEdit(s)} />
+            <DeleteButton onDelete={() => removeStatus(s.id)} />
+          </div>
+        ))}
+      </div>
+      {form.open && (
+        <BottomSheet onClose={close}>
+          <SheetTitle>{form.editing ? 'Редагувати статус' : 'Новий статус'}</SheetTitle>
+          <div className="px-5 space-y-4">
+            <Field label="Назва"><Input value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} placeholder="Напр. В архіві" /></Field>
+            <Field label="Колір"><ColorPicker value={form.color} onChange={v => setForm(f => ({ ...f, color: v }))} /></Field>
+          </div>
+          <SheetActions onCancel={close} onSave={save} saveLabel={form.editing ? 'Зберегти' : 'Додати'} disabled={!form.name.trim()} />
+        </BottomSheet>
+      )}
+    </div>
+  )
+}
+
+/* ─── CUSTOM FIELDS (системний конструктор для 3 сутностей) ─── */
+const ENTITY_TABS: { id: EntityType; label: string }[] = [
+  { id: 'material', label: 'Матеріали' },
+  { id: 'supplier', label: 'Постачальники' },
+  { id: 'product', label: 'Продукти' },
+]
+const FIELD_TYPE_LABEL: Record<FieldType, string> = {
+  text: 'Текст', number: 'Число', boolean: 'Булеве значення', file: 'Файл(и)', select: 'Список значень',
+}
+const FIELD_TYPE_OPTIONS: { id: FieldType; label: string }[] = [
+  { id: 'text', label: 'Текст' },
+  { id: 'number', label: 'Число' },
+  { id: 'boolean', label: 'Булеве' },
+  { id: 'file', label: 'Файл(и)' },
+  { id: 'select', label: 'Список' },
+]
+
+function FieldDefBody({ d }: { d: CustomFieldDefinition }) {
+  return (
+    <div className="min-w-0">
+      <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
+        {d.name}
+        {d.isRequired && <span className="rounded-md px-1.5 py-0.5 text-[9px] font-medium bg-red-50 text-red-500">обов'язкове</span>}
+      </p>
+      <p className="text-xs text-slate-400">
+        {FIELD_TYPE_LABEL[d.fieldType]}
+        {d.fieldType === 'select' ? ` · ${d.options.length} значень` : ''}
+      </p>
+    </div>
+  )
+}
+
+function CustomFieldsPage({ onBack }: { onBack: () => void }) {
+  const [entityType, setEntityType] = useState<EntityType>('material')
+  const definitionsQ = useCustomFieldDefinitions(entityType)
+  const definitions = definitionsQ.data ?? []
+  const { addDefinition, updateDefinition, removeDefinition, addOption, removeOption } = useCustomFieldDefinitionMutations(entityType)
+
+  const [form, setForm] = useState<{ open: boolean; editing: CustomFieldDefinition | null; name: string; fieldType: FieldType; isRequired: boolean }>
+    ({ open: false, editing: null, name: '', fieldType: 'text', isRequired: false })
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [newOptionInputs, setNewOptionInputs] = useState<Record<string, string>>({})
+
+  const openAdd  = () => setForm({ open: true, editing: null, name: '', fieldType: 'text', isRequired: false })
+  const openEdit = (d: CustomFieldDefinition) => setForm({ open: true, editing: d, name: d.name, fieldType: d.fieldType, isRequired: d.isRequired })
+  const close    = () => setForm(f => ({ ...f, open: false }))
+
+  const save = () => {
+    if (!form.name.trim()) return
+    if (form.editing) updateDefinition({ id: form.editing.id, name: form.name.trim(), isRequired: form.isRequired })
+    else addDefinition({ name: form.name.trim(), fieldType: form.fieldType, isRequired: form.isRequired, position: definitions.length })
+    close()
+  }
+
+  const addOptionValue = (fieldId: string) => {
+    const v = newOptionInputs[fieldId]?.trim()
+    if (!v) return
+    const def = definitions.find(d => d.id === fieldId)
+    addOption({ fieldDefinitionId: fieldId, value: v, position: def?.options.length ?? 0 })
+    setNewOptionInputs(p => ({ ...p, [fieldId]: '' }))
+  }
+
+  return (
+    <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
+      <SubPageHeader title="Кастомні поля" subtitle={`${definitions.length} полів`} onBack={onBack} onAdd={openAdd} />
+
+      <div className="px-4 pt-3">
+        <div className="flex gap-1.5 rounded-2xl bg-white p-1" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>
+          {ENTITY_TABS.map(t => (
+            <button key={t.id} onClick={() => { setEntityType(t.id); setExpandedId(null) }}
+              className="flex-1 rounded-xl py-2 text-xs font-medium transition-all"
+              style={entityType === t.id ? { background: '#1e293b', color: '#fff' } : { color: '#64748b' }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="px-4 py-4 space-y-3 pb-8">
+        {definitions.length === 0 && (
+          <p className="py-10 text-center text-sm text-slate-400">Кастомних полів ще немає</p>
+        )}
+        {definitions.map(d => {
+          const expanded = expandedId === d.id
+          return (
+            <div key={d.id} className="rounded-2xl bg-white overflow-hidden" style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
+              <div className="flex items-center gap-3 px-4 py-3.5">
+                {d.fieldType === 'select' ? (
+                  <button onClick={() => setExpandedId(expanded ? null : d.id)} className="flex-1 flex items-center gap-3 text-left min-w-0">
+                    <FieldDefBody d={d} />
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className={`ml-auto shrink-0 text-slate-400 transition-transform ${expanded ? 'rotate-180' : ''}`}>
+                      <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </button>
+                ) : (
+                  <div className="flex-1 min-w-0"><FieldDefBody d={d} /></div>
+                )}
+                <EditButton onEdit={() => openEdit(d)} />
+                <DeleteButton onDelete={() => removeDefinition(d.id)} />
+              </div>
+              {d.fieldType === 'select' && expanded && (
+                <div className="px-4 pb-4" style={{ borderTop: '1px solid rgba(157,200,255,0.15)' }}>
+                  <div className="flex flex-wrap gap-2 pt-3 mb-3">
+                    {d.options.map(o => (
+                      <span key={o.id} className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs" style={{ background: '#eef2ff', color: '#4f46e5', border: '1px solid #c7d2fe' }}>
+                        {o.value}
+                        <button onClick={() => removeOption(o.id)} className="opacity-50 hover:opacity-100 transition-opacity">✕</button>
+                      </span>
+                    ))}
+                    {d.options.length === 0 && <p className="text-xs text-slate-300">Немає значень</p>}
+                  </div>
+                  <div className="flex gap-2">
+                    <input type="text" value={newOptionInputs[d.id] || ''} placeholder="Нове значення…"
+                      onChange={e => setNewOptionInputs(p => ({ ...p, [d.id]: e.target.value }))}
+                      onKeyDown={e => e.key === 'Enter' && addOptionValue(d.id)}
+                      className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-800 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-all" />
+                    <button onClick={() => addOptionValue(d.id)}
+                      className="rounded-xl bg-slate-800 px-3 py-2 text-xs font-medium text-white active:scale-95 transition-all">+</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {form.open && (
+        <BottomSheet onClose={close}>
+          <SheetTitle>{form.editing ? 'Редагувати поле' : 'Нове кастомне поле'}</SheetTitle>
+          <div className="px-5 space-y-4">
+            <Field label="Назва поля">
+              <Input value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} placeholder="Напр. Колір, Термін виготовлення" />
+            </Field>
+            <Field label="Тип поля">
+              {form.editing ? (
+                <p className="rounded-2xl bg-slate-50 px-4 py-3 text-xs text-slate-500">
+                  {FIELD_TYPE_LABEL[form.fieldType]} — тип не можна змінити після створення
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {FIELD_TYPE_OPTIONS.map(t => {
+                    const active = form.fieldType === t.id
+                    return (
+                      <button key={t.id} onClick={() => setForm(f => ({ ...f, fieldType: t.id }))}
+                        className="rounded-xl px-3 py-2 text-xs font-medium border transition-all"
+                        style={active ? { background: '#4f46e5', color: '#fff', borderColor: '#4f46e5' } : { background: '#eef2ff', color: '#4f46e5', borderColor: 'transparent' }}>
+                        {t.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </Field>
+            <label className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3 cursor-pointer">
+              <span className="text-sm text-slate-600">Обов'язкове поле</span>
+              <input type="checkbox" checked={form.isRequired} onChange={e => setForm(f => ({ ...f, isRequired: e.target.checked }))}
+                className="h-4 w-4 rounded accent-slate-800" />
+            </label>
           </div>
           <SheetActions onCancel={close} onSave={save} saveLabel={form.editing ? 'Зберегти' : 'Додати'} disabled={!form.name.trim()} />
         </BottomSheet>

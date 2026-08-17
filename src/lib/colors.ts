@@ -7,4 +7,5 @@ export const PRESET_COLORS = [
   { bg: '#fdf2f8', text: '#db2777' },
   { bg: '#ecfeff', text: '#0891b2' },
   { bg: '#fef2f2', text: '#dc2626' },
+  { bg: '#f1f5f9', text: '#64748b' },
 ]

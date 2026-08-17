@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { createOperationDirect } from './useCatalog'
+import { useActiveOrgId } from '../OrgContext'
 
 /* ───────────────────────────────────────────────────────────
    Додавання/редагування матеріалів продукту:
@@ -17,7 +18,7 @@ function friendlyError(error: { message: string; code?: string }): string {
   return error.message
 }
 
-async function ensureProductOperation(productId: string, operationId: string) {
+async function ensureProductOperation(orgId: string, productId: string, operationId: string) {
   // Рядок-"мітка" (без завдання) для пари продукт+операція має бути лише один —
   // якщо він уже є, нічого не робимо.
   const { data: existing, error: selectError } = await supabase
@@ -32,23 +33,24 @@ async function ensureProductOperation(productId: string, operationId: string) {
   if (existing) return
   const { error: insertError } = await supabase
     .from('product_operations')
-    .insert({ product_id: productId, operation_id: operationId })
+    .insert({ product_id: productId, operation_id: operationId, organization_id: orgId })
   if (insertError) throw insertError
 }
 
 export function useProductMaterialMutations() {
   const qc = useQueryClient()
+  const orgId = useActiveOrgId()
   const invalidateProducts = () => qc.invalidateQueries({ queryKey: ['products'] })
-  const invalidateOperations = () => qc.invalidateQueries({ queryKey: ['operations'] })
+  const invalidateOperations = () => qc.invalidateQueries({ queryKey: ['operations', orgId] })
   const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error))
 
   const add = useMutation({
     mutationFn: async ({ productId, materialId, qty, unitId, operationId }: {
       productId: string; materialId: string; qty: number; unitId: string; operationId: string | null
     }) => {
-      if (operationId) await ensureProductOperation(productId, operationId)
+      if (operationId) await ensureProductOperation(orgId, productId, operationId)
       const { error } = await supabase.from('product_materials').insert({
-        product_id: productId, material_id: materialId, qty, unit_id: unitId, operation_id: operationId,
+        product_id: productId, material_id: materialId, qty, unit_id: unitId, operation_id: operationId, organization_id: orgId,
       })
       if (error) throw error
     },
@@ -60,7 +62,7 @@ export function useProductMaterialMutations() {
     mutationFn: async ({ productId, materialId, qty, operationId }: {
       productId: string; materialId: string; qty: number; operationId: string | null
     }) => {
-      if (operationId) await ensureProductOperation(productId, operationId)
+      if (operationId) await ensureProductOperation(orgId, productId, operationId)
       const { error } = await supabase
         .from('product_materials')
         .update({ qty, operation_id: operationId })
@@ -81,7 +83,7 @@ export function useProductMaterialMutations() {
   })
 
   const createOperation = useMutation({
-    mutationFn: async ({ name }: { name: string }) => createOperationDirect(name),
+    mutationFn: async ({ name }: { name: string }) => createOperationDirect(orgId, name),
     onSuccess: invalidateOperations,
     onError: onErr,
   })

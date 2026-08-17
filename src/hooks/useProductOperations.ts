@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { useActiveOrgId } from '../OrgContext'
 
 /* ───────────────────────────────────────────────────────────
    Додавання операцій до продукту: операція з каталогу + завдання
@@ -48,7 +49,8 @@ export function useProductTasks(productId: string | null) {
 
 export function useProductOperationMutations() {
   const qc = useQueryClient()
-  const invalidateProducts = () => qc.invalidateQueries({ queryKey: ['products'] })
+  const orgId = useActiveOrgId()
+  const invalidateProducts = () => qc.invalidateQueries({ queryKey: ['products', orgId] })
   const invalidateTasks = (productId: string) => qc.invalidateQueries({ queryKey: ['product-tasks', productId] })
   const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error))
 
@@ -61,13 +63,13 @@ export function useProductOperationMutations() {
     }) => {
       const { data: task, error: taskError } = await supabase
         .from('tasks')
-        .insert({ name: taskName, product_id: productId, operation_id: operationId, duration_minutes: durationMinutes, cost })
+        .insert({ name: taskName, product_id: productId, operation_id: operationId, duration_minutes: durationMinutes, cost, organization_id: orgId })
         .select('id')
         .single()
       if (taskError) throw taskError
       const { error: linkError } = await supabase
         .from('product_operations')
-        .insert({ product_id: productId, operation_id: operationId, task_id: task.id })
+        .insert({ product_id: productId, operation_id: operationId, task_id: task.id, organization_id: orgId })
       if (linkError) throw linkError
     },
     onSuccess: (_data, vars) => { invalidateProducts(); invalidateTasks(vars.productId) },
@@ -79,7 +81,7 @@ export function useProductOperationMutations() {
     mutationFn: async ({ productId, operationId, taskId }: { productId: string; operationId: string; taskId: string }) => {
       const { error } = await supabase
         .from('product_operations')
-        .insert({ product_id: productId, operation_id: operationId, task_id: taskId })
+        .insert({ product_id: productId, operation_id: operationId, task_id: taskId, organization_id: orgId })
       if (error) throw error
     },
     onSuccess: invalidateProducts,

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Operation } from './hooks/useCatalog'
 import { createOperationDirect } from './hooks/useCatalog'
 import { useProductTasks, useProductOperationMutations, type ProductTask } from './hooks/useProductOperations'
+import { useActiveOrgId } from './OrgContext'
 
 /* ───────────────────────────────────────────────────────────
    Пікер додавання операції до продукту: операція з каталогу →
@@ -17,6 +18,7 @@ export default function OperationPickerSheet({ productId, allOperations, already
   onClose: () => void
   onAdded: () => void
 }) {
+  const orgId = useActiveOrgId()
   const productTasksQ = useProductTasks(productId)
   const productTasks = productTasksQ.data ?? []
   const { addWithNewTask, addWithExistingTask, isSaving, addTaskError, resetAddErrors } = useProductOperationMutations()
@@ -50,7 +52,7 @@ export default function OperationPickerSheet({ productId, allOperations, already
     if (!newOpName.trim()) return
     setCreatingOp(true)
     try {
-      const id = await createOperationDirect(newOpName.trim())
+      const id = await createOperationDirect(orgId, newOpName.trim())
       const created: Operation = { id, name: newOpName.trim(), description: '' }
       setOperations(prev => [...prev, created])
       selectOperation(id, created.name)

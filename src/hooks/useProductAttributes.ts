@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { useActiveOrgId } from '../OrgContext'
 
 /* ───────────────────────────────────────────────────────────
    Прив'язка характеристик (значень атрибутів із довідника) до
@@ -13,12 +14,13 @@ function friendlyError(error: { message: string; code?: string }): string {
 
 export function useProductAttributeMutations() {
   const qc = useQueryClient()
+  const orgId = useActiveOrgId()
   const invalidate = () => qc.invalidateQueries({ queryKey: ['products'] })
   const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error))
 
   const add = useMutation({
     mutationFn: async ({ productId, attributeValueId }: { productId: string; attributeValueId: string }) => {
-      const { error } = await supabase.from('product_attribute_values').insert({ product_id: productId, attribute_value_id: attributeValueId })
+      const { error } = await supabase.from('product_attribute_values').insert({ product_id: productId, attribute_value_id: attributeValueId, organization_id: orgId })
       if (error) throw error
     },
     onSuccess: invalidate,
