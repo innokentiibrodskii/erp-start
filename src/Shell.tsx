@@ -4,10 +4,11 @@ import ProductCatalog from './ProductCatalog'
 import MaterialStock from './MaterialStock'
 import AssignmentsPage from './AssignmentsPage'
 import EmployeesPage from './EmployeesPage'
+import ProfilePage from './ProfilePage'
 import { useCurrentUser } from './hooks/useCurrentUser'
 import { useOrg } from './OrgContext'
 
-type Page = 'products' | 'materials' | 'tasks' | 'directory' | 'settings' | 'employees'
+type Page = 'products' | 'materials' | 'tasks' | 'directory' | 'settings' | 'employees' | 'profile'
 
 /** Сторінки, доступні лише менеджеру (і адміну, який успадковує права менеджера) */
 const MANAGER_ONLY_PAGES: Page[] = ['products', 'materials', 'directory', 'settings']
@@ -30,6 +31,8 @@ export default function Shell({ onLogout }: Props) {
 
   const [page, setPage] = useState<Page>('tasks')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [prevPage, setPrevPage] = useState<Page>('tasks')
+  const openProfile = () => { setPrevPage(page); setPage('profile'); setMenuOpen(false) }
 
   // Виконавцю недоступні "Продукти" й "Матеріали" — якщо туди потрапили
   // (наприклад дефолтний стан до завантаження ролі), повертаємо на "Завдання".
@@ -180,12 +183,13 @@ export default function Shell({ onLogout }: Props) {
             </span>
           </div>
           <span className="hidden md:block text-sm font-medium text-slate-500">
-            {navItems.find(i => i.id === page)?.label}
+            {page === 'profile' ? 'Профіль' : navItems.find(i => i.id === page)?.label}
           </span>
           <div className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-full bg-blue-100 flex items-center justify-center text-xs font-semibold text-blue-600">
+            <button onClick={openProfile}
+              className="h-7 w-7 rounded-full bg-blue-100 flex items-center justify-center text-xs font-semibold text-blue-600 active:scale-90 transition-all">
               {(currentUser?.fullName?.trim().charAt(0) || 'А').toUpperCase()}
-            </div>
+            </button>
             <button onClick={() => setMenuOpen(true)}
               className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:text-slate-600 transition-colors md:hidden">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
@@ -204,6 +208,7 @@ export default function Shell({ onLogout }: Props) {
             {page === 'directory' && isManager && <DirectoryCatalog onNavigate={p => setPage(p as Page)} />}
             {page === 'settings'  && isManager && <CustomFieldsPage onBack={() => setPage('products')} />}
             {page === 'employees' && isAdmin && <EmployeesPage />}
+            {page === 'profile' && currentUser && <ProfilePage employeeId={currentUser.id} onBack={() => setPage(prevPage)} />}
           </div>
         </main>
 
@@ -246,7 +251,8 @@ export default function Shell({ onLogout }: Props) {
               </div>
 
               <div className="px-4 pt-4">
-                <div className="flex items-center gap-3 rounded-2xl px-4 py-3" style={{ background: '#eff6ff' }}>
+                <button onClick={openProfile}
+                  className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left active:scale-[0.98] transition-all" style={{ background: '#eff6ff' }}>
                   <div className="h-9 w-9 shrink-0 rounded-full bg-blue-500 flex items-center justify-center text-sm font-semibold text-white">
                     {(currentUser?.fullName?.trim().charAt(0) || 'А').toUpperCase()}
                   </div>
@@ -256,7 +262,7 @@ export default function Shell({ onLogout }: Props) {
                     </p>
                     <p className="text-xs text-slate-400 truncate">{currentUser?.email ?? ''}</p>
                   </div>
-                </div>
+                </button>
                 {canSwitch && (
                   <button onClick={() => { requestSwitch(); setMenuOpen(false) }}
                     className="mt-2 flex w-full items-center justify-between gap-2 rounded-2xl px-4 py-2.5 text-xs font-medium text-slate-500 hover:bg-slate-50 transition-colors">

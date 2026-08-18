@@ -3,6 +3,7 @@ import { useCatalog } from './hooks/useCatalog'
 import { useEmployees, useEmployeeMutations } from './hooks/useEmployees'
 import type { UserRole } from './hooks/useCurrentUser'
 import { PRESET_COLORS } from './lib/colors'
+import ProfilePage from './ProfilePage'
 
 const ROLE_LABEL: Record<UserRole, string> = { admin: 'Адміністратор', manager: 'Менеджер', performer: 'Виконавець' }
 const ROLE_BADGE: Record<UserRole, { bg: string; text: string }> = {
@@ -15,9 +16,14 @@ export default function EmployeesPage() {
   const { data: employees = [], isLoading } = useEmployees()
   const [search, setSearch] = useState('')
   const [showForm, setShowForm] = useState(false)
+  const [openEmployeeId, setOpenEmployeeId] = useState<string | null>(null)
 
   const q = search.trim().toLowerCase()
   const filtered = employees.filter(e => e.fullName.toLowerCase().includes(q) || e.email.toLowerCase().includes(q))
+
+  if (openEmployeeId) {
+    return <ProfilePage employeeId={openEmployeeId} onBack={() => setOpenEmployeeId(null)} />
+  }
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -53,7 +59,8 @@ export default function EmployeesPage() {
         {filtered.map(e => {
           const badge = ROLE_BADGE[e.role]
           return (
-            <div key={e.id} className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3.5"
+            <button key={e.id} onClick={() => setOpenEmployeeId(e.id)}
+              className="flex w-full items-center gap-3 rounded-2xl bg-white px-4 py-3.5 text-left transition-colors hover:bg-slate-50 active:bg-slate-100"
               style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
               <div className="h-10 w-10 shrink-0 rounded-full bg-blue-500 flex items-center justify-center text-sm font-semibold text-white">
                 {e.fullName.trim().charAt(0).toUpperCase() || '?'}
@@ -67,7 +74,7 @@ export default function EmployeesPage() {
               <span className="shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold" style={{ background: badge.bg, color: badge.text }}>
                 {ROLE_LABEL[e.role]}
               </span>
-            </div>
+            </button>
           )
         })}
       </div>
