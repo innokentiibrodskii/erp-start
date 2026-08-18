@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useCatalog } from './hooks/useCatalog'
+import { useCatalog, genCategoryShortCode } from './hooks/useCatalog'
 import { PRESET_COLORS } from './lib/colors'
 import { buildCatPath } from './lib/materialFormat'
 import type { Department, Position, ProductCategory, ProductAttribute, Operation, Warehouse, MaterialCategory, Unit, Supplier } from './hooks/useCatalog'
@@ -569,6 +569,14 @@ function MaterialCategoriesPage({ onBack }: { onBack: () => void }) {
             <input value={newCatName} onChange={e => setNewCatName(e.target.value)}
               placeholder="Назва категорії" autoFocus
               className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 transition-all" />
+            {newCatName.trim() && (
+              <div className="flex items-center gap-2 px-0.5">
+                <span className="text-[10px] text-slate-400">Код категорії:</span>
+                <span className="rounded-md bg-blue-100 text-blue-700 text-[10px] font-mono font-bold px-1.5 py-0.5">
+                  {genCategoryShortCode(newCatName.trim(), materialCategories.filter(c => c.parentId === addCatParentId).map(c => c.shortCode))}
+                </span>
+              </div>
+            )}
             <div className="relative">
               <select value={addCatParentId ?? ''} onChange={e => setAddCatParentId(e.target.value || null)}
                 className="w-full appearance-none rounded-xl border border-slate-200 bg-white pl-3 pr-8 py-2 text-sm outline-none focus:border-blue-400 transition-all">

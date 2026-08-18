@@ -516,34 +516,32 @@ function MaterialQRPage({ material, categoryPath, stock, onBack }: {
   ].filter(Boolean).join('\n')
 
   const handlePrint = () => {
-    const win = window.open('', '_blank', 'width=400,height=560')
+    const win = window.open('', '_blank', 'width=400,height=320')
     if (!win) return
     const qrSvg = document.getElementById('mat-qr-svg')?.outerHTML ?? ''
     win.document.write(`<!DOCTYPE html><html><head><title>QR — ${material.name}</title>
     <style>
+      @page{size:58mm 40mm;margin:0}
       *{margin:0;padding:0;box-sizing:border-box}
-      body{font-family:'DM Sans',Arial,sans-serif;background:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh}
-      .label{width:320px;border:1.5px solid #e2e8f0;border-radius:20px;padding:28px 24px 24px;display:flex;flex-direction:column;align-items:center;gap:16px;page-break-inside:avoid}
-      .brand{font-size:11px;font-weight:700;letter-spacing:.12em;color:#94a3b8;text-transform:uppercase}
-      .qr-wrap{background:#fff;border-radius:12px;padding:12px;border:1px solid #e2e8f0}
-      .name{font-size:17px;font-weight:700;color:#0f172a;text-align:center;line-height:1.25}
-      .code{font-family:monospace;font-size:12px;color:#64748b;background:#f8fafc;border-radius:8px;padding:4px 10px}
-      .row{display:flex;align-items:center;justify-content:space-between;width:100%;border-top:1px solid #f1f5f9;padding-top:10px}
-      .row-label{font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em}
-      .row-val{font-size:12px;font-weight:600;color:#0f172a}
-      .stock{font-size:22px;font-weight:800;color:${stock > 0 ? '#16a34a' : '#94a3b8'}}
+      html,body{width:58mm;height:40mm}
+      body{font-family:'DM Sans',Arial,sans-serif;background:#fff}
+      .label{width:58mm;height:40mm;padding:2mm;display:flex;align-items:center;gap:2mm;page-break-inside:avoid;overflow:hidden}
+      #mat-qr-svg{width:30mm!important;height:30mm!important;flex-shrink:0}
+      .info{flex:1;min-width:0;display:flex;flex-direction:column;gap:1mm;overflow:hidden}
+      .name{font-size:9px;font-weight:700;color:#0f172a;line-height:1.15;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+      .code{font-family:monospace;font-size:7px;color:#64748b}
+      .stock{font-size:9px;font-weight:800;color:${stock > 0 ? '#16a34a' : '#94a3b8'}}
+      .cat{font-size:6.5px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
     </style></head><body>
     <div class="label">
-      <span class="brand">R&amp;D · Матеріал</span>
-      <div class="qr-wrap">${qrSvg}</div>
-      <p class="name">${material.name}</p>
-      ${material.code ? `<span class="code">${material.code}</span>` : ''}
-      <div class="row">
-        <span class="row-label">На складі</span>
-        <span class="stock">${fmt(stock)} <span style="font-size:13px;font-weight:600;color:#64748b">${material.unitShortName}</span></span>
+      ${qrSvg}
+      <div class="info">
+        <p class="name">${material.name}</p>
+        ${material.code ? `<span class="code">${material.code}</span>` : ''}
+        <span class="stock">${fmt(stock)} ${material.unitShortName}</span>
+        ${categoryPath ? `<span class="cat">${categoryPath}</span>` : ''}
       </div>
-      ${categoryPath ? `<div class="row"><span class="row-label">Категорія</span><span class="row-val">${categoryPath}</span></div>` : ''}
     </div>
     <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}<\/script>
     </body></html>`)

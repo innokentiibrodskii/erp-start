@@ -48,6 +48,14 @@ export interface Product {
 export type { Material } from './useMaterials'
 export { useMaterials } from './useMaterials'
 
+/** Артикул продукту: P + поточний рік + порядковий номер за цей рік
+ *  (напр. "P2026-01") — лічильник скидається щороку. */
+export function genProductArticle(products: Product[], now = new Date()): string {
+  const prefix = `P${now.getFullYear()}-`
+  const seq = products.filter(p => p.sku.startsWith(prefix)).length + 1
+  return `${prefix}${String(seq).padStart(2, '0')}`
+}
+
 export interface ProductStatus {
   id: string
   code: string
@@ -255,12 +263,12 @@ export function useProductMutations() {
   const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error))
 
   const create = useMutation({
-    mutationFn: async ({ name, description, categoryId, photos }: { name: string; description: string; categoryId: string | null; photos: PhotoItem[] }) => {
+    mutationFn: async ({ name, description, categoryId, sku, photos }: { name: string; description: string; categoryId: string | null; sku: string; photos: PhotoItem[] }) => {
       // Новий продукт завжди отримує дефолтний статус каталогу (зазвичай "Активний")
       const statusId = await getDefaultStatusId(orgId)
       const { data, error } = await supabase
         .from('products')
-        .insert({ name, description, category_id: categoryId, status_id: statusId, organization_id: orgId })
+        .insert({ name, description, category_id: categoryId, status_id: statusId, sku, organization_id: orgId })
         .select('id')
         .single()
       if (error) throw error
@@ -291,7 +299,7 @@ export function useProductMutations() {
   })
 
   return {
-    createProduct: (args: { name: string; description: string; categoryId: string | null; photos: PhotoItem[] }) => create.mutateAsync(args),
+    createProduct: (args: { name: string; description: string; categoryId: string | null; sku: string; photos: PhotoItem[] }) => create.mutateAsync(args),
     updateProduct: (args: { id: string; name: string; description: string; categoryId: string | null; statusId: string | null; photos: PhotoItem[] }) => update.mutateAsync(args),
     removeProduct: (id: string) => remove.mutate(id),
     isSaving: create.isPending || update.isPending,

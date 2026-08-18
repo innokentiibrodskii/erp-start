@@ -63,14 +63,29 @@ export interface MaterialCategory {
   name: string
   color: string
   parentId: string | null
-  /** Скорочення для артикула матеріалу (напр. "M", "MS") — унікальне в межах організації */
+  /** Скорочення для артикула матеріалу (напр. "M", "MS") — унікальне серед категорій з тим самим батьком */
   shortCode: string | null
 }
 
-/** Генерує унікальне скорочення категорії (усі літери великі): перша літера назви;
+const CYRILLIC_TO_LATIN: Record<string, string> = {
+  А: 'A', Б: 'B', В: 'V', Г: 'H', Ґ: 'G', Д: 'D', Е: 'E', Є: 'IE', Ж: 'ZH', З: 'Z',
+  И: 'Y', І: 'I', Ї: 'I', Й: 'I', К: 'K', Л: 'L', М: 'M', Н: 'N', О: 'O', П: 'P',
+  Р: 'R', С: 'S', Т: 'T', У: 'U', Ф: 'F', Х: 'KH', Ц: 'TS', Ч: 'CH', Ш: 'SH', Щ: 'SHCH',
+  Ь: '', Ю: 'IU', Я: 'IA',
+}
+
+/** Транслітерує кирилицю в латиницю (щоб код категорії не містив кириличних літер,
+ *  які візуально збігаються з латинськими, але не рівні їм як символи — інакше
+ *  перевірка унікальності могла б пропустити справжню колізію). */
+function transliterate(text: string): string {
+  return text.toUpperCase().split('').map(ch => CYRILLIC_TO_LATIN[ch] ?? ch).join('')
+}
+
+/** Генерує скорочення категорії (усі літери великі, латиницею), унікальне серед переданих
+ *  кодів (зазвичай — кодів сусідніх категорій з тим самим батьком): перша літера назви;
  *  якщо зайнята — додає наступні літери назви, поки не стане унікальним. */
 export function genCategoryShortCode(name: string, existingCodes: (string | null)[]): string {
-  const clean = name.trim()
+  const clean = transliterate(name.trim())
   if (!clean) return ''
   const used = new Set(existingCodes.filter((c): c is string => !!c))
   for (let len = 1; len <= clean.length; len++) {
@@ -479,7 +494,8 @@ export function useCatalog() {
   /* Material Categories */
   const addMaterialCategoryM = useMutation({
     mutationFn: async ({ name, color, parentId }: { name: string; color: string; parentId: string | null }) => {
-      const shortCode = genCategoryShortCode(name, (materialCategoriesQ.data ?? []).map(c => c.shortCode))
+      const siblingCodes = (materialCategoriesQ.data ?? []).filter(c => c.parentId === parentId).map(c => c.shortCode)
+      const shortCode = genCategoryShortCode(name, siblingCodes)
       const { error } = await supabase.from('material_categories').insert({ name, color, parent_id: parentId, short_code: shortCode, organization_id: orgId })
       if (error) throw error
     },

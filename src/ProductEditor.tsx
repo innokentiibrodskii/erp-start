@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useCatalog } from './hooks/useCatalog'
-import { useProducts, useProductPhotos, useProductMutations, useProductStatuses, type PhotoItem } from './hooks/useProducts'
+import { useProducts, useProductPhotos, useProductMutations, useProductStatuses, genProductArticle, type PhotoItem } from './hooks/useProducts'
 import { useProductAttributeMutations } from './hooks/useProductAttributes'
 
 interface Props {
@@ -20,6 +20,7 @@ export default function ProductEditor({ productId, onBack }: Props) {
   const statuses = statusesQ.data ?? []
   const existing = productId !== null ? products.find(p => p.id === productId) : null
   const isNew = !existing
+  const sku = existing?.sku ?? genProductArticle(products)
 
   const [name, setName] = useState(existing?.name ?? '')
   const [description, setDescription] = useState(existing?.description ?? '')
@@ -69,7 +70,7 @@ export default function ProductEditor({ productId, onBack }: Props) {
     if (existing) {
       await updateProduct({ id: existing.id, name: name.trim(), description, categoryId, statusId, photos })
     } else {
-      await createProduct({ name: name.trim(), description, categoryId, photos })
+      await createProduct({ name: name.trim(), description, categoryId, sku, photos })
     }
     setSaved(true)
     setToast(isNew ? 'Доданий продукт' : 'Дані збережено')
@@ -221,9 +222,7 @@ export default function ProductEditor({ productId, onBack }: Props) {
               <rect x="1" y="3" width="12" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
               <path d="M4 7h6M4 9.5h3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
             </svg>
-            <span className="font-mono text-sm text-slate-600">
-              {existing?.sku ?? 'буде згенеровано автоматично'}
-            </span>
+            <span className="font-mono text-sm text-slate-600">{sku}</span>
           </div>
         </div>
 
