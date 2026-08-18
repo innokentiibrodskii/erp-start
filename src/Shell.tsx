@@ -29,10 +29,28 @@ export default function Shell({ onLogout }: Props) {
   const isManager = currentUser?.role === 'manager' || isAdmin
   const { activeOrgName, canSwitch, requestSwitch } = useOrg()
 
-  const [page, setPage] = useState<Page>('tasks')
+  // Діп-лінк із QR-коду (?material=... чи ?product=...) — відкриває картку одразу при вході.
+  const [deepLink] = useState(() => {
+    const params = new URLSearchParams(window.location.search)
+    return { materialId: params.get('material'), productId: params.get('product') }
+  })
+
+  const [page, setPage] = useState<Page>(() => {
+    if (deepLink.materialId) return 'materials'
+    if (deepLink.productId) return 'products'
+    return 'tasks'
+  })
   const [menuOpen, setMenuOpen] = useState(false)
   const [prevPage, setPrevPage] = useState<Page>('tasks')
   const openProfile = () => { setPrevPage(page); setPage('profile'); setMenuOpen(false) }
+
+  // Прибираємо параметр з адресного рядка, щоб не залишався в історії/при оновленні.
+  useEffect(() => {
+    if (deepLink.materialId || deepLink.productId) {
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Виконавцю недоступні "Продукти" й "Матеріали" — якщо туди потрапили
   // (наприклад дефолтний стан до завантаження ролі), повертаємо на "Завдання".
@@ -202,8 +220,8 @@ export default function Shell({ onLogout }: Props) {
         {/* Page content */}
         <main className="flex-1 overflow-y-auto pb-24 md:pb-8">
           <div className="max-w-lg mx-auto md:max-w-3xl md:mx-auto">
-            {page === 'products'  && isManager && <ProductCatalog onNavigate={p => setPage(p as Page)} />}
-            {page === 'materials' && isManager && <MaterialStock onNavigate={p => setPage(p as Page)} />}
+            {page === 'products'  && isManager && <ProductCatalog onNavigate={p => setPage(p as Page)} initialViewId={deepLink.productId} />}
+            {page === 'materials' && isManager && <MaterialStock onNavigate={p => setPage(p as Page)} initialMaterialId={deepLink.materialId} />}
             {page === 'tasks'     && <AssignmentsPage />}
             {page === 'directory' && isManager && <DirectoryCatalog onNavigate={p => setPage(p as Page)} />}
             {page === 'settings'  && isManager && <CustomFieldsPage onBack={() => setPage('products')} />}

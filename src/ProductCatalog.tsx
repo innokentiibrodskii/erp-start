@@ -22,9 +22,9 @@ function lsSet(key: string, val: unknown) {
   try { localStorage.setItem(key, JSON.stringify(val)) } catch { /* ignore */ }
 }
 
-interface Props { onNavigate: (page: string) => void }
+interface Props { onNavigate: (page: string) => void; initialViewId?: string | null }
 
-export default function ProductCatalog({ onNavigate: _onNavigate }: Props) {
+export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId }: Props) {
   const { categories, operations } = useCatalog()
   const productsQ = useProducts()
   const materialsQ = useMaterials()
@@ -39,7 +39,7 @@ export default function ProductCatalog({ onNavigate: _onNavigate }: Props) {
 
   const [search, setSearch]           = useState('')
   const [editId, setEditId]           = useState<string | 'new' | null>(null)
-  const [viewId, setViewId]           = useState<string | null>(null)
+  const [viewId, setViewId]           = useState<string | null>(initialViewId ?? null)
   const [qrProductId, setQrProductId] = useState<string | null>(null)
   const [quickAction, setQuickAction] = useState<{ productId: string; type: QuickActionType } | null>(null)
   const [materialPickerOpen, setMaterialPickerOpen] = useState(false)
