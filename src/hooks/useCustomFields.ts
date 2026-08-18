@@ -136,6 +136,15 @@ export function useCustomFieldDefinitionMutations(entityType: EntityType) {
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
+      const { count: valuesCount, error: valuesErr } = await supabase
+        .from(VALUE_TABLE[entityType]).select('*', { count: 'exact', head: true }).eq('field_definition_id', id)
+      if (valuesErr) throw valuesErr
+      const { count: filesCount, error: filesErr } = await supabase
+        .from(FILE_TABLE[entityType]).select('*', { count: 'exact', head: true }).eq('field_definition_id', id)
+      if (filesErr) throw filesErr
+      if ((valuesCount ?? 0) > 0 || (filesCount ?? 0) > 0) {
+        throw new Error('Неможливо видалити: поле використовується в записах')
+      }
       const { error } = await supabase.from('custom_field_definitions').delete().eq('id', id)
       if (error) throw error
     },

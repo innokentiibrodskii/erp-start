@@ -306,6 +306,15 @@ export function useCatalog() {
   })
   const removeDepartmentM = useMutation({
     mutationFn: async (id: string) => {
+      const { data: deptPositions, error: posErr } = await supabase.from('positions').select('id').eq('department_id', id)
+      if (posErr) throw posErr
+      const positionIds = (deptPositions ?? []).map(p => p.id)
+      if (positionIds.length > 0) {
+        const { count, error: countErr } = await supabase
+          .from('user_positions').select('user_id', { count: 'exact', head: true }).in('position_id', positionIds)
+        if (countErr) throw countErr
+        if ((count ?? 0) > 0) throw new Error('Неможливо видалити: у департаменті є працівники')
+      }
       const { error } = await supabase.from('departments').delete().eq('id', id)
       if (error) throw error
     },
@@ -487,6 +496,10 @@ export function useCatalog() {
   })
   const removeMaterialCategoryM = useMutation({
     mutationFn: async (id: string) => {
+      const { count, error: countErr } = await supabase
+        .from('materials').select('id', { count: 'exact', head: true }).eq('category_id', id)
+      if (countErr) throw countErr
+      if ((count ?? 0) > 0) throw new Error('Неможливо видалити: категорія використовується матеріалами')
       const { error } = await supabase.from('material_categories').delete().eq('id', id)
       if (error) throw error
     },
@@ -529,8 +542,15 @@ export function useCatalog() {
     onSuccess: () => invalidate('units'),
     onError: onErr,
   })
+  const assertUnitUnused = async (id: string, action: 'змінити' | 'видалити') => {
+    const { count, error: countErr } = await supabase
+      .from('materials').select('id', { count: 'exact', head: true }).eq('unit_id', id)
+    if (countErr) throw countErr
+    if ((count ?? 0) > 0) throw new Error(`Неможливо ${action}: одиниця виміру використовується матеріалами`)
+  }
   const updateUnitM = useMutation({
     mutationFn: async ({ id, name, shortName }: { id: string; name: string; shortName: string }) => {
+      await assertUnitUnused(id, 'змінити')
       const { error } = await supabase.from('units').update({ name, short_name: shortName }).eq('id', id)
       if (error) throw error
     },
@@ -539,6 +559,7 @@ export function useCatalog() {
   })
   const removeUnitM = useMutation({
     mutationFn: async (id: string) => {
+      await assertUnitUnused(id, 'видалити')
       const { error } = await supabase.from('units').delete().eq('id', id)
       if (error) throw error
     },
