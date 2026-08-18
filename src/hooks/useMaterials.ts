@@ -4,7 +4,8 @@ import { useActiveOrgId } from '../OrgContext'
 
 /* ───────────────────────────────────────────────────────────
    Каталог матеріалів (повний CRUD): назва, фото, категорія
-   матеріалів, одиниця виміру, постачальники (багато-до-багатьох).
+   матеріалів, одиниця виміру, постачальники — основний
+   (primary_supplier_id) + додаткові (багато-до-багатьох).
 ─────────────────────────────────────────────────────────── */
 
 export interface Material {
@@ -16,11 +17,12 @@ export interface Material {
   categoryName: string
   unitId: string
   unitShortName: string
+  primarySupplierId: string | null
   supplierIds: string[]
   archived: boolean
 }
 
-function genCode() { return `MAT-${Math.floor(100 + Math.random() * 900)}` }
+export function genCode() { return `MAT-${Math.floor(100 + Math.random() * 900)}` }
 
 function friendlyError(error: { message: string; code?: string }): string {
   if (error.code === '23503') return 'Неможливо видалити: запис використовується в інших довідниках'
@@ -36,7 +38,7 @@ export function useMaterials() {
       const { data, error } = await supabase
         .from('materials')
         .select(`
-          id, name, code, photo_url, category_id, unit_id, archived,
+          id, name, code, photo_url, category_id, unit_id, archived, primary_supplier_id,
           material_categories(name),
           units(short_name),
           material_suppliers(supplier_id)
@@ -53,6 +55,7 @@ export function useMaterials() {
         categoryName: (m.material_categories as unknown as { name: string } | null)?.name ?? '',
         unitId: m.unit_id,
         unitShortName: (m.units as unknown as { short_name: string } | null)?.short_name ?? '',
+        primarySupplierId: m.primary_supplier_id,
         supplierIds: (m.material_suppliers ?? []).map((s: { supplier_id: string }) => s.supplier_id),
         archived: m.archived,
       }))
@@ -62,10 +65,12 @@ export function useMaterials() {
 
 interface MaterialFormArgs {
   name: string
+  code?: string
   categoryId: string | null
   unitId: string
   photoFile?: File | null
   photoUrl?: string | null
+  primarySupplierId: string | null
   supplierIds: string[]
 }
 
@@ -75,6 +80,11 @@ async function uploadMaterialPhoto(materialId: string, file: File): Promise<stri
   if (error) throw error
   const { data } = supabase.storage.from('material-photos').getPublicUrl(path)
   return data.publicUrl
+}
+
+/** Додаткові постачальники не повинні дублювати основного */
+function dedupeSupplierIds(supplierIds: string[], primarySupplierId: string | null): string[] {
+  return supplierIds.filter(id => id !== primarySupplierId)
 }
 
 async function syncSuppliers(orgId: string, materialId: string, supplierIds: string[]) {
@@ -94,10 +104,10 @@ export function useMaterialMutations() {
   const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error))
 
   const create = useMutation({
-    mutationFn: async ({ name, categoryId, unitId, photoFile, supplierIds }: MaterialFormArgs) => {
+    mutationFn: async ({ name, code, categoryId, unitId, photoFile, primarySupplierId, supplierIds }: MaterialFormArgs) => {
       const { data, error } = await supabase
         .from('materials')
-        .insert({ name, code: genCode(), category_id: categoryId, unit_id: unitId, organization_id: orgId })
+        .insert({ name, code: code ?? genCode(), category_id: categoryId, unit_id: unitId, primary_supplier_id: primarySupplierId, organization_id: orgId })
         .select('id')
         .single()
       if (error) throw error
@@ -107,7 +117,7 @@ export function useMaterialMutations() {
         const { error: photoError } = await supabase.from('materials').update({ photo_url: url }).eq('id', materialId)
         if (photoError) throw photoError
       }
-      await syncSuppliers(orgId, materialId, supplierIds)
+      await syncSuppliers(orgId, materialId, dedupeSupplierIds(supplierIds, primarySupplierId))
       return materialId
     },
     onSuccess: invalidate,
@@ -115,15 +125,15 @@ export function useMaterialMutations() {
   })
 
   const update = useMutation({
-    mutationFn: async ({ id, name, categoryId, unitId, photoFile, photoUrl, supplierIds }: MaterialFormArgs & { id: string }) => {
+    mutationFn: async ({ id, name, categoryId, unitId, photoFile, photoUrl, primarySupplierId, supplierIds }: MaterialFormArgs & { id: string }) => {
       let finalPhotoUrl = photoUrl ?? null
       if (photoFile) finalPhotoUrl = await uploadMaterialPhoto(id, photoFile)
       const { error } = await supabase
         .from('materials')
-        .update({ name, category_id: categoryId, unit_id: unitId, photo_url: finalPhotoUrl })
+        .update({ name, category_id: categoryId, unit_id: unitId, photo_url: finalPhotoUrl, primary_supplier_id: primarySupplierId })
         .eq('id', id)
       if (error) throw error
-      await syncSuppliers(orgId, id, supplierIds)
+      await syncSuppliers(orgId, id, dedupeSupplierIds(supplierIds, primarySupplierId))
     },
     onSuccess: invalidate,
     onError: onErr,

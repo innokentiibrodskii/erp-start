@@ -108,7 +108,7 @@ export default function ProductEditor({ productId, onBack }: Props) {
         </h1>
       </div>
 
-      <div className="px-4 pt-5 pb-12 space-y-6">
+      <div className="px-4 pt-5 pb-36 space-y-6">
         {/* ── Photos ── */}
         <div>
           <label className="mb-3 block text-xs font-semibold uppercase tracking-widest text-slate-400">Фото</label>
@@ -368,7 +368,11 @@ export default function ProductEditor({ productId, onBack }: Props) {
           </div>
         )}
 
-        {/* Save */}
+      </div>
+
+      {/* Save — фіксована панель, z-40 вище за нижнє меню (z-30), щоб не ховалась під ним */}
+      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 pt-3 z-40"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)', background: 'linear-gradient(to top, rgba(248,251,255,1) 80%, transparent)' }}>
         <button onClick={handleSave} disabled={!canSave}
           className="flex w-full items-center justify-center rounded-2xl bg-slate-800 py-4 text-sm font-medium text-white disabled:opacity-40 active:scale-[0.98] transition-all">
           {isSaving ? 'Збереження…' : isNew ? 'Додати продукт' : 'Зберегти зміни'}

@@ -102,7 +102,16 @@ export default function ProductCatalog({ onNavigate: _onNavigate }: Props) {
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
       {/* Header */}
       <div className="px-4 pt-5 pb-4">
-        <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-2xl text-slate-800 mb-1">Продукти</h1>
+        <div className="flex items-start justify-between mb-1">
+          <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-2xl text-slate-800">Продукти</h1>
+          <button onClick={() => setEditId('new')}
+            className="flex items-center gap-1.5 rounded-2xl bg-slate-800 px-4 py-2.5 text-xs font-semibold text-white active:scale-95 transition-all shrink-0 mt-1">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+            </svg>
+            Новий
+          </button>
+        </div>
         <p className="text-xs text-slate-400 mb-4">
           {filtered.length !== products.length
             ? <>{filtered.length} з {products.length} · {activeStatus ? <span style={{ color: activeStatus.color }}>{activeStatus.name}</span> : 'Всі'}</>
@@ -197,13 +206,6 @@ export default function ProductCatalog({ onNavigate: _onNavigate }: Props) {
           </div>
         </div>
 
-        <button onClick={() => setEditId('new')}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-800 py-3.5 text-sm font-medium text-white active:scale-[0.98] transition-all">
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-            <path d="M6.5 1v11M1 6.5h11" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
-          </svg>
-          Додати продукт
-        </button>
       </div>
 
       {/* Cards */}

@@ -6,9 +6,19 @@ import { useActiveOrgId } from '../OrgContext'
    Залишки матеріалів на складах: журнал рухів (прихід/списання),
    поточний залишок обчислюється як сума приходів мінус списання
    для пари матеріал+склад.
+
+   Прихід може бути оформлений як партія (batch_code, автогенерована
+   дата+порядковий номер) і опційно розбитий на серії — підпартії
+   з власним кодом і кількістю, що в сумі дають кількість партії.
 ─────────────────────────────────────────────────────────── */
 
 export type MovementType = 'in' | 'out'
+
+export interface MovementSeries {
+  id: string
+  code: string
+  qty: number
+}
 
 export interface StockMovement {
   id: string
@@ -18,6 +28,9 @@ export interface StockMovement {
   type: MovementType
   qty: number
   cost: number | null
+  batchCode: string | null
+  note: string | null
+  series: MovementSeries[]
   createdAt: number
 }
 
@@ -39,7 +52,7 @@ export function useStockMovements() {
     queryFn: async (): Promise<StockMovement[]> => {
       const { data, error } = await supabase
         .from('material_stock_movements')
-        .select('id, material_id, warehouse_id, product_id, type, qty, cost, created_at')
+        .select('id, material_id, warehouse_id, product_id, type, qty, cost, batch_code, note, created_at, material_stock_movement_series(id, code, qty)')
         .eq('organization_id', orgId)
         .order('created_at', { ascending: false })
       if (error) throw error
@@ -51,6 +64,9 @@ export function useStockMovements() {
         type: m.type as MovementType,
         qty: Number(m.qty),
         cost: m.cost !== null ? Number(m.cost) : null,
+        batchCode: m.batch_code,
+        note: m.note,
+        series: (m.material_stock_movement_series ?? []).map((s: { id: string; code: string; qty: number }) => ({ id: s.id, code: s.code, qty: Number(s.qty) })),
         createdAt: new Date(m.created_at).getTime(),
       }))
     },
@@ -85,9 +101,34 @@ export function useStockMutations() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ['material-stock-movements', orgId] })
   const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error))
 
-  const move = useMutation({
-    mutationFn: async ({ materialId, warehouseId, type, qty, productId, cost }: { materialId: string; warehouseId: string; type: MovementType; qty: number; productId: string | null; cost: number | null }) => {
-      const { error } = await supabase.from('material_stock_movements').insert({ material_id: materialId, warehouse_id: warehouseId, type, qty, product_id: productId, cost, organization_id: orgId })
+  const add = useMutation({
+    mutationFn: async ({ materialId, warehouseId, qty, cost, batchCode, note, series }: {
+      materialId: string; warehouseId: string; qty: number; cost: number | null
+      batchCode: string | null; note: string | null; series: { code: string; qty: number }[]
+    }) => {
+      const { data, error } = await supabase
+        .from('material_stock_movements')
+        .insert({ material_id: materialId, warehouse_id: warehouseId, type: 'in', qty, cost, batch_code: batchCode, note, organization_id: orgId })
+        .select('id')
+        .single()
+      if (error) throw error
+      if (series.length > 0) {
+        const rows = series.map(s => ({ movement_id: data.id as string, code: s.code, qty: s.qty, organization_id: orgId }))
+        const { error: seriesError } = await supabase.from('material_stock_movement_series').insert(rows)
+        if (seriesError) throw seriesError
+      }
+    },
+    onSuccess: invalidate,
+    onError: onErr,
+  })
+
+  const writeOff = useMutation({
+    mutationFn: async ({ materialId, warehouseId, qty, productId, note }: {
+      materialId: string; warehouseId: string; qty: number; productId: string; note: string | null
+    }) => {
+      const { error } = await supabase.from('material_stock_movements').insert({
+        material_id: materialId, warehouse_id: warehouseId, type: 'out', qty, product_id: productId, note, organization_id: orgId,
+      })
       if (error) throw error
     },
     onSuccess: invalidate,
@@ -95,8 +136,10 @@ export function useStockMutations() {
   })
 
   return {
-    addStock: (args: { materialId: string; warehouseId: string; qty: number; cost: number | null }) => move.mutateAsync({ ...args, type: 'in', productId: null }),
-    writeOffStock: (args: { materialId: string; warehouseId: string; qty: number; productId: string }) => move.mutateAsync({ ...args, type: 'out', cost: null }),
-    isSaving: move.isPending,
+    addStock: (args: { materialId: string; warehouseId: string; qty: number; cost: number | null; batchCode: string | null; note: string | null; series: { code: string; qty: number }[] }) =>
+      add.mutateAsync(args),
+    writeOffStock: (args: { materialId: string; warehouseId: string; qty: number; productId: string; note: string | null }) =>
+      writeOff.mutateAsync(args),
+    isSaving: add.isPending || writeOff.isPending,
   }
 }

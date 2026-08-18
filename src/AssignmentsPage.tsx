@@ -88,7 +88,16 @@ export default function AssignmentsPage() {
       </div>
 
       <div className="px-4 pt-5 pb-3">
-        <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-2xl text-slate-800 mb-1">Завдання</h1>
+        <div className="flex items-start justify-between mb-1">
+          <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-2xl text-slate-800">Завдання</h1>
+          <button onClick={() => setFormOpen(true)}
+            className="flex items-center gap-1.5 rounded-2xl bg-slate-800 px-4 py-2.5 text-xs font-semibold text-white active:scale-95 transition-all shrink-0 mt-1">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+            </svg>
+            Нове
+          </button>
+        </div>
         <p className="text-xs text-slate-400 mb-3">
           {isManager ? 'Усі завдання команди' : 'Ваші завдання'} · {list.length}
         </p>
@@ -115,13 +124,6 @@ export default function AssignmentsPage() {
           </button>
         </div>
 
-        <button onClick={() => setFormOpen(true)}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-800 py-3.5 text-sm font-medium text-white active:scale-[0.98] transition-all">
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-            <path d="M6.5 1v11M1 6.5h11" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
-          </svg>
-          Нове завдання
-        </button>
       </div>
 
       <div className="px-4 space-y-2 pb-8">

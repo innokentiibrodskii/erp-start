@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useCatalog } from './hooks/useCatalog'
 import { PRESET_COLORS } from './lib/colors'
+import { buildCatPath } from './lib/materialFormat'
 import type { Department, Position, ProductCategory, ProductAttribute, Operation, Warehouse, MaterialCategory, Unit, Supplier } from './hooks/useCatalog'
 import { useProductStatuses, useProductStatusMutations, type ProductStatus } from './hooks/useProducts'
 import { useCustomFieldDefinitions, useCustomFieldDefinitionMutations, type CustomFieldDefinition, type EntityType, type FieldType } from './hooks/useCustomFields'
@@ -17,7 +18,6 @@ type SubPage =
   | 'units'
   | 'suppliers'
   | 'productStatuses'
-  | 'customFields'
 
 type DirectoryGroup = 'Продукт' | 'Матеріали' | 'Люди' | 'Системні каталоги'
 
@@ -41,10 +41,6 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<DirectoryGroup>>(new Set(['Системні каталоги']))
   const catalog = useCatalog()
   const statusesQ = useProductStatuses()
-  const materialFieldsQ = useCustomFieldDefinitions('material')
-  const supplierFieldsQ = useCustomFieldDefinitions('supplier')
-  const productFieldsQ = useCustomFieldDefinitions('product')
-  const customFieldsCount = (materialFieldsQ.data?.length ?? 0) + (supplierFieldsQ.data?.length ?? 0) + (productFieldsQ.data?.length ?? 0)
 
   const toggleGroup = (g: DirectoryGroup) => setCollapsedGroups(prev => {
     const next = new Set(prev)
@@ -107,11 +103,6 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
       color: '#64748b', bg: '#f1f5f9', count: () => statusesQ.data?.length ?? 0,
       icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.5"/><path d="M6.8 10l2.2 2.2 4.2-4.4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
     },
-    {
-      id: 'customFields', group: 'Системні каталоги', label: 'Кастомні поля', description: 'Додаткові поля для матеріалів, постачальників і продуктів',
-      color: '#4f46e5', bg: '#eef2ff', count: () => customFieldsCount,
-      icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2.5" y="4" width="15" height="3" rx="1" stroke="currentColor" strokeWidth="1.5"/><rect x="2.5" y="9.5" width="15" height="3" rx="1" stroke="currentColor" strokeWidth="1.5"/><rect x="2.5" y="15" width="9" height="3" rx="1" stroke="currentColor" strokeWidth="1.5"/></svg>,
-    },
   ]
 
   if (page === 'departments')        return <DepartmentsPage        onBack={() => setPage(null)} />
@@ -124,7 +115,6 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
   if (page === 'units')              return <UnitsPage              onBack={() => setPage(null)} />
   if (page === 'suppliers')          return <SuppliersPage          onBack={() => setPage(null)} />
   if (page === 'productStatuses')    return <ProductStatusesPage    onBack={() => setPage(null)} />
-  if (page === 'customFields')       return <CustomFieldsPage       onBack={() => setPage(null)} />
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -185,7 +175,7 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
    Shared primitives
 ─────────────────────────────────────────────────────────── */
 
-function SubPageHeader({ title, subtitle, onBack, onAdd }: { title: string; subtitle: string; onBack: () => void; onAdd: () => void }) {
+function SubPageHeader({ title, subtitle, onBack, onAdd }: { title: string; subtitle: string; onBack: () => void; onAdd?: () => void }) {
   return (
     <div className="flex items-center gap-3 px-4 py-4" style={{ borderBottom: '1px solid rgba(157,200,255,0.2)' }}>
       <button onClick={onBack}
@@ -198,13 +188,15 @@ function SubPageHeader({ title, subtitle, onBack, onAdd }: { title: string; subt
         <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800 leading-tight">{title}</h1>
         <p className="text-xs text-slate-400">{subtitle}</p>
       </div>
-      <button onClick={onAdd}
-        className="flex items-center gap-1.5 rounded-xl bg-slate-800 px-3 py-2.5 text-xs font-medium text-white active:scale-95 transition-all shrink-0">
-        <svg width="11" height="11" viewBox="0 0 13 13" fill="none">
-          <path d="M6.5 1v11M1 6.5h11" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
-        </svg>
-        Додати
-      </button>
+      {onAdd && (
+        <button onClick={onAdd}
+          className="flex items-center gap-1.5 rounded-xl bg-slate-800 px-3 py-2.5 text-xs font-medium text-white active:scale-95 transition-all shrink-0">
+          <svg width="11" height="11" viewBox="0 0 13 13" fill="none">
+            <path d="M6.5 1v11M1 6.5h11" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
+          </svg>
+          Додати
+        </button>
+      )}
     </div>
   )
 }
@@ -542,87 +534,114 @@ function CategoriesPage({ onBack }: { onBack: () => void }) {
 
 /* ─── MATERIAL CATEGORIES (окремий каталог, не пов'язаний з categories) ─── */
 function MaterialCategoriesPage({ onBack }: { onBack: () => void }) {
-  const { materialCategories, addMaterialCategory, updateMaterialCategory, removeMaterialCategory } = useCatalog()
-  const [form, setForm] = useState<{ open: boolean; editing: MaterialCategory | null; name: string; color: string; parentId: string | null }>
-    ({ open: false, editing: null, name: '', color: PRESET_COLORS[0].text, parentId: null })
+  const { materialCategories, addMaterialCategory, removeMaterialCategory } = useCatalog()
+  const [expandedIds, setExpandedIds] = useState<string[]>([])
+  const [showAddCat, setShowAddCat] = useState(false)
+  const [newCatName, setNewCatName] = useState('')
+  const [addCatParentId, setAddCatParentId] = useState<string | null>(null)
 
-  const openAdd  = () => setForm({ open: true, editing: null, name: '', color: PRESET_COLORS[0].text, parentId: null })
-  const openEdit = (c: MaterialCategory) => setForm({ open: true, editing: c, name: c.name, color: c.color, parentId: c.parentId })
-  const close    = () => setForm(f => ({ ...f, open: false }))
+  const topLevelCats = materialCategories.filter(c => c.parentId === null)
+  const toggleExpand = (id: string) =>
+    setExpandedIds(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
 
-  const save = () => {
-    if (!form.name.trim()) return
-    if (form.editing) updateMaterialCategory(form.editing.id, form.name.trim(), form.color, form.parentId)
-    else addMaterialCategory(form.name.trim(), form.color, form.parentId)
-    close()
+  const handleAdd = () => {
+    if (!newCatName.trim()) return
+    addMaterialCategory(newCatName.trim(), PRESET_COLORS[materialCategories.length % PRESET_COLORS.length].text, addCatParentId)
+    setNewCatName(''); setAddCatParentId(null); setShowAddCat(false)
   }
-
-  const roots = materialCategories.filter(c => c.parentId === null)
-  const children = (id: string) => materialCategories.filter(c => c.parentId === id)
-  const bgOf = (color: string) => PRESET_COLORS.find(c => c.text === color)?.bg ?? '#f0fdfa'
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      <SubPageHeader title="Категорії матеріалів" subtitle={`${materialCategories.length} записів`} onBack={onBack} onAdd={openAdd} />
+      <SubPageHeader title="Категорія" subtitle={`${materialCategories.length} записів`} onBack={onBack} />
       <div className="px-4 py-4 space-y-2 pb-8">
         {materialCategories.length === 0 && (
-          <p className="py-10 text-center text-sm text-slate-400">Категорій матеріалів ще немає</p>
+          <p className="py-10 text-center text-sm text-slate-400">Категорій матеріалів ще немає — додайте першу нижче</p>
         )}
-        {roots.map(root => (
-          <div key={root.id}>
-            <div className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3.5 mb-2"
-              style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
-              <div className="h-9 w-9 shrink-0 rounded-xl flex items-center justify-center" style={{ background: bgOf(root.color) }}>
-                <div className="h-3 w-3 rounded-full" style={{ background: root.color }} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-slate-800">{root.name}</p>
-                <p className="text-xs text-slate-400">{children(root.id).length} підкатегорій</p>
-              </div>
-              <EditButton onEdit={() => openEdit(root)} />
-              <DeleteButton onDelete={() => removeMaterialCategory(root.id)} />
-            </div>
-            {children(root.id).map(child => (
-              <div key={child.id} className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3 ml-5 mb-2"
-                style={{ border: '1px solid rgba(157,200,255,0.15)' }}>
-                <div className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: child.color }} />
-                <p className="flex-1 text-sm text-slate-700">{child.name}</p>
-                <EditButton onEdit={() => openEdit(child)} />
-                <DeleteButton onDelete={() => removeMaterialCategory(child.id)} />
-              </div>
-            ))}
-          </div>
+        {topLevelCats.map(cat => (
+          <MaterialCategoryNode key={cat.id} cat={cat} depth={0} allCats={materialCategories}
+            expandedIds={expandedIds} onToggleExpand={toggleExpand}
+            onDelete={id => removeMaterialCategory(id)} />
         ))}
-      </div>
-      {form.open && (
-        <BottomSheet onClose={close}>
-          <SheetTitle>{form.editing ? 'Редагувати категорію' : 'Нова категорія матеріалу'}</SheetTitle>
-          <div className="px-5 space-y-4">
-            <Field label="Назва"><Input value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} placeholder="Назва категорії" /></Field>
-            <Field label="Батьківська категорія">
-              <div className="flex flex-wrap gap-2">
-                <button onClick={() => setForm(f => ({ ...f, parentId: null }))}
-                  className="rounded-xl px-3 py-2 text-xs font-medium border transition-all"
-                  style={form.parentId === null ? { background: '#1e293b', color: '#fff', borderColor: '#1e293b' } : { background: '#f8fafc', color: '#94a3b8', borderColor: '#e2e8f0' }}>
-                  Коренева
-                </button>
-                {roots.filter(r => r.id !== form.editing?.id).map(r => {
-                  const bg = bgOf(r.color)
-                  const active = form.parentId === r.id
-                  return (
-                    <button key={r.id} onClick={() => setForm(f => ({ ...f, parentId: r.id }))}
-                      className="rounded-xl px-3 py-2 text-xs font-medium border transition-all"
-                      style={active ? { background: r.color, color: '#fff', borderColor: r.color } : { background: bg, color: r.color, borderColor: 'transparent' }}>
-                      {r.name}
-                    </button>
-                  )
-                })}
-              </div>
-            </Field>
-            <Field label="Колір"><ColorPicker value={form.color} onChange={v => setForm(f => ({ ...f, color: v }))} /></Field>
+
+        {showAddCat ? (
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-3 space-y-2.5">
+            <p className="text-xs font-semibold text-blue-700">Нова категорія</p>
+            <input value={newCatName} onChange={e => setNewCatName(e.target.value)}
+              placeholder="Назва категорії" autoFocus
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 transition-all" />
+            <div className="relative">
+              <select value={addCatParentId ?? ''} onChange={e => setAddCatParentId(e.target.value || null)}
+                className="w-full appearance-none rounded-xl border border-slate-200 bg-white pl-3 pr-8 py-2 text-sm outline-none focus:border-blue-400 transition-all">
+                <option value="">— Верхнього рівня —</option>
+                {materialCategories.map(c => <option key={c.id} value={c.id}>{buildCatPath(c.id, materialCategories)}</option>)}
+              </select>
+              <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="11" height="11" viewBox="0 0 11 11" fill="none">
+                <path d="M2 3.5l3.5 4 3.5-4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => { setShowAddCat(false); setNewCatName('') }}
+                className="flex-1 rounded-xl border border-slate-200 py-2 text-xs text-slate-500 active:scale-[0.98]">Скасувати</button>
+              <button onClick={handleAdd} disabled={!newCatName.trim()}
+                className="flex-1 rounded-xl bg-blue-600 py-2 text-xs font-semibold text-white disabled:opacity-40 active:scale-[0.98]">Додати</button>
+            </div>
           </div>
-          <SheetActions onCancel={close} onSave={save} saveLabel={form.editing ? 'Зберегти' : 'Додати'} disabled={!form.name.trim()} />
-        </BottomSheet>
+        ) : (
+          <button onClick={() => setShowAddCat(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl py-3 text-xs font-semibold text-blue-600 transition-all active:scale-[0.98]"
+            style={{ border: '1.5px dashed rgba(59,130,246,0.3)', background: 'rgba(59,130,246,0.02)' }}>
+            <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+              <path d="M5.5 1v9M1 5.5h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+            </svg>
+            Додати категорію
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function MaterialCategoryNode({ cat, depth, allCats, expandedIds, onToggleExpand, onDelete }: {
+  cat: MaterialCategory
+  depth: number
+  allCats: MaterialCategory[]
+  expandedIds: string[]
+  onToggleExpand: (id: string) => void
+  onDelete: (id: string) => void
+}) {
+  const children = allCats.filter(c => c.parentId === cat.id)
+  const isExpanded = expandedIds.includes(cat.id)
+
+  return (
+    <div style={{ marginLeft: depth > 0 ? depth * 16 : 0 }}>
+      <div className="flex items-center gap-1 rounded-2xl overflow-hidden"
+        style={{ background: depth === 0 ? '#f8fafc' : 'white', border: '1px solid rgba(157,200,255,0.25)' }}>
+        <button onClick={() => children.length > 0 && onToggleExpand(cat.id)} className="flex-1 flex items-center gap-3 px-4 py-2.5 text-left">
+          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: cat.color }} />
+          <span className="text-sm font-medium text-slate-800">{cat.name}</span>
+          {cat.shortCode && (
+            <span className="rounded-md bg-blue-50 text-blue-600 text-[10px] font-mono font-bold px-1.5 py-0.5 shrink-0">{cat.shortCode}</span>
+          )}
+          {children.length > 0 && (
+            <span className="ml-auto rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold px-1.5 py-0.5 shrink-0">{children.length}</span>
+          )}
+        </button>
+        <DeleteButton onDelete={() => onDelete(cat.id)} />
+        {children.length > 0 && (
+          <button onClick={() => onToggleExpand(cat.id)} className="flex h-9 w-9 items-center justify-center shrink-0 text-slate-400">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>
+              <path d="M2.5 4l4 4.5 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+        )}
+      </div>
+      {isExpanded && children.length > 0 && (
+        <div className="ml-4 mt-1.5 space-y-1.5 border-l-2 pl-3" style={{ borderColor: 'rgba(157,200,255,0.3)' }}>
+          {children.map(child => (
+            <MaterialCategoryNode key={child.id} cat={child} depth={depth + 1} allCats={allCats}
+              expandedIds={expandedIds} onToggleExpand={onToggleExpand} onDelete={onDelete} />
+          ))}
+        </div>
       )}
     </div>
   )
@@ -1047,7 +1066,7 @@ function FieldDefBody({ d }: { d: CustomFieldDefinition }) {
   )
 }
 
-function CustomFieldsPage({ onBack }: { onBack: () => void }) {
+export function CustomFieldsPage({ onBack }: { onBack: () => void }) {
   const [entityType, setEntityType] = useState<EntityType>('material')
   const definitionsQ = useCustomFieldDefinitions(entityType)
   const definitions = definitionsQ.data ?? []

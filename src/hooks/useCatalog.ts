@@ -63,6 +63,24 @@ export interface MaterialCategory {
   name: string
   color: string
   parentId: string | null
+  /** Скорочення для артикула матеріалу (напр. "M", "MS") — унікальне в межах організації */
+  shortCode: string | null
+}
+
+/** Генерує унікальне скорочення категорії (усі літери великі): перша літера назви;
+ *  якщо зайнята — додає наступні літери назви, поки не стане унікальним. */
+export function genCategoryShortCode(name: string, existingCodes: (string | null)[]): string {
+  const clean = name.trim()
+  if (!clean) return ''
+  const used = new Set(existingCodes.filter((c): c is string => !!c))
+  for (let len = 1; len <= clean.length; len++) {
+    const candidate = clean.slice(0, len).toUpperCase()
+    if (!used.has(candidate)) return candidate
+  }
+  let i = 2
+  let candidate = `${clean[0].toUpperCase()}${i}`
+  while (used.has(candidate)) { i++; candidate = `${clean[0].toUpperCase()}${i}` }
+  return candidate
 }
 
 export interface Supplier {
@@ -235,9 +253,9 @@ function useMaterialCategoriesQuery(orgId: string) {
   return useQuery({
     queryKey: ['material-categories', orgId],
     queryFn: async (): Promise<MaterialCategory[]> => {
-      const { data, error } = await supabase.from('material_categories').select('id, name, color, parent_id').eq('organization_id', orgId).order('name')
+      const { data, error } = await supabase.from('material_categories').select('id, name, color, parent_id, short_code').eq('organization_id', orgId).order('name')
       if (error) throw error
-      return data.map(c => ({ id: c.id, name: c.name, color: c.color ?? DEFAULT_COLOR, parentId: c.parent_id }))
+      return data.map(c => ({ id: c.id, name: c.name, color: c.color ?? DEFAULT_COLOR, parentId: c.parent_id, shortCode: c.short_code }))
     },
   })
 }
@@ -452,7 +470,8 @@ export function useCatalog() {
   /* Material Categories */
   const addMaterialCategoryM = useMutation({
     mutationFn: async ({ name, color, parentId }: { name: string; color: string; parentId: string | null }) => {
-      const { error } = await supabase.from('material_categories').insert({ name, color, parent_id: parentId, organization_id: orgId })
+      const shortCode = genCategoryShortCode(name, (materialCategoriesQ.data ?? []).map(c => c.shortCode))
+      const { error } = await supabase.from('material_categories').insert({ name, color, parent_id: parentId, short_code: shortCode, organization_id: orgId })
       if (error) throw error
     },
     onSuccess: () => invalidate('material-categories'),

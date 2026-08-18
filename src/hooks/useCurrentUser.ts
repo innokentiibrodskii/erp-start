@@ -9,7 +9,7 @@ import { supabase } from '../lib/supabase'
    performer — лише свої.
 ─────────────────────────────────────────────────────────── */
 
-export type UserRole = 'manager' | 'performer'
+export type UserRole = 'admin' | 'manager' | 'performer'
 
 export interface CurrentUser {
   id: string
