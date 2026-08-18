@@ -521,17 +521,17 @@ function MaterialQRPage({ material, categoryPath, stock, onBack }: {
     const qrSvg = document.getElementById('mat-qr-svg')?.outerHTML ?? ''
     win.document.write(`<!DOCTYPE html><html><head><title>QR — ${material.name}</title>
     <style>
-      @page{size:58mm 40mm;margin:0}
+      @page{size:40mm 58mm;margin:0}
       *{margin:0;padding:0;box-sizing:border-box}
-      html,body{width:58mm;height:40mm}
+      html,body{width:40mm;height:58mm}
       body{font-family:'DM Sans',Arial,sans-serif;background:#fff}
-      .label{width:58mm;height:40mm;padding:2mm;display:flex;align-items:center;gap:2mm;page-break-inside:avoid;overflow:hidden}
+      .label{width:40mm;height:58mm;padding:2mm;display:flex;flex-direction:column;align-items:center;gap:1.5mm;page-break-inside:avoid;overflow:hidden}
       #mat-qr-svg{width:30mm!important;height:30mm!important;flex-shrink:0}
-      .info{flex:1;min-width:0;display:flex;flex-direction:column;gap:1mm;overflow:hidden}
+      .info{width:100%;min-width:0;display:flex;flex-direction:column;align-items:center;gap:1mm;overflow:hidden;text-align:center}
       .name{font-size:9px;font-weight:700;color:#0f172a;line-height:1.15;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
       .code{font-family:monospace;font-size:7px;color:#64748b}
       .stock{font-size:9px;font-weight:800;color:${stock > 0 ? '#16a34a' : '#94a3b8'}}
-      .cat{font-size:6.5px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .cat{font-size:6.5px;color:#94a3b8;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
     </style></head><body>
     <div class="label">
@@ -548,6 +548,86 @@ function MaterialQRPage({ material, categoryPath, stock, onBack }: {
     win.document.close()
   }
 
+  /** Готовий PNG-файл точного розміру етикетки (40×58мм при 203 dpi — стандарт
+   *  мобільних Bluetooth-принтерів) — для друку через застосунки типу Mobi Print,
+   *  куди файл передається напряму (не через діалог друку браузера). */
+  const handleDownloadImage = () => {
+    const svgEl = document.getElementById('mat-qr-svg')
+    if (!svgEl) return
+    const DPI = 203
+    const mm = (v: number) => Math.round((v * DPI) / 25.4)
+    const W = mm(40)
+    const H = mm(58)
+    const qrPx = mm(30)
+
+    const svgData = new XMLSerializer().serializeToString(svgEl)
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = W
+      canvas.height = H
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, W, H)
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'top'
+
+      const qrX = (W - qrPx) / 2
+      const qrY = mm(2)
+      ctx.drawImage(img, qrX, qrY, qrPx, qrPx)
+
+      const maxWidth = W - mm(4)
+      let y = qrY + qrPx + mm(3)
+
+      ctx.font = `bold ${mm(2.6)}px Arial`
+      ctx.fillStyle = '#0f172a'
+      const words = material.name.split(' ')
+      const lines: string[] = []
+      let cur = ''
+      for (const w of words) {
+        const test = cur ? `${cur} ${w}` : w
+        if (cur && ctx.measureText(test).width > maxWidth) { lines.push(cur); cur = w } else cur = test
+      }
+      if (cur) lines.push(cur)
+      for (const line of lines.slice(0, 2)) { ctx.fillText(line, W / 2, y); y += mm(3.2) }
+
+      if (material.code) {
+        ctx.font = `${mm(2)}px monospace`
+        ctx.fillStyle = '#64748b'
+        ctx.fillText(material.code, W / 2, y)
+        y += mm(3)
+      }
+
+      ctx.font = `bold ${mm(2.6)}px Arial`
+      ctx.fillStyle = stock > 0 ? '#16a34a' : '#94a3b8'
+      ctx.fillText(`${fmt(stock)} ${material.unitShortName}`, W / 2, y)
+      y += mm(3)
+
+      if (categoryPath) {
+        ctx.font = `${mm(1.8)}px Arial`
+        ctx.fillStyle = '#94a3b8'
+        let catText = categoryPath
+        while (catText.length > 3 && ctx.measureText(catText).width > maxWidth) catText = catText.slice(0, -1)
+        if (catText !== categoryPath) catText = `${catText.slice(0, -1)}…`
+        ctx.fillText(catText, W / 2, y)
+      }
+
+      canvas.toBlob(blob => {
+        if (!blob) return
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `qr-${material.code ?? material.id}.png`
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        URL.revokeObjectURL(url)
+      }, 'image/png')
+    }
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgData)}`
+  }
+
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
       <style>{`@media print { body > * { display: none !important; } }`}</style>
@@ -561,6 +641,13 @@ function MaterialQRPage({ material, categoryPath, stock, onBack }: {
           </svg>
         </button>
         <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="flex-1 text-lg text-slate-800">QR-мітка</h1>
+        <button onClick={handleDownloadImage}
+          className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 active:scale-95 transition-all">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+            <path d="M6.5 1v7.5M3.5 6l3 3 3-3M2 11.5h9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          PNG
+        </button>
         <button onClick={handlePrint}
           className="flex items-center gap-1.5 rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-white active:scale-95 transition-all">
           <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
