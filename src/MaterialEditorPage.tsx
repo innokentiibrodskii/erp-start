@@ -1,21 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useCatalog, type MaterialCategory, type Unit, type Supplier, type Warehouse } from './hooks/useCatalog'
+import { CategoryTreeNode } from './CategoryTreeNode'
+import { CustomFieldsSection, Field, emptyCustomInput, type CustomFieldInput } from './CustomFieldsEditor'
 import type { Material } from './hooks/useMaterials'
-import { useCustomFieldValues, type CustomFieldDefinition, type FieldType } from './hooks/useCustomFields'
+import { useCustomFieldValues, type CustomFieldDefinition } from './hooks/useCustomFields'
 import type { StockMovement } from './hooks/useMaterialStock'
 import { fmt, dateStr, buildCatPath, genBatchCode, genSeries, genMaterialArticle } from './lib/materialFormat'
 import { PRESET_COLORS } from './lib/colors'
 
-export interface CustomFieldInput {
-  text: string
-  number: string
-  boolean: boolean
-  optionId: string | null
-}
-
-function emptyCustomInput(): CustomFieldInput {
-  return { text: '', number: '', boolean: false, optionId: null }
-}
+export type { CustomFieldInput }
 
 export interface PendingDelivery {
   id: string
@@ -25,10 +18,6 @@ export interface PendingDelivery {
   cost: number | null
   note: string | null
   series: { code: string; qty: number }[]
-}
-
-const FIELD_TYPE_LABEL: Record<FieldType, string> = {
-  text: 'Текст', number: 'Число', boolean: 'Булеве значення', file: 'Файл(и)', select: 'Список значень',
 }
 
 interface Props {
@@ -337,65 +326,8 @@ export default function MaterialEditorPage({
             )}
           </div>
 
-          {fields.length > 0 && (
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">Додаткові поля</label>
-              <div className="space-y-3">
-                {fields.map(def => {
-                  const v = customInputs[def.id] ?? emptyCustomInput()
-                  const error = errors[`field_${def.id}`]
-                  const filesForField = editing ? (valuesQ.files[def.id] ?? []) : []
-                  return (
-                    <Field key={def.id} label={def.name + (def.isRequired ? ' *' : '')} error={error}>
-                      {def.fieldType === 'select' ? (
-                        <div className="relative">
-                          <select value={v.optionId ?? ''} onChange={e => setCustomInput(def.id, { optionId: e.target.value || null })}
-                            className="w-full appearance-none rounded-2xl border border-slate-200 bg-white pl-4 pr-10 py-3.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all">
-                            <option value="">— Оберіть —</option>
-                            {def.options.map(o => <option key={o.id} value={o.id}>{o.value}</option>)}
-                          </select>
-                          <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" width="13" height="13" viewBox="0 0 13 13" fill="none">
-                            <path d="M2.5 4l4 4.5 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                        </div>
-                      ) : def.fieldType === 'boolean' ? (
-                        <button type="button" onClick={() => setCustomInput(def.id, { boolean: !v.boolean })}
-                          className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3.5 w-full">
-                          <span className="text-sm text-slate-600">{v.boolean ? 'Так' : 'Ні'}</span>
-                          <span className="relative h-6 w-11 rounded-full transition-all shrink-0" style={{ background: v.boolean ? '#3b82f6' : '#e2e8f0' }}>
-                            <span className="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all" style={{ left: v.boolean ? '1.375rem' : '0.125rem' }} />
-                          </span>
-                        </button>
-                      ) : def.fieldType === 'file' ? (
-                        editing ? (
-                          <div className="space-y-2">
-                            {filesForField.map(f => (
-                              <a key={f.id} href={f.url} target="_blank" rel="noreferrer"
-                                className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-blue-600 truncate">
-                                <span className="truncate">{f.filename}</span>
-                              </a>
-                            ))}
-                            <p className="text-xs text-slate-400 italic">Файли редагуються після збереження</p>
-                          </div>
-                        ) : (
-                          <p className="text-xs text-slate-400 italic">Доступно після збереження матеріалу</p>
-                        )
-                      ) : (
-                        <input type={def.fieldType === 'number' ? 'number' : 'text'}
-                          value={def.fieldType === 'number' ? v.number : v.text}
-                          onChange={e => setCustomInput(def.id, def.fieldType === 'number' ? { number: e.target.value } : { text: e.target.value })}
-                          placeholder={def.fieldType === 'number' ? '0' : ''}
-                          className={`w-full rounded-2xl border px-4 py-3.5 text-sm outline-none transition-all focus:ring-2 focus:ring-blue-100 ${error ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white focus:border-blue-400'}`} />
-                      )}
-                      {!error && def.fieldType !== 'file' && (
-                        <p className="mt-1 text-[10px] text-slate-300">{FIELD_TYPE_LABEL[def.fieldType]}</p>
-                      )}
-                    </Field>
-                  )
-                })}
-              </div>
-            </div>
-          )}
+          <CustomFieldsSection fields={fields} customInputs={customInputs} setCustomInput={setCustomInput}
+            errors={errors} filesByField={valuesQ.files} isNew={isNew} />
         </div>
       )}
 
@@ -713,62 +645,3 @@ function Stepper({ value, onChange, min = 0 }: { value: number; onChange: (v: nu
   )
 }
 
-function Field({ label, children, error }: { label: string; children: React.ReactNode; error?: string }) {
-  return (
-    <div>
-      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">{label}</label>
-      {children}
-      {error && <p className="mt-1.5 text-xs text-red-500">{error}</p>}
-    </div>
-  )
-}
-
-function CategoryTreeNode({ cat, depth, allCats, selectedId, expandedIds, onSelect, onToggleExpand }: {
-  cat: MaterialCategory
-  depth: number
-  allCats: MaterialCategory[]
-  selectedId: string | null
-  expandedIds: string[]
-  onSelect: (id: string) => void
-  onToggleExpand: (id: string) => void
-}) {
-  const children = allCats.filter(c => c.parentId === cat.id)
-  const isExpanded = expandedIds.includes(cat.id)
-  const isSelected = selectedId === cat.id
-
-  return (
-    <div style={{ marginLeft: depth > 0 ? depth * 16 : 0 }}>
-      <div className="flex items-center gap-1 rounded-2xl overflow-hidden"
-        style={{ background: isSelected ? '#1e293b' : depth === 0 ? '#f8fafc' : 'white', border: `1px solid ${isSelected ? '#1e293b' : 'rgba(157,200,255,0.25)'}` }}>
-        <button onClick={() => onSelect(cat.id)} className="flex-1 flex items-center gap-3 px-4 py-2.5 text-left">
-          <div className="h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0" style={{ borderColor: isSelected ? 'white' : '#cbd5e1' }}>
-            {isSelected && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
-          </div>
-          <span className="text-sm font-medium" style={{ color: isSelected ? 'white' : '#1e293b' }}>{cat.name}</span>
-          {children.length > 0 && (
-            <span className="ml-auto rounded-full text-[10px] font-bold px-1.5 py-0.5 shrink-0"
-              style={{ background: isSelected ? 'rgba(255,255,255,0.2)' : '#e2e8f0', color: isSelected ? 'white' : '#64748b' }}>
-              {children.length}
-            </span>
-          )}
-        </button>
-        {children.length > 0 && (
-          <button onClick={() => onToggleExpand(cat.id)} className="flex h-9 w-9 items-center justify-center shrink-0"
-            style={{ color: isSelected ? 'rgba(255,255,255,0.7)' : '#94a3b8' }}>
-            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>
-              <path d="M2.5 4l4 4.5 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </button>
-        )}
-      </div>
-      {isExpanded && children.length > 0 && (
-        <div className="ml-4 mt-1.5 space-y-1.5 border-l-2 pl-3" style={{ borderColor: 'rgba(157,200,255,0.3)' }}>
-          {children.map(child => (
-            <CategoryTreeNode key={child.id} cat={child} depth={depth + 1} allCats={allCats} selectedId={selectedId}
-              expandedIds={expandedIds} onSelect={onSelect} onToggleExpand={onToggleExpand} />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}

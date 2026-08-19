@@ -14,6 +14,7 @@ import {
 } from './hooks/useCustomFields'
 import { fmt, dateStr, buildCatPath, genBatchCode, genSeries } from './lib/materialFormat'
 import MaterialEditorPage, { type PendingDelivery, type CustomFieldInput } from './MaterialEditorPage'
+import { CategoryTreeNode } from './CategoryTreeNode'
 
 interface Props { onNavigate: (page: string) => void; initialMaterialId?: string | null }
 
@@ -45,6 +46,15 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
   const [showArchived, setShowArchived] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [filterCatId, setFilterCatId] = useState<string | null>(null)
+  // Уся секція "Категорія" згорнута в один рядок (як звичайний select) за замовчуванням —
+  // дерево розгортається лише по кліку на шеврон, щоб не займати місце над іншими полями.
+  const [catSectionOpen, setCatSectionOpen] = useState(false)
+  const [expandedFilterCats, setExpandedFilterCats] = useState<string[]>([])
+  const toggleExpandFilterCat = (id: string) =>
+    setExpandedFilterCats(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id])
+  const selectedCatLabel = filterCatId === null
+    ? 'Всі категорії'
+    : (materialCategories.find(c => c.id === filterCatId)?.name ?? 'Всі категорії')
   const [filterMinStock, setFilterMinStock] = useState('')
   const [filterMaxStock, setFilterMaxStock] = useState('')
   const [sortKey, setSortKey] = useState<'name' | 'stock' | 'date'>('name')
@@ -283,16 +293,42 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
             style={{ border: '1px solid rgba(157,200,255,0.3)', boxShadow: '0 2px 12px rgba(157,200,255,0.1)' }}>
             <div>
               <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Категорія</label>
-              <div className="relative">
-                <select value={filterCatId ?? ''} onChange={e => setFilterCatId(e.target.value || null)}
-                  className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 pl-3 pr-8 py-2.5 text-sm outline-none focus:border-blue-400 transition-all">
-                  <option value="">Всі категорії</option>
-                  {materialCategories.map(c => <option key={c.id} value={c.id}>{buildCatPath(c.id, materialCategories)}</option>)}
-                </select>
-                <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="11" height="11" viewBox="0 0 11 11" fill="none">
-                  <path d="M2 3.5l3.5 4 3.5-4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </div>
+
+              {!catSectionOpen ? (
+                // Згорнутий вигляд — звичайний select, як інші фільтри нижче
+                <button onClick={() => setCatSectionOpen(true)}
+                  className="w-full flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 pl-3 pr-2.5 py-2.5 text-sm text-left transition-all active:scale-[0.99]">
+                  <span className="text-slate-800">{selectedCatLabel}</span>
+                  <svg className="text-slate-400 shrink-0" width="11" height="11" viewBox="0 0 11 11" fill="none">
+                    <path d="M2 3.5l3.5 4 3.5-4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+              ) : (
+                <div className="space-y-1.5">
+                  <div className="w-full flex items-center gap-1 rounded-2xl overflow-hidden"
+                    style={filterCatId === null
+                      ? { background: '#1e293b', border: '1px solid #1e293b' }
+                      : { background: '#f8fafc', border: '1px solid rgba(157,200,255,0.25)' }}>
+                    <button onClick={() => setFilterCatId(null)} className="flex-1 flex items-center gap-3 px-4 py-2.5 text-left">
+                      <div className="h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0" style={{ borderColor: filterCatId === null ? 'white' : '#cbd5e1' }}>
+                        {filterCatId === null && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
+                      </div>
+                      <span className="text-sm font-medium" style={{ color: filterCatId === null ? 'white' : '#1e293b' }}>Всі категорії</span>
+                    </button>
+                    {/* Шеврон згортає всю секцію "Категорія" назад у компактний select */}
+                    <button onClick={() => setCatSectionOpen(false)} className="flex h-9 w-9 items-center justify-center shrink-0"
+                      style={{ color: filterCatId === null ? 'rgba(255,255,255,0.7)' : '#94a3b8' }}>
+                      <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ transform: 'rotate(180deg)' }}>
+                        <path d="M2.5 4l4 4.5 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </button>
+                  </div>
+                  {materialCategories.filter(c => c.parentId === null).map(cat => (
+                    <CategoryTreeNode key={cat.id} cat={cat} depth={0} allCats={materialCategories} selectedId={filterCatId}
+                      expandedIds={expandedFilterCats} onSelect={setFilterCatId} onToggleExpand={toggleExpandFilterCat} />
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>

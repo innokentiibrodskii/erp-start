@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
 import QRCodeLib from 'react-qr-code'
 import { useCatalog } from './hooks/useCatalog'
 import { useProducts, useMaterials, useProductStatuses, type Product } from './hooks/useProducts'
@@ -8,6 +8,7 @@ import ProductEditor from './ProductEditor'
 import ProductView from './ProductView'
 import MaterialPickerSheet from './MaterialPickerSheet'
 import OperationPickerSheet from './OperationPickerSheet'
+import { CategoryTreeNode } from './CategoryTreeNode'
 
 type QuickActionType = 'materials' | 'operations' | 'attributes'
 
@@ -48,6 +49,16 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
   const [sortBy, setSortBy]   = useState<'name' | 'createdAt' | 'updatedAt'>(() => ls(LS_SORT_BY, 'createdAt'))
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => ls(LS_SORT_DIR, 'desc'))
   const [filterStatusId, setFilterStatusId] = useState<string | null>(() => ls(LS_FILTER, null))
+  const [filterCatId, setFilterCatId] = useState<string | null>(null)
+  // Секція "Категорія" згорнута в один рядок за замовчуванням — дерево розгортається
+  // лише по кліку на шеврон (той самий патерн, що й у фільтрі матеріалів).
+  const [catSectionOpen, setCatSectionOpen] = useState(false)
+  const [expandedFilterCats, setExpandedFilterCats] = useState<string[]>([])
+  const toggleExpandFilterCat = (id: string) =>
+    setExpandedFilterCats(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id])
+  const selectedCatLabel = filterCatId === null
+    ? 'Всі категорії'
+    : (categories.find(c => c.id === filterCatId)?.name ?? 'Всі категорії')
 
   const toggleSort = (key: 'name' | 'createdAt' | 'updatedAt') => {
     if (sortBy === key) {
@@ -64,23 +75,16 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
   }
 
   const [filterOpen, setFilterOpen] = useState(false)
-  const filterRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
 
   const activeStatus = productStatuses.find(s => s.id === filterStatusId)
-  const hasActiveFilters = filterStatusId !== null || sortBy !== 'createdAt' || sortDir !== 'desc'
+  const hasActiveFilters = filterStatusId !== null || filterCatId !== null || sortBy !== 'createdAt' || sortDir !== 'desc'
 
   const filtered = products
     .filter(p => {
       const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.sku.toLowerCase().includes(search.toLowerCase())
       const matchStatus = filterStatusId === null || p.statusId === filterStatusId
-      return matchSearch && matchStatus
+      const matchCat = filterCatId === null || p.categoryId === filterCatId
+      return matchSearch && matchStatus && matchCat
     })
     .sort((a, b) => {
       let cmp = 0
@@ -130,23 +134,64 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
               className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm outline-none placeholder:text-slate-300 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
           </div>
           {/* Filter/sort button */}
-          <div className="relative shrink-0" ref={filterRef}>
-            <button onClick={() => setFilterOpen(v => !v)}
-              className="relative flex h-[46px] w-[46px] items-center justify-center rounded-2xl border transition-all active:scale-95"
-              style={hasActiveFilters
-                ? { background: '#1e293b', borderColor: '#1e293b', color: '#fff' }
-                : { background: '#fff', borderColor: '#e2e8f0', color: '#64748b' }}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-              </svg>
-              {hasActiveFilters && (
-                <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-blue-400 border-2 border-white" />
-              )}
-            </button>
-            {/* Dropdown panel */}
-            {filterOpen && (
-              <div className="absolute right-0 top-[52px] z-30 w-64 rounded-2xl bg-white p-4 space-y-4"
-                style={{ boxShadow: '0 8px 32px rgba(0,0,60,0.12)', border: '1px solid rgba(157,200,255,0.25)' }}>
+          <button onClick={() => setFilterOpen(v => !v)}
+            className="relative flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-2xl border transition-all active:scale-95"
+            style={hasActiveFilters
+              ? { background: '#1e293b', borderColor: '#1e293b', color: '#fff' }
+              : { background: '#fff', borderColor: '#e2e8f0', color: '#64748b' }}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+            </svg>
+            {hasActiveFilters && (
+              <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-blue-400 border-2 border-white" />
+            )}
+          </button>
+        </div>
+
+        {filterOpen && (
+          <div className="mb-3 rounded-2xl bg-white p-4 space-y-3"
+            style={{ border: '1px solid rgba(157,200,255,0.3)', boxShadow: '0 2px 12px rgba(157,200,255,0.1)' }}>
+            {/* Category filter */}
+                {categories.length > 0 && (
+                  <div>
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Категорія</p>
+                    {!catSectionOpen ? (
+                      // Згорнутий вигляд — звичайний select, як інші фільтри
+                      <button onClick={() => setCatSectionOpen(true)}
+                        className="w-full flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 pl-3 pr-2.5 py-2.5 text-sm text-left transition-all active:scale-[0.99]">
+                        <span className="text-slate-800">{selectedCatLabel}</span>
+                        <svg className="text-slate-400 shrink-0" width="11" height="11" viewBox="0 0 11 11" fill="none">
+                          <path d="M2 3.5l3.5 4 3.5-4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </button>
+                    ) : (
+                      <div className="space-y-1.5">
+                        <div className="w-full flex items-center gap-1 rounded-2xl overflow-hidden"
+                          style={filterCatId === null
+                            ? { background: '#1e293b', border: '1px solid #1e293b' }
+                            : { background: '#f8fafc', border: '1px solid rgba(157,200,255,0.25)' }}>
+                          <button onClick={() => setFilterCatId(null)} className="flex-1 flex items-center gap-3 px-4 py-2.5 text-left">
+                            <div className="h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0" style={{ borderColor: filterCatId === null ? 'white' : '#cbd5e1' }}>
+                              {filterCatId === null && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
+                            </div>
+                            <span className="text-sm font-medium" style={{ color: filterCatId === null ? 'white' : '#1e293b' }}>Всі категорії</span>
+                          </button>
+                          {/* Шеврон згортає всю секцію "Категорія" назад у компактний select */}
+                          <button onClick={() => setCatSectionOpen(false)} className="flex h-9 w-9 items-center justify-center shrink-0"
+                            style={{ color: filterCatId === null ? 'rgba(255,255,255,0.7)' : '#94a3b8' }}>
+                            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ transform: 'rotate(180deg)' }}>
+                              <path d="M2.5 4l4 4.5 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </button>
+                        </div>
+                        {categories.filter(c => c.parentId === null).map(cat => (
+                          <CategoryTreeNode key={cat.id} cat={cat} depth={0} allCats={categories} selectedId={filterCatId}
+                            expandedIds={expandedFilterCats} onSelect={setFilterCatId} onToggleExpand={toggleExpandFilterCat} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {/* Sort */}
                 <div>
                   <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Сортування</p>
@@ -196,15 +241,13 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
                 )}
                 {/* Reset */}
                 {hasActiveFilters && (
-                  <button onClick={() => { setFilter(defaultStatusId); setSortBy('createdAt'); setSortDir('desc'); lsSet(LS_SORT_BY, 'createdAt'); lsSet(LS_SORT_DIR, 'desc') }}
+                  <button onClick={() => { setFilter(defaultStatusId); setFilterCatId(null); setSortBy('createdAt'); setSortDir('desc'); lsSet(LS_SORT_BY, 'createdAt'); lsSet(LS_SORT_DIR, 'desc') }}
                     className="w-full rounded-xl py-2 text-xs text-slate-400 hover:text-red-400 transition-colors text-center">
                     Скинути фільтри
                   </button>
                 )}
               </div>
             )}
-          </div>
-        </div>
 
       </div>
 

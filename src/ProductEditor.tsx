@@ -2,6 +2,9 @@ import { useState, useRef, useEffect } from 'react'
 import { useCatalog } from './hooks/useCatalog'
 import { useProducts, useProductPhotos, useProductMutations, useProductStatuses, genProductArticle, type PhotoItem } from './hooks/useProducts'
 import { useProductAttributeMutations } from './hooks/useProductAttributes'
+import { useCustomFieldDefinitions, useCustomFieldValues, useCustomFieldValueMutations } from './hooks/useCustomFields'
+import { CategoryTreeNode } from './CategoryTreeNode'
+import { CustomFieldsSection, emptyCustomInput, type CustomFieldInput } from './CustomFieldsEditor'
 
 interface Props {
   productId: string | null
@@ -15,6 +18,10 @@ export default function ProductEditor({ productId, onBack }: Props) {
   const statusesQ = useProductStatuses()
   const { createProduct, updateProduct, isSaving } = useProductMutations()
   const { addAttributeValue, removeAttributeValue } = useProductAttributeMutations()
+  const customFieldsQ = useCustomFieldDefinitions('product')
+  const customFields = customFieldsQ.data ?? []
+  const customValuesQ = useCustomFieldValues('product', productId)
+  const { setValue: setCustomFieldValue } = useCustomFieldValueMutations('product')
 
   const products = productsQ.data ?? []
   const statuses = statusesQ.data ?? []
@@ -31,6 +38,34 @@ export default function ProductEditor({ productId, onBack }: Props) {
   const [toast, setToast] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Уся секція "Категорія" згорнута в один рядок (як звичайний select) за замовчуванням —
+  // дерево розгортається лише по кліку на шеврон (той самий патерн, що й у фільтрах).
+  const [catSectionOpen, setCatSectionOpen] = useState(false)
+  const [expandedCats, setExpandedCats] = useState<string[]>([])
+  const toggleExpandCat = (id: string) =>
+    setExpandedCats(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id])
+
+  // Додаткові (кастомні) поля продукту
+  const [customInputs, setCustomInputs] = useState<Record<string, CustomFieldInput>>({})
+  useEffect(() => {
+    if (!existing || customValuesQ.values.length === 0) return
+    setCustomInputs(prev => {
+      const next = { ...prev }
+      for (const v of customValuesQ.values) {
+        next[v.fieldDefinitionId] = {
+          text: v.valueText ?? '',
+          number: v.valueNumber !== null ? String(v.valueNumber) : '',
+          boolean: v.valueBoolean ?? false,
+          optionId: v.valueOptionId,
+        }
+      }
+      return next
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existing?.id, customValuesQ.values.length])
+  const setCustomInput = (fieldId: string, patch: Partial<CustomFieldInput>) =>
+    setCustomInputs(prev => ({ ...prev, [fieldId]: { ...emptyCustomInput(), ...prev[fieldId], ...patch } }))
 
   // Підвантажити існуючі фото продукту в редактор
   useEffect(() => {
@@ -65,13 +100,32 @@ export default function ProductEditor({ productId, onBack }: Props) {
       return copy
     })
 
+  const saveCustomFieldValues = async (id: string, inputs: Record<string, CustomFieldInput>) => {
+    for (const def of customFields) {
+      if (def.fieldType === 'file') continue
+      const v = inputs[def.id]
+      if (!v) continue
+      await setCustomFieldValue({
+        entityId: id,
+        fieldDefinitionId: def.id,
+        valueText: def.fieldType === 'text' ? (v.text.trim() || null) : null,
+        valueNumber: def.fieldType === 'number' ? (v.number ? parseFloat(v.number) : null) : null,
+        valueBoolean: def.fieldType === 'boolean' ? v.boolean : null,
+        valueOptionId: def.fieldType === 'select' ? v.optionId : null,
+      })
+    }
+  }
+
   const handleSave = async () => {
     if (!name.trim()) return
+    let id: string
     if (existing) {
       await updateProduct({ id: existing.id, name: name.trim(), description, categoryId, statusId, photos })
+      id = existing.id
     } else {
-      await createProduct({ name: name.trim(), description, categoryId, sku, photos })
+      id = await createProduct({ name: name.trim(), description, categoryId, sku, photos })
     }
+    await saveCustomFieldValues(id, customInputs)
     setSaved(true)
     setToast(isNew ? 'Доданий продукт' : 'Дані збережено')
     setTimeout(() => { setSaved(false); setToast(null); onBack() }, 1100)
@@ -79,7 +133,12 @@ export default function ProductEditor({ productId, onBack }: Props) {
 
   const canSave = name.trim().length > 0 && !isSaving
   const rootCats = categories.filter(c => c.parentId === null)
-  const childCats = (id: string) => categories.filter(c => c.parentId === id)
+  // Характеристики — яка саме розгорнута в спадний список (одночасно лише одна)
+  const [openAttrId, setOpenAttrId] = useState<string | null>(null)
+  const toggleAttrOpen = (id: string) => setOpenAttrId(cur => cur === id ? null : id)
+  const selectedCatLabel = categoryId === null
+    ? 'Без категорії'
+    : (categories.find(c => c.id === categoryId)?.name ?? 'Без категорії')
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -256,75 +315,51 @@ export default function ProductEditor({ productId, onBack }: Props) {
           <label className="mb-2 block text-xs font-semibold uppercase tracking-widest text-slate-400">Категорія</label>
           {categories.length === 0 ? (
             <p className="text-xs text-slate-400 italic">Категорій ще немає — додайте у Довідниках</p>
+          ) : !catSectionOpen ? (
+            // Згорнутий вигляд — звичайний select
+            <button onClick={() => setCatSectionOpen(true)}
+              className="w-full flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-left transition-all active:scale-[0.99]">
+              <span className="text-slate-800">{selectedCatLabel}</span>
+              <svg className="text-slate-400 shrink-0" width="13" height="13" viewBox="0 0 13 13" fill="none">
+                <path d="M2.5 4l4 4.5 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
           ) : (
             <div className="space-y-2">
-              {/* No category */}
-              <button
-                onClick={() => setCategoryId(null)}
-                className="w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all"
+              {/* No category — та ж кнопка й закриває всю секцію назад у компактний select */}
+              <div className="flex items-center gap-1 rounded-2xl overflow-hidden"
                 style={categoryId === null
                   ? { background: '#1e293b', border: '1px solid #1e293b' }
                   : { background: 'white', border: '1px solid rgba(157,200,255,0.25)' }
                 }>
-                <div className="h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0"
-                  style={{ borderColor: categoryId === null ? 'white' : '#cbd5e1' }}>
-                  {categoryId === null && <div className="h-2.5 w-2.5 rounded-full bg-white" />}
-                </div>
-                <span className={`text-sm ${categoryId === null ? 'text-white font-medium' : 'text-slate-500'}`}>
-                  Без категорії
-                </span>
-              </button>
-              {/* Root categories + children */}
-              {rootCats.map(root => {
-                const children = childCats(root.id)
-                const isActive = categoryId === root.id
-                return (
-                  <div key={root.id}>
-                    <button
-                      onClick={() => setCategoryId(root.id)}
-                      className="w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all"
-                      style={isActive
-                        ? { background: root.color, border: `1px solid ${root.color}` }
-                        : { background: 'white', border: '1px solid rgba(157,200,255,0.25)' }
-                      }>
-                      <div className="h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0"
-                        style={{ borderColor: isActive ? 'rgba(255,255,255,0.7)' : '#cbd5e1' }}>
-                        {isActive && <div className="h-2.5 w-2.5 rounded-full bg-white" />}
-                      </div>
-                      <span className={`text-sm font-medium ${isActive ? 'text-white' : 'text-slate-700'}`}>
-                        {root.name}
-                      </span>
-                    </button>
-                    {children.length > 0 && (
-                      <div className="ml-4 mt-1.5 space-y-1.5">
-                        {children.map(child => {
-                          const isChildActive = categoryId === child.id
-                          return (
-                            <button key={child.id}
-                              onClick={() => setCategoryId(child.id)}
-                              className="w-full flex items-center gap-3 rounded-xl px-4 py-2.5 text-left transition-all"
-                              style={isChildActive
-                                ? { background: child.color, border: `1px solid ${child.color}` }
-                                : { background: '#fafbff', border: '1px solid rgba(157,200,255,0.2)' }
-                              }>
-                              <div className="h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0"
-                                style={{ borderColor: isChildActive ? 'rgba(255,255,255,0.7)' : '#cbd5e1' }}>
-                                {isChildActive && <div className="h-2 w-2 rounded-full bg-white" />}
-                              </div>
-                              <span className={`text-xs font-medium ${isChildActive ? 'text-white' : 'text-slate-600'}`}>
-                                {child.name}
-                              </span>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    )}
+                <button onClick={() => setCategoryId(null)} className="flex-1 flex items-center gap-3 px-4 py-3 text-left">
+                  <div className="h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0"
+                    style={{ borderColor: categoryId === null ? 'white' : '#cbd5e1' }}>
+                    {categoryId === null && <div className="h-2.5 w-2.5 rounded-full bg-white" />}
                   </div>
-                )
-              })}
+                  <span className={`text-sm ${categoryId === null ? 'text-white font-medium' : 'text-slate-500'}`}>
+                    Без категорії
+                  </span>
+                </button>
+                <button onClick={() => setCatSectionOpen(false)} className="flex h-10 w-10 items-center justify-center shrink-0"
+                  style={{ color: categoryId === null ? 'rgba(255,255,255,0.7)' : '#94a3b8' }}>
+                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ transform: 'rotate(180deg)' }}>
+                    <path d="M2.5 4l4 4.5 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+              </div>
+              {/* Root categories — дерево розгортається/згортається по кліку на шеврон */}
+              {rootCats.map(cat => (
+                <CategoryTreeNode key={cat.id} cat={cat} depth={0} allCats={categories} selectedId={categoryId}
+                  expandedIds={expandedCats} onSelect={setCategoryId} onToggleExpand={toggleExpandCat} />
+              ))}
             </div>
           )}
         </div>
+
+        {/* ── Custom fields ── */}
+        <CustomFieldsSection fields={customFields} customInputs={customInputs} setCustomInput={setCustomInput}
+          errors={{}} filesByField={customValuesQ.files} isNew={isNew} />
 
         {/* ── Characteristics (edit only) ── */}
         {!isNew && existing && (
@@ -336,27 +371,57 @@ export default function ProductEditor({ productId, onBack }: Props) {
               <div className="space-y-4">
                 {attributes.map(attr => {
                   const selectedIds = new Set(existing.attributes.map(a => a.valueId))
+                  const selectedValues = attr.values.filter(v => selectedIds.has(v.id))
+                  const isOpen = openAttrId === attr.id
                   return (
                     <div key={attr.id}>
                       <p className="mb-1.5 text-xs font-medium text-slate-500">{attr.name}</p>
                       {attr.values.length === 0 ? (
-                        <p className="text-xs text-slate-400">Немає значень у цій характеристиці</p>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {attr.values.map(v => {
-                            const active = selectedIds.has(v.id)
-                            return (
-                              <button key={v.id} type="button"
-                                onClick={() => active
-                                  ? removeAttributeValue({ productId: existing.id, attributeValueId: v.id })
-                                  : addAttributeValue({ productId: existing.id, attributeValueId: v.id })}
-                                className="rounded-xl px-3 py-2 text-xs font-medium border transition-all"
-                                style={active ? { background: '#7c3aed', color: '#fff', borderColor: '#7c3aed' } : { background: '#f5f3ff', color: '#7c3aed', borderColor: 'transparent' }}>
-                                {v.value}
-                              </button>
-                            )
-                          })}
+                        <div className="w-full flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm cursor-not-allowed">
+                          <span className="text-slate-400">Немає значень у цій характеристиці</span>
+                          <svg className="text-slate-300 shrink-0" width="13" height="13" viewBox="0 0 13 13" fill="none">
+                            <path d="M2.5 4l4 4.5 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
                         </div>
+                      ) : (
+                        <>
+                          {/* Спадний список — той самий вигляд, що й у "Додаткові поля" */}
+                          <button type="button" onClick={() => toggleAttrOpen(attr.id)}
+                            className="w-full flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-left transition-all active:scale-[0.99]">
+                            <span className={selectedValues.length > 0 ? 'text-slate-800' : 'text-slate-400'}>
+                              {selectedValues.length > 0 ? selectedValues.map(v => v.value).join(', ') : '— Оберіть —'}
+                            </span>
+                            <svg className="text-slate-400 shrink-0" width="13" height="13" viewBox="0 0 13 13" fill="none"
+                              style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+                              <path d="M2.5 4l4 4.5 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </button>
+                          {isOpen && (
+                            <div className="mt-1.5 space-y-1.5">
+                              {attr.values.map(v => {
+                                const active = selectedIds.has(v.id)
+                                return (
+                                  <button key={v.id} type="button"
+                                    onClick={() => active
+                                      ? removeAttributeValue({ productId: existing.id, attributeValueId: v.id })
+                                      : addAttributeValue({ productId: existing.id, attributeValueId: v.id })}
+                                    className="w-full flex items-center gap-3 rounded-xl px-4 py-2.5 text-left transition-all"
+                                    style={active ? { background: '#7c3aed', border: '1px solid #7c3aed' } : { background: '#f5f3ff', border: '1px solid transparent' }}>
+                                    <div className="h-4 w-4 rounded-md border-2 flex items-center justify-center shrink-0"
+                                      style={{ borderColor: active ? 'white' : '#c4b5fd', background: active ? 'white' : 'transparent' }}>
+                                      {active && (
+                                        <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
+                                          <path d="M1.5 4.5l2 2 4-4" stroke="#7c3aed" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                        </svg>
+                                      )}
+                                    </div>
+                                    <span className="text-xs font-medium" style={{ color: active ? '#fff' : '#7c3aed' }}>{v.value}</span>
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   )
