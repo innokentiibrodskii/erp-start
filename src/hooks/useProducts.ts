@@ -49,9 +49,9 @@ export type { Material } from './useMaterials'
 export { useMaterials } from './useMaterials'
 
 /** Артикул продукту: P + поточний рік + порядковий номер за цей рік
- *  (напр. "P2026-01") — лічильник скидається щороку. */
+ *  (напр. "P-2026-01") — лічильник скидається щороку. */
 export function genProductArticle(products: Product[], now = new Date()): string {
-  const prefix = `P${now.getFullYear()}-`
+  const prefix = `P-${now.getFullYear()}-`
   const seq = products.filter(p => p.sku.startsWith(prefix)).length + 1
   return `${prefix}${String(seq).padStart(2, '0')}`
 }

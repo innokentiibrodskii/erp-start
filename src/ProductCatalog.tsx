@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import QRCodeLib from 'react-qr-code'
-import { useCatalog } from './hooks/useCatalog'
+import { useCatalog, type ProductCategory } from './hooks/useCatalog'
 import { useProducts, useMaterials, useProductStatuses, type Product } from './hooks/useProducts'
 import { useProductMaterialMutations } from './hooks/useProductMaterials'
 import { useProductOperationMutations } from './hooks/useProductOperations'
@@ -300,7 +300,7 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
 
       {/* QR modal */}
       {qrProductId !== null && (
-        <QRModal productId={qrProductId} products={products} onClose={() => setQrProductId(null)} />
+        <QRModal productId={qrProductId} products={products} categories={categories} onClose={() => setQrProductId(null)} />
       )}
 
       {/* Quick-view bottom sheet */}
@@ -426,27 +426,118 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
 }
 
 /* ── QR Modal ── */
-function QRModal({ productId, products, onClose }: { productId: string; products: Product[]; onClose: () => void }) {
+function QRModal({ productId, products, categories, onClose }: { productId: string; products: Product[]; categories: ProductCategory[]; onClose: () => void }) {
   const product = products.find(p => p.id === productId)
   if (!product) return null
   const qrUrl = `${window.location.origin}/?product=${product.id}`
+  const categoryName = categories.find(c => c.id === product.categoryId)?.name ?? ''
 
-  const handlePrint = () => {
-    const printWindow = window.open('', '_blank')
-    if (!printWindow) return
-    const qrEl = document.getElementById('qr-svg-print')?.querySelector('svg')
-    printWindow.document.write(`
-      <html><head><title>QR — ${product.name}</title>
-      <style>body{margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:sans-serif;gap:16px}
-      h2{font-size:18px;font-weight:600;color:#1e293b;margin:0}p{font-size:12px;color:#64748b;margin:0;font-family:monospace}</style>
-      </head><body>
-      ${qrEl?.outerHTML ?? ''}
-      <h2>${product.name}</h2>
-      <p>${product.sku}</p>
-      </body></html>`)
-    printWindow.document.close()
-    printWindow.focus()
-    setTimeout(() => printWindow.print(), 300)
+  // Термопринтери друкують у фіксованому фізичному розмірі (203 dpi — стандарт для
+  // 40×58мм етикеток), тож малюємо мітку на canvas у точних пікселях, а не покладаємось
+  // на діалог друку браузера сам масштабувати SVG/текст під потрібний розмір.
+  const DPI = 203
+  const mm = (v: number) => Math.round((v * DPI) / 25.4)
+  const LABEL_W = mm(40)
+  const LABEL_H = mm(58)
+
+  /** Малює етикетку (40×58мм при 203 dpi) на canvas — використовується і для
+   *  збереження PNG, і для друку, щоб обидва виходи мали однаковий розмір. */
+  const buildLabelCanvas = (): Promise<HTMLCanvasElement> => {
+    const svgEl = document.getElementById('qr-svg-print')
+    return new Promise((resolve, reject) => {
+      if (!svgEl) { reject(new Error('QR не знайдено')); return }
+      const qrPx = mm(30)
+      const svgData = new XMLSerializer().serializeToString(svgEl)
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        canvas.width = LABEL_W
+        canvas.height = LABEL_H
+        const ctx = canvas.getContext('2d')
+        if (!ctx) { reject(new Error('Canvas недоступний')); return }
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(0, 0, LABEL_W, LABEL_H)
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'top'
+
+        const qrX = (LABEL_W - qrPx) / 2
+        const qrY = mm(2)
+        ctx.drawImage(img, qrX, qrY, qrPx, qrPx)
+
+        const maxWidth = LABEL_W - mm(4)
+        let y = qrY + qrPx + mm(3)
+
+        ctx.font = `bold ${mm(2.6)}px Arial`
+        ctx.fillStyle = '#0f172a'
+        const words = product.name.split(' ')
+        const lines: string[] = []
+        let cur = ''
+        for (const w of words) {
+          const test = cur ? `${cur} ${w}` : w
+          if (cur && ctx.measureText(test).width > maxWidth) { lines.push(cur); cur = w } else cur = test
+        }
+        if (cur) lines.push(cur)
+        for (const line of lines.slice(0, 2)) { ctx.fillText(line, LABEL_W / 2, y); y += mm(3.2) }
+
+        ctx.font = `${mm(2)}px monospace`
+        ctx.fillStyle = '#64748b'
+        ctx.fillText(product.sku, LABEL_W / 2, y)
+        y += mm(3)
+
+        if (categoryName) {
+          ctx.font = `${mm(1.8)}px Arial`
+          ctx.fillStyle = '#94a3b8'
+          let catText = categoryName
+          while (catText.length > 3 && ctx.measureText(catText).width > maxWidth) catText = catText.slice(0, -1)
+          if (catText !== categoryName) catText = `${catText.slice(0, -1)}…`
+          ctx.fillText(catText, LABEL_W / 2, y)
+        }
+
+        resolve(canvas)
+      }
+      img.onerror = () => reject(new Error('Не вдалося завантажити QR'))
+      img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgData)}`
+    })
+  }
+
+  /** Друк через діалог браузера — та ж сама картинка, що й у збереженому PNG,
+   *  тож фізичний розмір етикетки завжди 40×58мм незалежно від драйвера принтера. */
+  const handlePrint = async () => {
+    const canvas = await buildLabelCanvas().catch(() => null)
+    if (!canvas) return
+    const dataUrl = canvas.toDataURL('image/png')
+    const win = window.open('', '_blank', 'width=400,height=320')
+    if (!win) return
+    win.document.write(`<!DOCTYPE html><html><head><title>QR — ${product.name}</title>
+    <style>
+      @page{size:40mm 58mm;margin:0}
+      *{margin:0;padding:0}
+      html,body{width:40mm;height:58mm}
+      img{width:40mm;height:58mm;display:block}
+    </style></head><body>
+    <img src="${dataUrl}" alt="QR label" />
+    <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}<\/script>
+    </body></html>`)
+    win.document.close()
+  }
+
+  /** Готовий PNG-файл точного розміру етикетки (40×58мм при 203 dpi) — для друку
+   *  через застосунки мобільних Bluetooth-термопринтерів, куди файл передається
+   *  напряму (не через діалог друку браузера). */
+  const handleDownloadImage = async () => {
+    const canvas = await buildLabelCanvas().catch(() => null)
+    if (!canvas) return
+    canvas.toBlob(blob => {
+      if (!blob) return
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `qr-${product.sku || product.id}.png`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    }, 'image/png')
   }
 
   return (
@@ -461,20 +552,27 @@ function QRModal({ productId, products, onClose }: { productId: string; products
           <p style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800">{product.name}</p>
           <p className="text-xs font-mono text-slate-400">{product.sku}</p>
           {/* QR Code */}
-          <div className="rounded-2xl bg-white p-5" id="qr-svg-print" style={{ border: '1px solid rgba(157,200,255,0.3)' }}>
-            <QRCodeLib value={qrUrl} size={180} />
+          <div className="rounded-2xl bg-white p-5" style={{ border: '1px solid rgba(157,200,255,0.3)' }}>
+            <QRCodeLib id="qr-svg-print" value={qrUrl} size={180} />
           </div>
-          <p className="text-[10px] text-slate-400 text-center">Скануйте для перегляду картки продукту</p>
-          <div className="flex gap-3 w-full pt-2">
+          <p className="text-[10px] text-slate-400 text-center">Скануйте для перегляду картки продукту · Етикетка 40×58мм</p>
+          <div className="flex gap-2 w-full pt-2">
             <button onClick={onClose} className="flex-1 rounded-2xl border border-slate-200 py-3 text-sm text-slate-600">
               Закрити
+            </button>
+            <button onClick={handleDownloadImage}
+              className="flex items-center justify-center gap-1.5 rounded-2xl border border-slate-200 px-3.5 py-3 text-sm font-medium text-slate-600">
+              <svg width="14" height="14" viewBox="0 0 13 13" fill="none">
+                <path d="M6.5 1v7.5M3.5 6l3 3 3-3M2 11.5h9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              PNG
             </button>
             <button onClick={handlePrint}
               className="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-slate-800 py-3 text-sm font-medium text-white">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                 <path d="M3 5V2h8v3M3 9H2a1 1 0 01-1-1V6a1 1 0 011-1h10a1 1 0 011 1v2a1 1 0 01-1 1h-1M3 9v3h8V9H3z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
               </svg>
-              Роздрукувати
+              Друк
             </button>
           </div>
         </div>
