@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import QRCodeLib from 'react-qr-code'
 import { useCatalog, type ProductCategory } from './hooks/useCatalog'
-import { useProducts, useMaterials, useProductStatuses } from './hooks/useProducts'
+import { useProducts, useMaterials, useProductStatuses, useProductPhotos, type PhotoItem } from './hooks/useProducts'
 import { useAssignments } from './hooks/useAssignments'
 import { useStockMovements } from './hooks/useMaterialStock'
 import { useCustomFieldDefinitions, useCustomFieldValues } from './hooks/useCustomFields'
@@ -60,12 +60,14 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
   const assignmentsQ = useAssignments()
   const movementsQ = useStockMovements()
   const customDefsQ = useCustomFieldDefinitions('product')
+  const photosQ = useProductPhotos(productId)
   const products = productsQ.data ?? []
   const materials = materialsQ.data ?? []
   const statuses = statusesQ.data ?? []
   const assignments = assignmentsQ.data ?? []
   const movements = movementsQ.data ?? []
   const customDefs = customDefsQ.data ?? []
+  const photos = photosQ.data ?? []
 
   const [variantsOpen, setVariantsOpen] = useState(false)
   const [openSection, setOpenSection] = useState<string | null>(null)
@@ -131,10 +133,8 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
 
       <div className="px-4 pb-10 space-y-5 pt-4">
         {/* Photo */}
-        {product.photo && (
-          <div className="overflow-hidden rounded-2xl bg-slate-100 h-52">
-            <img src={product.photo} alt={product.name} className="h-full w-full object-cover" />
-          </div>
+        {photos.length > 0 && (
+          <ProductPhotoGallery photos={photos} productName={product.name} />
         )}
 
         {/* Name / SKU */}
@@ -349,6 +349,97 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
         </div>
       </div>
     </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Photo gallery — карусель у шапці + full-screen перегляд з гортанням
+═══════════════════════════════════════════════════════════ */
+function ProductPhotoGallery({ photos, productName }: { photos: PhotoItem[]; productName: string }) {
+  const [activeIndex, setActiveIndex] = useState(0)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
+  const lightboxTrackRef = useRef<HTMLDivElement>(null)
+
+  const trackScrolled = (setIdx: (i: number) => void) => (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget
+    if (el.clientWidth === 0) return
+    setIdx(Math.round(el.scrollLeft / el.clientWidth))
+  }
+
+  const openLightboxAt = (idx: number) => {
+    setActiveIndex(idx)
+    setLightboxOpen(true)
+  }
+
+  // При відкритті full-screen перегляду одразу прокрутити до фото, по якому тапнули
+  useEffect(() => {
+    const track = lightboxTrackRef.current
+    if (lightboxOpen && track) track.scrollLeft = activeIndex * track.clientWidth
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lightboxOpen])
+
+  return (
+    <>
+      <div className="relative">
+        <div
+          onScroll={trackScrolled(setActiveIndex)}
+          className="flex overflow-x-auto rounded-2xl bg-slate-100 h-52"
+          style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
+        >
+          {photos.map((p, i) => (
+            <img key={p.key} src={p.url} alt={productName} onClick={() => openLightboxAt(i)}
+              className="h-52 w-full shrink-0 object-cover cursor-zoom-in"
+              style={{ scrollSnapAlign: 'start' }} />
+          ))}
+        </div>
+        {photos.length > 1 && (
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+            {photos.map((p, i) => (
+              <span key={p.key} className="h-1.5 rounded-full transition-all"
+                style={{ width: i === activeIndex ? 14 : 6, background: i === activeIndex ? '#fff' : 'rgba(255,255,255,0.55)', boxShadow: '0 0 4px rgba(0,0,0,0.35)' }} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Full-screen перегляд з гортанням усіх фото */}
+      {lightboxOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: 'rgba(10,12,20,0.97)' }}
+          onClick={() => setLightboxOpen(false)}>
+          <div className="flex shrink-0 items-center justify-between px-4 py-3" onClick={e => e.stopPropagation()}>
+            <span className="text-xs font-medium text-white/70">{activeIndex + 1} / {photos.length}</span>
+            <button onClick={() => setLightboxOpen(false)}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white active:scale-95 transition-all">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+              </svg>
+            </button>
+          </div>
+          <div
+            ref={lightboxTrackRef}
+            onScroll={trackScrolled(setActiveIndex)}
+            onClick={e => e.stopPropagation()}
+            className="flex flex-1 overflow-x-auto"
+            style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
+          >
+            {photos.map(p => (
+              <div key={p.key} className="flex h-full w-full shrink-0 items-center justify-center px-2"
+                style={{ scrollSnapAlign: 'start' }}>
+                <img src={p.url} alt={productName} className="max-h-full max-w-full object-contain" />
+              </div>
+            ))}
+          </div>
+          {photos.length > 1 && (
+            <div className="flex shrink-0 justify-center gap-1.5 py-4" onClick={e => e.stopPropagation()}>
+              {photos.map((p, i) => (
+                <span key={p.key} className="h-1.5 rounded-full transition-all"
+                  style={{ width: i === activeIndex ? 14 : 6, background: i === activeIndex ? '#fff' : 'rgba(255,255,255,0.35)' }} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </>
   )
 }
 

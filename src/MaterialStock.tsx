@@ -502,6 +502,19 @@ function TrashIcon() {
   )
 }
 
+/** Прокладає шлях заокругленого прямокутника вручну (замість `ctx.roundRect`),
+ *  щоб коректно працювати і в старіших вбудованих браузерах застосунків
+ *  Bluetooth-термопринтерів. */
+function drawRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.arcTo(x + w, y, x + w, y + h, r)
+  ctx.arcTo(x + w, y + h, x, y + h, r)
+  ctx.arcTo(x, y + h, x, y, r)
+  ctx.arcTo(x, y, x + w, y, r)
+  ctx.closePath()
+}
+
 /* ═══════════════════════════════════════════════════════════
    Material QR — сторінка друку етикетки
 ═══════════════════════════════════════════════════════════ */
@@ -519,71 +532,80 @@ function MaterialQRPage({ material, categoryPath, stock, onBack }: {
   const LABEL_W = mm(40)
   const LABEL_H = mm(58)
 
-  /** Малює етикетку (40×58мм при 203 dpi) на canvas — використовується і для
-   *  збереження PNG, і для друку, щоб обидва виходи мали однаковий розмір. */
-  const buildLabelCanvas = (): Promise<HTMLCanvasElement> => {
+  /** Малює етикетку (40×58мм при 203 dpi) на canvas — за макетом з Figma
+   *  (назва → код → QR у білій картці із заокругленими кутами й тонкою рамкою).
+   *  Використовується і для збереження PNG, і для друку, щоб обидва виходи
+   *  мали однаковий розмір і вигляд. */
+  const buildLabelCanvas = async (): Promise<HTMLCanvasElement> => {
     const svgEl = document.getElementById('mat-qr-svg')
-    return new Promise((resolve, reject) => {
-      if (!svgEl) { reject(new Error('QR не знайдено')); return }
-      const qrPx = mm(30)
-      const svgData = new XMLSerializer().serializeToString(svgEl)
-      const img = new Image()
-      img.onload = () => {
-        const canvas = document.createElement('canvas')
-        canvas.width = LABEL_W
-        canvas.height = LABEL_H
-        const ctx = canvas.getContext('2d')
-        if (!ctx) { reject(new Error('Canvas недоступний')); return }
-        ctx.fillStyle = '#ffffff'
-        ctx.fillRect(0, 0, LABEL_W, LABEL_H)
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'top'
+    if (!svgEl) throw new Error('QR не знайдено')
 
-        const qrX = (LABEL_W - qrPx) / 2
-        const qrY = mm(2)
-        ctx.drawImage(img, qrX, qrY, qrPx, qrPx)
+    // Дочекатись завантаження шрифтів застосунку (DM Serif Display / DM Sans),
+    // інакше canvas може намалювати текст системним шрифтом за замовчуванням.
+    await document.fonts.ready
 
-        const maxWidth = LABEL_W - mm(4)
-        let y = qrY + qrPx + mm(3)
-
-        ctx.font = `bold ${mm(2.6)}px Arial`
-        ctx.fillStyle = '#0f172a'
-        const words = material.name.split(' ')
-        const lines: string[] = []
-        let cur = ''
-        for (const w of words) {
-          const test = cur ? `${cur} ${w}` : w
-          if (cur && ctx.measureText(test).width > maxWidth) { lines.push(cur); cur = w } else cur = test
-        }
-        if (cur) lines.push(cur)
-        for (const line of lines.slice(0, 2)) { ctx.fillText(line, LABEL_W / 2, y); y += mm(3.2) }
-
-        if (material.code) {
-          ctx.font = `${mm(2)}px monospace`
-          ctx.fillStyle = '#64748b'
-          ctx.fillText(material.code, LABEL_W / 2, y)
-          y += mm(3)
-        }
-
-        ctx.font = `bold ${mm(2.6)}px Arial`
-        ctx.fillStyle = stock > 0 ? '#16a34a' : '#94a3b8'
-        ctx.fillText(`${fmt(stock)} ${material.unitShortName}`, LABEL_W / 2, y)
-        y += mm(3)
-
-        if (categoryPath) {
-          ctx.font = `${mm(1.8)}px Arial`
-          ctx.fillStyle = '#94a3b8'
-          let catText = categoryPath
-          while (catText.length > 3 && ctx.measureText(catText).width > maxWidth) catText = catText.slice(0, -1)
-          if (catText !== categoryPath) catText = `${catText.slice(0, -1)}…`
-          ctx.fillText(catText, LABEL_W / 2, y)
-        }
-
-        resolve(canvas)
-      }
-      img.onerror = () => reject(new Error('Не вдалося завантажити QR'))
-      img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgData)}`
+    const svgData = new XMLSerializer().serializeToString(svgEl)
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image()
+      image.onload = () => resolve(image)
+      image.onerror = () => reject(new Error('Не вдалося завантажити QR'))
+      image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgData)}`
     })
+
+    const canvas = document.createElement('canvas')
+    canvas.width = LABEL_W
+    canvas.height = LABEL_H
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Canvas недоступний')
+
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, LABEL_W, LABEL_H)
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'top'
+
+    const maxWidth = LABEL_W - mm(6)
+    let y = mm(8.5)
+
+    // Назва — DM Serif Display, той самий стиль заголовків, що й у застосунку
+    ctx.font = `${mm(3.4)}px 'DM Serif Display', serif`
+    ctx.fillStyle = '#1d293d'
+    const words = material.name.split(' ')
+    const lines: string[] = []
+    let cur = ''
+    for (const w of words) {
+      const test = cur ? `${cur} ${w}` : w
+      if (cur && ctx.measureText(test).width > maxWidth) { lines.push(cur); cur = w } else cur = test
+    }
+    if (cur) lines.push(cur)
+    for (const line of lines.slice(0, 2)) { ctx.fillText(line, LABEL_W / 2, y); y += mm(4.2) }
+
+    // Код — DM Sans
+    if (material.code) {
+      y += mm(0.8)
+      ctx.font = `${mm(2.3)}px 'DM Sans', sans-serif`
+      ctx.fillStyle = '#1d293d'
+      ctx.fillText(material.code, LABEL_W / 2, y)
+      y += mm(5)
+    } else {
+      y += mm(2)
+    }
+
+    // QR — у білій картці із заокругленими кутами й тонкою рамкою (як у Figma-шаблоні)
+    const boxSize = Math.min(LABEL_W - mm(6), LABEL_H - y - mm(3))
+    const boxX = (LABEL_W - boxSize) / 2
+    const boxY = y
+    ctx.fillStyle = '#ffffff'
+    ctx.strokeStyle = 'rgba(157,200,255,0.6)'
+    ctx.lineWidth = Math.max(1, mm(0.08))
+    drawRoundedRect(ctx, boxX, boxY, boxSize, boxSize, mm(2))
+    ctx.fill()
+    ctx.stroke()
+
+    const qrPadding = mm(2.5)
+    const qrSize = boxSize - qrPadding * 2
+    ctx.drawImage(img, boxX + qrPadding, boxY + qrPadding, qrSize, qrSize)
+
+    return canvas
   }
 
   /** Друк через діалог браузера — та ж сама картинка, що й у збереженому PNG,
@@ -656,36 +678,37 @@ function MaterialQRPage({ material, categoryPath, stock, onBack }: {
       </div>
 
       <div className="flex flex-col items-center px-6 pt-8 pb-12">
-        <div className="w-full max-w-xs rounded-3xl bg-white px-6 py-7 flex flex-col items-center gap-5"
+        {/* Прев'ю етикетки — назва / код / QR, точно як буде надруковано (40×58мм) */}
+        <div className="w-full max-w-xs rounded-3xl bg-white px-6 py-7 flex flex-col items-center gap-4"
           style={{ border: '1.5px solid rgba(157,200,255,0.35)', boxShadow: '0 4px 32px rgba(157,200,255,0.15)' }}>
-          <span className="text-[10px] font-bold tracking-widest text-slate-400 uppercase">R&amp;D · Матеріал</span>
+          <div className="text-center">
+            <p style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800 leading-snug">{material.name}</p>
+            {material.code && (
+              <p className="mt-1 text-xs text-slate-500">{material.code}</p>
+            )}
+          </div>
 
           <div className="rounded-2xl bg-white p-4"
             style={{ border: '1px solid rgba(157,200,255,0.25)', boxShadow: '0 2px 12px rgba(157,200,255,0.1)' }}>
             <QRCodeLib id="mat-qr-svg" value={qrValue} size={180} />
           </div>
+        </div>
 
-          <div className="text-center space-y-1">
-            <p style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800 leading-snug">{material.name}</p>
-            {material.code && (
-              <span className="inline-block font-mono text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-1">{material.code}</span>
-            )}
+        {/* Додаткова інформація — довідково в застосунку, на етикетку не друкується */}
+        <div className="w-full max-w-xs mt-4 rounded-2xl bg-white px-5 py-4 space-y-2.5"
+          style={{ border: '1px solid rgba(157,200,255,0.2)' }}>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">На складі</span>
+            <span className="text-2xl font-bold" style={{ color: stock > 0 ? '#16a34a' : '#94a3b8' }}>
+              {fmt(stock)} <span className="text-sm font-semibold text-slate-400">{material.unitShortName}</span>
+            </span>
           </div>
-
-          <div className="w-full border-t pt-4 space-y-2.5" style={{ borderColor: 'rgba(157,200,255,0.2)' }}>
+          {categoryPath && (
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">На складі</span>
-              <span className="text-2xl font-bold" style={{ color: stock > 0 ? '#16a34a' : '#94a3b8' }}>
-                {fmt(stock)} <span className="text-sm font-semibold text-slate-400">{material.unitShortName}</span>
-              </span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Категорія</span>
+              <span className="text-xs font-medium text-slate-700 text-right max-w-[55%] truncate">{categoryPath}</span>
             </div>
-            {categoryPath && (
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Категорія</span>
-                <span className="text-xs font-medium text-slate-700 text-right max-w-[55%] truncate">{categoryPath}</span>
-              </div>
-            )}
-          </div>
+          )}
         </div>
 
         <p className="mt-5 text-xs text-slate-400 text-center">Натисніть «Друкувати PDF» для збереження або друку мітки</p>

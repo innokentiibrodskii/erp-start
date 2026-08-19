@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import QRCodeLib from 'react-qr-code'
-import { useCatalog, type ProductCategory } from './hooks/useCatalog'
+import { useCatalog } from './hooks/useCatalog'
 import { useProducts, useMaterials, useProductStatuses, type Product } from './hooks/useProducts'
 import { useProductMaterialMutations } from './hooks/useProductMaterials'
 import { useProductOperationMutations } from './hooks/useProductOperations'
@@ -300,7 +300,7 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
 
       {/* QR modal */}
       {qrProductId !== null && (
-        <QRModal productId={qrProductId} products={products} categories={categories} onClose={() => setQrProductId(null)} />
+        <QRModal productId={qrProductId} products={products} onClose={() => setQrProductId(null)} />
       )}
 
       {/* Quick-view bottom sheet */}
@@ -425,12 +425,24 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
   )
 }
 
+/** Прокладає шлях заокругленого прямокутника вручну (замість `ctx.roundRect`),
+ *  щоб коректно працювати і в старіших вбудованих браузерах застосунків
+ *  Bluetooth-термопринтерів. */
+function drawRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.arcTo(x + w, y, x + w, y + h, r)
+  ctx.arcTo(x + w, y + h, x, y + h, r)
+  ctx.arcTo(x, y + h, x, y, r)
+  ctx.arcTo(x, y, x + w, y, r)
+  ctx.closePath()
+}
+
 /* ── QR Modal ── */
-function QRModal({ productId, products, categories, onClose }: { productId: string; products: Product[]; categories: ProductCategory[]; onClose: () => void }) {
+function QRModal({ productId, products, onClose }: { productId: string; products: Product[]; onClose: () => void }) {
   const product = products.find(p => p.id === productId)
   if (!product) return null
   const qrUrl = `${window.location.origin}/?product=${product.id}`
-  const categoryName = categories.find(c => c.id === product.categoryId)?.name ?? ''
 
   // Термопринтери друкують у фіксованому фізичному розмірі (203 dpi — стандарт для
   // 40×58мм етикеток), тож малюємо мітку на canvas у точних пікселях, а не покладаємось
@@ -440,64 +452,76 @@ function QRModal({ productId, products, categories, onClose }: { productId: stri
   const LABEL_W = mm(40)
   const LABEL_H = mm(58)
 
-  /** Малює етикетку (40×58мм при 203 dpi) на canvas — використовується і для
-   *  збереження PNG, і для друку, щоб обидва виходи мали однаковий розмір. */
-  const buildLabelCanvas = (): Promise<HTMLCanvasElement> => {
+  /** Малює етикетку (40×58мм при 203 dpi) на canvas — за макетом з Figma
+   *  (назва → код → QR у білій картці із заокругленими кутами й тонкою рамкою).
+   *  Використовується і для збереження PNG, і для друку, щоб обидва виходи
+   *  мали однаковий розмір і вигляд. */
+  const buildLabelCanvas = async (): Promise<HTMLCanvasElement> => {
     const svgEl = document.getElementById('qr-svg-print')
-    return new Promise((resolve, reject) => {
-      if (!svgEl) { reject(new Error('QR не знайдено')); return }
-      const qrPx = mm(30)
-      const svgData = new XMLSerializer().serializeToString(svgEl)
-      const img = new Image()
-      img.onload = () => {
-        const canvas = document.createElement('canvas')
-        canvas.width = LABEL_W
-        canvas.height = LABEL_H
-        const ctx = canvas.getContext('2d')
-        if (!ctx) { reject(new Error('Canvas недоступний')); return }
-        ctx.fillStyle = '#ffffff'
-        ctx.fillRect(0, 0, LABEL_W, LABEL_H)
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'top'
+    if (!svgEl) throw new Error('QR не знайдено')
 
-        const qrX = (LABEL_W - qrPx) / 2
-        const qrY = mm(2)
-        ctx.drawImage(img, qrX, qrY, qrPx, qrPx)
+    // Дочекатись завантаження шрифтів застосунку (DM Serif Display / DM Sans),
+    // інакше canvas може намалювати текст системним шрифтом за замовчуванням.
+    await document.fonts.ready
 
-        const maxWidth = LABEL_W - mm(4)
-        let y = qrY + qrPx + mm(3)
-
-        ctx.font = `bold ${mm(2.6)}px Arial`
-        ctx.fillStyle = '#0f172a'
-        const words = product.name.split(' ')
-        const lines: string[] = []
-        let cur = ''
-        for (const w of words) {
-          const test = cur ? `${cur} ${w}` : w
-          if (cur && ctx.measureText(test).width > maxWidth) { lines.push(cur); cur = w } else cur = test
-        }
-        if (cur) lines.push(cur)
-        for (const line of lines.slice(0, 2)) { ctx.fillText(line, LABEL_W / 2, y); y += mm(3.2) }
-
-        ctx.font = `${mm(2)}px monospace`
-        ctx.fillStyle = '#64748b'
-        ctx.fillText(product.sku, LABEL_W / 2, y)
-        y += mm(3)
-
-        if (categoryName) {
-          ctx.font = `${mm(1.8)}px Arial`
-          ctx.fillStyle = '#94a3b8'
-          let catText = categoryName
-          while (catText.length > 3 && ctx.measureText(catText).width > maxWidth) catText = catText.slice(0, -1)
-          if (catText !== categoryName) catText = `${catText.slice(0, -1)}…`
-          ctx.fillText(catText, LABEL_W / 2, y)
-        }
-
-        resolve(canvas)
-      }
-      img.onerror = () => reject(new Error('Не вдалося завантажити QR'))
-      img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgData)}`
+    const svgData = new XMLSerializer().serializeToString(svgEl)
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image()
+      image.onload = () => resolve(image)
+      image.onerror = () => reject(new Error('Не вдалося завантажити QR'))
+      image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgData)}`
     })
+
+    const canvas = document.createElement('canvas')
+    canvas.width = LABEL_W
+    canvas.height = LABEL_H
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Canvas недоступний')
+
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, LABEL_W, LABEL_H)
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'top'
+
+    const maxWidth = LABEL_W - mm(6)
+    let y = mm(8.5)
+
+    // Назва — DM Serif Display, той самий стиль заголовків, що й у застосунку
+    ctx.font = `${mm(3.4)}px 'DM Serif Display', serif`
+    ctx.fillStyle = '#1d293d'
+    const words = product.name.split(' ')
+    const lines: string[] = []
+    let cur = ''
+    for (const w of words) {
+      const test = cur ? `${cur} ${w}` : w
+      if (cur && ctx.measureText(test).width > maxWidth) { lines.push(cur); cur = w } else cur = test
+    }
+    if (cur) lines.push(cur)
+    for (const line of lines.slice(0, 2)) { ctx.fillText(line, LABEL_W / 2, y); y += mm(4.2) }
+
+    // Код (SKU) — DM Sans
+    y += mm(0.8)
+    ctx.font = `${mm(2.3)}px 'DM Sans', sans-serif`
+    ctx.fillStyle = '#1d293d'
+    ctx.fillText(product.sku, LABEL_W / 2, y)
+    y += mm(5)
+
+    // QR — у білій картці із заокругленими кутами й тонкою рамкою (як у Figma-шаблоні)
+    const boxSize = Math.min(LABEL_W - mm(6), LABEL_H - y - mm(3))
+    const boxX = (LABEL_W - boxSize) / 2
+    const boxY = y
+    ctx.fillStyle = '#ffffff'
+    ctx.strokeStyle = 'rgba(157,200,255,0.6)'
+    ctx.lineWidth = Math.max(1, mm(0.08))
+    drawRoundedRect(ctx, boxX, boxY, boxSize, boxSize, mm(2))
+    ctx.fill()
+    ctx.stroke()
+
+    const qrPadding = mm(2.5)
+    const qrSize = boxSize - qrPadding * 2
+    ctx.drawImage(img, boxX + qrPadding, boxY + qrPadding, qrSize, qrSize)
+
+    return canvas
   }
 
   /** Друк через діалог браузера — та ж сама картинка, що й у збереженому PNG,
