@@ -326,13 +326,19 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
                     onClick={() => setQuickAction({ productId: product.id, type: 'materials' })}
                     className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 py-2.5 text-xs font-medium text-amber-600 active:scale-[0.97] transition-all">
                     <LayersIcon />
-                    Матеріали
+                    <span className="text-center leading-4">
+                      <span className="block">Специфікація</span>
+                      <span className="block">Матеріали</span>
+                    </span>
                   </button>
                   <button
                     onClick={() => setQuickAction({ productId: product.id, type: 'operations' })}
                     className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-orange-200 bg-orange-50 py-2.5 text-xs font-medium text-orange-500 active:scale-[0.97] transition-all">
                     <GearIcon />
-                    Операції
+                    <span className="text-center leading-4">
+                      <span className="block">Специфікація</span>
+                      <span className="block">Операції</span>
+                    </span>
                   </button>
                 </div>
               </div>
