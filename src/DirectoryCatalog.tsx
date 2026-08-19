@@ -5,6 +5,7 @@ import { buildCatPath } from './lib/materialFormat'
 import type { Department, Position, ProductCategory, ProductAttribute, Operation, Warehouse, MaterialCategory, Unit, Supplier } from './hooks/useCatalog'
 import { useProductStatuses, useProductStatusMutations, type ProductStatus } from './hooks/useProducts'
 import { useCustomFieldDefinitions, useCustomFieldDefinitionMutations, type CustomFieldDefinition, type EntityType, type FieldType } from './hooks/useCustomFields'
+import { useMaterialCostCurrency, useSetMaterialCostCurrency, CURRENCIES, CURRENCY_LABEL } from './hooks/useOrgSettings'
 
 type SubPage =
   | null
@@ -1080,6 +1081,9 @@ export function CustomFieldsPage({ onBack }: { onBack: () => void }) {
   const definitions = definitionsQ.data ?? []
   const { addDefinition, updateDefinition, removeDefinition, addOption, removeOption } = useCustomFieldDefinitionMutations(entityType)
 
+  const currencyQ = useMaterialCostCurrency()
+  const setCurrency = useSetMaterialCostCurrency()
+
   const [form, setForm] = useState<{ open: boolean; editing: CustomFieldDefinition | null; name: string; fieldType: FieldType; isRequired: boolean }>
     ({ open: false, editing: null, name: '', fieldType: 'text', isRequired: false })
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -1107,6 +1111,22 @@ export function CustomFieldsPage({ onBack }: { onBack: () => void }) {
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
       <SubPageHeader title="Кастомні поля" subtitle={`${definitions.length} полів`} onBack={onBack} onAdd={openAdd} />
+
+      <div className="px-4 pt-3">
+        <div className="rounded-2xl bg-white p-4" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Валюта вартості матеріалів</label>
+          <div className="relative">
+            <select value={currencyQ.data ?? 'UAH'} onChange={e => setCurrency(e.target.value as typeof CURRENCIES[number])}
+              className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 pl-3 pr-9 py-2.5 text-sm outline-none focus:border-blue-400 transition-all">
+              {CURRENCIES.map(c => <option key={c} value={c}>{CURRENCY_LABEL[c]}</option>)}
+            </select>
+            <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" width="11" height="11" viewBox="0 0 11 11" fill="none">
+              <path d="M2 3.5l3.5 4 3.5-4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <p className="mt-1.5 text-[10px] text-slate-300">У цій валюті вносяться вартості матеріалів у довіднику — впливає на розрахунок собівартості продукту</p>
+        </div>
+      </div>
 
       <div className="px-4 pt-3">
         <div className="flex gap-1.5 rounded-2xl bg-white p-1" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>

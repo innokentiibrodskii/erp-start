@@ -131,7 +131,7 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
     const materialDeliveries = editing ? movements.filter(mv => mv.materialId === editing.id) : []
 
     const handleSaveMaterial = async (args: {
-      name: string; code: string; categoryId: string | null; unitId: string
+      name: string; code: string; categoryId: string | null; unitId: string; cost: number | null
       photoFile: File | null; photoUrl: string | null
       primarySupplierId: string | null; supplierIds: string[]
       customInputs: Record<string, CustomFieldInput>
@@ -140,14 +140,14 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
       let materialId: string
       if (editing) {
         await updateMaterial({
-          id: editing.id, name: args.name, categoryId: args.categoryId, unitId: args.unitId,
+          id: editing.id, name: args.name, categoryId: args.categoryId, unitId: args.unitId, cost: args.cost,
           photoFile: args.photoFile, photoUrl: args.photoUrl,
           primarySupplierId: args.primarySupplierId, supplierIds: args.supplierIds,
         })
         materialId = editing.id
       } else {
         materialId = await createMaterial({
-          name: args.name, code: args.code, categoryId: args.categoryId, unitId: args.unitId, photoFile: args.photoFile,
+          name: args.name, code: args.code, categoryId: args.categoryId, unitId: args.unitId, cost: args.cost, photoFile: args.photoFile,
           primarySupplierId: args.primarySupplierId, supplierIds: args.supplierIds,
         })
         for (const d of args.pendingDeliveries) {

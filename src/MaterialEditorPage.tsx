@@ -5,6 +5,7 @@ import { CustomFieldsSection, Field, emptyCustomInput, type CustomFieldInput } f
 import type { Material } from './hooks/useMaterials'
 import { useCustomFieldValues, type CustomFieldDefinition } from './hooks/useCustomFields'
 import type { StockMovement } from './hooks/useMaterialStock'
+import { useMaterialCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
 import { fmt, dateStr, buildCatPath, genBatchCode, genSeries, genMaterialArticle } from './lib/materialFormat'
 import { PRESET_COLORS } from './lib/colors'
 
@@ -37,6 +38,7 @@ interface Props {
     code: string
     categoryId: string | null
     unitId: string
+    cost: number | null
     photoFile: File | null
     photoUrl: string | null
     primarySupplierId: string | null
@@ -59,6 +61,9 @@ export default function MaterialEditorPage({
   const [name, setName] = useState(editing?.name ?? '')
   const [categoryId, setCategoryId] = useState<string | null>(editing?.categoryId ?? null)
   const [unitId, setUnitId] = useState<string | null>(editing?.unitId ?? units[0]?.id ?? null)
+  const [cost, setCost] = useState(editing?.cost != null ? String(editing.cost) : '')
+  const currencyQ = useMaterialCostCurrency()
+  const currency = currencyQ.data ?? 'UAH'
   const [primarySupplierId, setPrimarySupplierId] = useState<string | null>(editing?.primarySupplierId ?? null)
   const [supplierIds, setSupplierIds] = useState<string[]>(editing?.supplierIds ?? [])
   const [supSearch, setSupSearch] = useState('')
@@ -157,7 +162,7 @@ export default function MaterialEditorPage({
     setErrors(errs)
     if (Object.keys(errs).length > 0) return
     onSave({
-      name: name.trim(), code, categoryId, unitId: unitId!, photoFile, photoUrl,
+      name: name.trim(), code, categoryId, unitId: unitId!, cost: cost.trim() === '' ? null : Number(cost), photoFile, photoUrl,
       primarySupplierId, supplierIds, customInputs, pendingDeliveries,
     })
   }
@@ -273,6 +278,18 @@ export default function MaterialEditorPage({
                 <path d="M2.5 4l4 4.5 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </div>
+          </Field>
+
+          <Field label="Вартість за одиницю">
+            <div className="relative">
+              <input type="number" min="0" step="any" value={cost} onChange={e => setCost(e.target.value)}
+                placeholder="0.00"
+                className="w-full rounded-2xl border border-slate-200 bg-white pl-4 pr-10 py-3.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
+              <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm text-slate-400">{CURRENCY_SYMBOL[currency]}</span>
+            </div>
+            <p className="mt-1.5 text-[10px] text-slate-300">
+              Використовується для розрахунку собівартості продукту · валюта задається в Налаштуваннях
+            </p>
           </Field>
 
           <div>

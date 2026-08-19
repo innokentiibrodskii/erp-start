@@ -5,6 +5,7 @@ import { useProducts, useMaterials, useProductStatuses, useProductPhotos, type P
 import { useAssignments } from './hooks/useAssignments'
 import { useStockMovements } from './hooks/useMaterialStock'
 import { useCustomFieldDefinitions, useCustomFieldValues } from './hooks/useCustomFields'
+import { useMaterialCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
 import { fmt } from './lib/materialFormat'
 
 interface Props {
@@ -56,6 +57,8 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
   const { categories, operations, warehouses, attributes: catalogAttributes } = useCatalog()
   const productsQ = useProducts()
   const materialsQ = useMaterials()
+  const currencyQ = useMaterialCostCurrency()
+  const currencySymbol = CURRENCY_SYMBOL[currencyQ.data ?? 'UAH']
   const statusesQ = useProductStatuses()
   const assignmentsQ = useAssignments()
   const movementsQ = useStockMovements()
@@ -88,13 +91,12 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
   const variantAttributeIds = new Set(catalogAttributes.filter(a => a.isVariant).map(a => a.id))
   const variants = buildVariants(product.attributes, variantAttributeIds)
 
-  const lastMaterialCost = (materialId: string): number | null => {
-    const last = movements
-      .filter(m => m.materialId === materialId && m.type === 'in' && m.cost !== null)
-      .sort((a, b) => b.createdAt - a.createdAt)[0]
-    return last?.cost ?? null
-  }
-  const materialsCost = product.materials.reduce((sum, pm) => sum + (lastMaterialCost(pm.materialId) ?? 0) * pm.qty, 0)
+  // Собівартість матеріалів рахується від базової вартості матеріалу з довідника
+  // (Material.cost), а не від ціни останньої поставки — довідникова вартість це
+  // єдине "джерело правди" про ціну матеріалу, поставки лише фіксують історію приходів.
+  const materialCostById = (materialId: string): number | null =>
+    materials.find(m => m.id === materialId)?.cost ?? null
+  const materialsCost = product.materials.reduce((sum, pm) => sum + (materialCostById(pm.materialId) ?? 0) * pm.qty, 0)
   const operationsCost = product.operations.reduce((sum, po) => sum + (po.cost ?? 0), 0)
 
   const filledCustomFields = customDefs.filter(def => {
@@ -147,7 +149,7 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
         <div className="rounded-2xl bg-white overflow-hidden" style={{ border: '1px solid rgba(157,200,255,0.2)' }}>
           {[
             ['Категорія', catPath || '—'],
-            ['Собівартість матеріалів', `${fmt(materialsCost)} ₴`],
+            ['Собівартість матеріалів', `${fmt(materialsCost)} ${currencySymbol}`],
             ['Собівартість операцій', `${fmt(operationsCost)} ₴`],
             ['Статус продукту', status?.name ?? '—'],
           ].map(([label, value], i, arr) => (

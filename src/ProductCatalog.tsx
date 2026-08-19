@@ -9,6 +9,8 @@ import ProductView from './ProductView'
 import MaterialPickerSheet from './MaterialPickerSheet'
 import OperationPickerSheet from './OperationPickerSheet'
 import { CategoryTreeNode } from './CategoryTreeNode'
+import { useMaterialCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
+import { fmt } from './lib/materialFormat'
 
 type QuickActionType = 'materials' | 'operations' | 'attributes'
 
@@ -35,6 +37,8 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
   const products = productsQ.data ?? []
   const materials = materialsQ.data ?? []
   const productStatuses = statusesQ.data ?? []
+  const currencyQ = useMaterialCostCurrency()
+  const currencySymbol = CURRENCY_SYMBOL[currencyQ.data ?? 'UAH']
 
   const defaultStatusId = productStatuses.find(s => s.isDefault)?.id ?? null
 
@@ -42,6 +46,7 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
   const [editId, setEditId]           = useState<string | 'new' | null>(null)
   const [viewId, setViewId]           = useState<string | null>(initialViewId ?? null)
   const [qrProductId, setQrProductId] = useState<string | null>(null)
+  const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [quickAction, setQuickAction] = useState<{ productId: string; type: QuickActionType } | null>(null)
   const [materialPickerOpen, setMaterialPickerOpen] = useState(false)
   const [operationPickerOpen, setOperationPickerOpen] = useState(false)
@@ -94,6 +99,90 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
     })
 
   const getCat = (id: string | null) => categories.find(c => c.id === id)
+
+  /** Формує друковану специфікацію собівартості продукту (матеріали + операції)
+   *  за наданим шаблоном і відкриває діалог друку — користувач зберігає як PDF. */
+  const handleExportCost = (product: Product) => {
+    const catName = getCat(product.categoryId)?.name ?? ''
+
+    const matRows = product.materials.map(pm => {
+      const material = materials.find(m => m.id === pm.materialId)
+      const unitCost = material?.cost ?? 0
+      return { name: material?.name ?? '—', qty: pm.qty, unit: pm.unitShortName, unitCost, total: unitCost * pm.qty }
+    })
+    const opRows = product.operations.map(po => ({
+      opName: operations.find(o => o.id === po.operationId)?.name ?? '—',
+      taskName: po.taskName || '—',
+      minutes: po.durationMinutes ?? 0,
+      cost: po.cost ?? 0,
+    }))
+
+    const materialsCost = matRows.reduce((s, r) => s + r.total, 0)
+    const operationsCost = opRows.reduce((s, r) => s + r.cost, 0)
+    const totalMinutes = opRows.reduce((s, r) => s + r.minutes, 0)
+    const rowCount = Math.max(matRows.length, opRows.length, 1)
+
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    const bodyRows = Array.from({ length: rowCount }, (_, i) => {
+      const m = matRows[i]
+      const o = opRows[i]
+      return `<tr>
+        <td>${m ? esc(m.name) : ''}</td>
+        <td>${m ? `${fmt(m.qty)} ${esc(m.unit)}` : ''}</td>
+        <td>${m ? fmt(m.unitCost) : ''}</td>
+        <td>${m ? fmt(m.total) : ''}</td>
+        <td>${o ? esc(o.opName) : ''}</td>
+        <td>${o ? esc(o.taskName) : ''}</td>
+        <td>${o ? fmt(o.minutes) : ''}</td>
+        <td>${o ? fmt(o.cost) : ''}</td>
+      </tr>`
+    }).join('')
+
+    const win = window.open('', '_blank')
+    if (!win) return
+    win.document.write(`<!DOCTYPE html><html><head><title>Собівартість — ${esc(product.name)}</title>
+    <meta charset="utf-8" />
+    <style>
+      body{font-family:'DM Sans',Arial,sans-serif;font-size:12px;color:#1e293b;margin:24px}
+      table{border-collapse:collapse;width:100%}
+      th,td{border:1px solid #cbd5e1;padding:6px 9px;text-align:left;vertical-align:middle}
+      th{background:#e2e8f0;font-weight:600;font-size:11px}
+      .summary{margin-bottom:14px}
+      .summary td{font-size:12px}
+      .label{font-weight:600;background:#f8fafc;white-space:nowrap}
+      .pink{background:#f0dced}
+      .yellow th{background:#fde68a}
+      @media print { @page { size: landscape; margin: 12mm } }
+    </style></head><body>
+    <table class="summary">
+      <tr>
+        <td class="label">Назва продукту</td><td>${esc(product.name)}</td>
+        <td class="label pink">Собівартість матеріалів</td><td class="pink">${fmt(materialsCost)} ${currencySymbol}</td>
+        <td class="label pink" colspan="2">сумарна к-сть хв на виготовлення</td><td class="pink">${fmt(totalMinutes)} хв</td>
+      </tr>
+      <tr>
+        <td class="label">Назва колекції</td><td>${esc(catName)}</td>
+        <td class="label pink">Собівартість операцій</td><td class="pink">${fmt(operationsCost)} ₴</td>
+        <td colspan="3"></td>
+      </tr>
+    </table>
+    <table>
+      <thead><tr class="yellow">
+        <th>назва матеріалів</th>
+        <th>к-сть яка потрібна</th>
+        <th>вартість матеріалу за одиницю</th>
+        <th>загальна вартість</th>
+        <th>назва операції</th>
+        <th>назва завдання</th>
+        <th>к-сть хв на виконання</th>
+        <th>вартість операцій</th>
+      </tr></thead>
+      <tbody>${bodyRows}</tbody>
+    </table>
+    <script>window.onload=()=>{window.print()}<\/script>
+    </body></html>`)
+    win.document.close()
+  }
 
   if (editId !== null) {
     return <ProductEditor productId={editId === 'new' ? null : editId} onBack={() => setEditId(null)} />
@@ -265,7 +354,7 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
             const cat = getCat(product.categoryId)
             const statusObj = productStatuses.find(s => s.id === product.statusId)
             return (
-              <div key={product.id} className="overflow-hidden rounded-2xl bg-white"
+              <div key={product.id} className="rounded-2xl bg-white"
                 style={{ border: '1px solid rgba(157,200,255,0.22)', boxShadow: '0 1px 10px rgba(157,200,255,0.09)' }}>
                 {/* Main row — tap opens view */}
                 <div role="button" tabIndex={0} onClick={() => setViewId(product.id)} onKeyDown={e => e.key === 'Enter' && setViewId(product.id)} className="flex w-full items-center gap-3 px-4 pt-4 pb-3 cursor-pointer">
@@ -308,16 +397,23 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
                       )}
                     </div>
                   </div>
-                  {/* QR + Edit — stop propagation so card tap still works */}
-                  <div className="flex flex-col gap-2 shrink-0" onClick={e => e.stopPropagation()}>
-                    <button onClick={() => setQrProductId(product.id)}
+                  {/* More actions — stop propagation so card tap still works */}
+                  <div className="relative shrink-0" onClick={e => e.stopPropagation()}>
+                    <button onClick={() => setOpenMenu(openMenu === product.id ? null : product.id)}
                       className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 text-slate-400 hover:border-blue-300 hover:text-blue-500 transition-all">
-                      <QRIcon />
+                      <MoreIcon />
                     </button>
-                    <button onClick={() => setEditId(product.id)}
-                      className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-800 text-white hover:bg-slate-700 transition-all">
-                      <PencilIcon />
-                    </button>
+                    {openMenu === product.id && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setOpenMenu(null)} />
+                        <div className="absolute right-0 top-9 z-20 w-52 rounded-2xl bg-white py-1.5"
+                          style={{ border: '1px solid rgba(157,200,255,0.3)', boxShadow: '0 8px 32px rgba(15,23,42,0.14)' }}>
+                          <MenuBtn icon={<PencilIcon />} label="Редагувати" onClick={() => { setEditId(product.id); setOpenMenu(null) }} />
+                          <MenuBtn icon={<QRIcon />} label="Друк QR" onClick={() => { setQrProductId(product.id); setOpenMenu(null) }} />
+                          <MenuBtn icon={<CostIcon />} label="Собівартість" onClick={() => { handleExportCost(product); setOpenMenu(null) }} />
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
                 {/* Quick actions row */}
@@ -665,6 +761,36 @@ function QRIcon() {
       <rect x="2.5" y="9.5" width="2" height="2" fill="currentColor" rx="0.3"/>
       <path d="M8 8h1.5v1.5H8zM9.5 9.5H11V11H9.5zM11 8h2v1.5h-2zM8 11h2v2H8z" fill="currentColor"/>
     </svg>
+  )
+}
+
+function MoreIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <circle cx="7" cy="2.5" r="1.1" fill="currentColor"/>
+      <circle cx="7" cy="7" r="1.1" fill="currentColor"/>
+      <circle cx="7" cy="11.5" r="1.1" fill="currentColor"/>
+    </svg>
+  )
+}
+
+function CostIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 14 14" fill="none">
+      <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.3"/>
+      <path d="M7 3.7v6.6M9 5.2c0-.8-.9-1.5-2-1.5s-2 .6-2 1.4c0 .9.9 1.2 2 1.4 1.1.2 2 .6 2 1.4 0 .8-.9 1.4-2 1.4s-2-.6-2-1.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+    </svg>
+  )
+}
+
+function MenuBtn({ icon, label, onClick, danger }: { icon: React.ReactNode; label: string; onClick: () => void; danger?: boolean }) {
+  return (
+    <button onClick={onClick}
+      className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm transition-all hover:bg-slate-50 active:scale-[0.98]"
+      style={{ color: danger ? '#ef4444' : '#334155' }}>
+      {icon}
+      {label}
+    </button>
   )
 }
 
