@@ -29,6 +29,8 @@ const uk = {
   'products.printQr': 'Друк QR',
   'products.cost': 'Собівартість',
   'products.spec': 'Специфікація',
+  'products.bomLabel': 'Специфікація',
+  'products.booLabel': 'Специфікація',
   'products.operationsLabel': 'Операції',
   'products.noMaterials': 'Не додано жодного матеріалу',
   'products.noOperations': 'Не додано жодної операції',

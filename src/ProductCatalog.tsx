@@ -428,8 +428,8 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
                     className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 py-2.5 text-xs font-medium text-amber-600 active:scale-[0.97] transition-all">
                     <LayersIcon />
                     <span className="text-center leading-4">
-                      <span className="block">{t('products.spec')}</span>
                       <span className="block">{t('nav.materials')}</span>
+                      <span className="block">{t('products.bomLabel')}</span>
                     </span>
                   </button>
                   <button
@@ -437,8 +437,8 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
                     className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-orange-200 bg-orange-50 py-2.5 text-xs font-medium text-orange-500 active:scale-[0.97] transition-all">
                     <GearIcon />
                     <span className="text-center leading-4">
-                      <span className="block">{t('products.spec')}</span>
                       <span className="block">{t('products.operationsLabel')}</span>
+                      <span className="block">{t('products.booLabel')}</span>
                     </span>
                   </button>
                 </div>
