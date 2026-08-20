@@ -8,6 +8,7 @@ import type { StockMovement } from './hooks/useMaterialStock'
 import { useMaterialCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
 import { fmt, dateStr, buildCatPath, genBatchCode, genSeries, genMaterialArticle } from './lib/materialFormat'
 import { PRESET_COLORS } from './lib/colors'
+import { useLocale } from './LocaleContext'
 
 export type { CustomFieldInput }
 
@@ -35,6 +36,7 @@ interface Props {
   onBack: () => void
   onSave: (args: {
     name: string
+    nameEn: string | null
     code: string
     categoryId: string | null
     unitId: string
@@ -51,6 +53,7 @@ interface Props {
 export default function MaterialEditorPage({
   editing, categories, units, suppliers, fields, warehouses, materials, deliveries, nextBatchSeq, isSaving, onBack, onSave,
 }: Props) {
+  const { t, tn } = useLocale()
   const isNew = editing === null
   const [tab, setTab] = useState<'main' | 'deliveries'>('main')
 
@@ -59,6 +62,7 @@ export default function MaterialEditorPage({
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [name, setName] = useState(editing?.name ?? '')
+  const [nameEn, setNameEn] = useState(editing?.nameEn ?? '')
   const [categoryId, setCategoryId] = useState<string | null>(editing?.categoryId ?? null)
   const [unitId, setUnitId] = useState<string | null>(editing?.unitId ?? units[0]?.id ?? null)
   const [cost, setCost] = useState(editing?.cost != null ? String(editing.cost) : '')
@@ -117,7 +121,7 @@ export default function MaterialEditorPage({
   const additionalSuppliers = suppliers.filter(s => s.id !== primarySupplierId)
   const filteredSuppliers = additionalSuppliers.filter(s => s.name.toLowerCase().includes(supSearch.toLowerCase()))
   const primarySupplier = primarySupplierId ? suppliers.find(s => s.id === primarySupplierId) ?? null : null
-  const catLabel = buildCatPath(categoryId, categories)
+  const catLabel = buildCatPath(categoryId, categories, tn)
   const selectedUnit = units.find(u => u.id === unitId)
   const categorySeq = categoryId ? materials.filter(m => m.categoryId === categoryId).length + 1 : 1
   const code = editing?.code ?? genMaterialArticle(categoryId, categories, categorySeq)
@@ -150,19 +154,19 @@ export default function MaterialEditorPage({
 
   const handleSave = () => {
     const errs: Record<string, string> = {}
-    if (!name.trim()) errs.name = 'Введіть назву'
-    if (!unitId) errs.unit = 'Оберіть одиницю виміру'
-    if (!categoryId) errs.category = 'Оберіть категорію'
+    if (!name.trim()) errs.name = t('materialEditor.errName')
+    if (!unitId) errs.unit = t('materialEditor.errUnit')
+    if (!categoryId) errs.category = t('materialEditor.errCategory')
     for (const def of fields) {
       if (!def.isRequired || def.fieldType === 'file' || def.fieldType === 'boolean') continue
       const v = customInputs[def.id]
       const empty = def.fieldType === 'select' ? !v?.optionId : def.fieldType === 'number' ? !v?.number : !v?.text.trim()
-      if (empty) errs[`field_${def.id}`] = "Обов'язкове поле"
+      if (empty) errs[`field_${def.id}`] = t('common.requiredField')
     }
     setErrors(errs)
     if (Object.keys(errs).length > 0) return
     onSave({
-      name: name.trim(), code, categoryId, unitId: unitId!, cost: cost.trim() === '' ? null : Number(cost), photoFile, photoUrl,
+      name: name.trim(), nameEn: nameEn.trim() || null, code, categoryId, unitId: unitId!, cost: cost.trim() === '' ? null : Number(cost), photoFile, photoUrl,
       primarySupplierId, supplierIds, customInputs, pendingDeliveries,
     })
   }
@@ -196,13 +200,13 @@ export default function MaterialEditorPage({
           </svg>
         </button>
         <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="flex-1 text-lg text-slate-800 truncate">
-          {editing ? editing.name : 'Новий матеріал'}
+          {editing ? tn(editing.name, editing.nameEn) : t('materialEditor.newMaterial')}
         </h1>
       </div>
 
       <div className="px-4 pt-3">
         <div className="flex rounded-2xl bg-slate-100 p-1 gap-1">
-          {([['main', 'Основне'], ['deliveries', 'Поставки']] as const).map(([key, label]) => (
+          {([['main', t('materialEditor.tabMain')], ['deliveries', t('materialEditor.tabDeliveries')]] as const).map(([key, label]) => (
             <button key={key} onClick={() => setTab(key)}
               className="flex-1 rounded-xl py-2.5 text-sm font-semibold transition-all"
               style={tab === key ? { background: 'white', color: '#1e293b', boxShadow: '0 1px 6px rgba(0,0,60,0.08)' } : { color: '#94a3b8' }}>
@@ -218,7 +222,7 @@ export default function MaterialEditorPage({
       {tab === 'main' && (
         <div className="px-4 pt-5 pb-36 space-y-5">
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Фото</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">{t('productEditor.photo')}</label>
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={e => handleFile(e.target.files)} />
             <div onClick={() => fileRef.current?.click()}
               className="relative flex items-center gap-4 rounded-2xl cursor-pointer active:scale-[0.98] transition-all overflow-hidden"
@@ -234,7 +238,7 @@ export default function MaterialEditorPage({
                 </div>
               )}
               <div className="px-4">
-                <p className="text-sm font-medium text-slate-600">{photoUrl ? 'Змінити фото' : 'Додати фото'}</p>
+                <p className="text-sm font-medium text-slate-600">{photoUrl ? t('materialEditor.changePhoto') : t('productEditor.addPhoto')}</p>
                 <p className="text-xs text-slate-400">JPG, PNG, HEIC</p>
               </div>
               {photoUrl && (
@@ -244,35 +248,41 @@ export default function MaterialEditorPage({
             </div>
           </div>
 
-          <Field label="Назва матеріалу *" error={errors.name}>
+          <Field label={t('materialEditor.nameLabel')} error={errors.name}>
             <input autoFocus={!editing} type="text" value={name}
               onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })) }}
-              placeholder="Введіть назву"
+              placeholder={t('productEditor.namePlaceholder')}
               className={`w-full rounded-2xl border px-4 py-3.5 text-sm outline-none transition-all focus:ring-2 focus:ring-blue-100 ${errors.name ? 'border-red-300 bg-red-50 focus:border-red-400' : 'border-slate-200 bg-white focus:border-blue-400'}`} />
           </Field>
 
-          <Field label="Код матеріалу">
+          <Field label={t('common.nameEn')}>
+            <input type="text" value={nameEn} onChange={e => setNameEn(e.target.value)}
+              placeholder={t('materialEditor.nameEnPlaceholder')}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm outline-none transition-all focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+          </Field>
+
+          <Field label={t('materialEditor.codeLabel')}>
             <div className="w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3.5 text-sm font-mono text-slate-600 select-all">
-              {code || <span className="text-slate-400 font-sans">Формується після вибору категорії</span>}
+              {code || <span className="text-slate-400 font-sans">{t('materialEditor.codeHint')}</span>}
             </div>
           </Field>
 
-          <Field label="Категорія *" error={errors.category}>
+          <Field label={t('materialEditor.categoryLabel')} error={errors.category}>
             <button onClick={() => setShowCatPicker(true)}
               className={`w-full flex items-center justify-between rounded-2xl border px-4 py-3.5 text-sm text-left transition-all focus:outline-none ${errors.category ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white hover:border-blue-300'}`}>
-              <span className={catLabel ? 'text-slate-800 font-medium' : 'text-slate-400'}>{catLabel || 'Оберіть категорію...'}</span>
+              <span className={catLabel ? 'text-slate-800 font-medium' : 'text-slate-400'}>{catLabel || t('materialEditor.selectCategoryPlaceholder')}</span>
               <svg width="13" height="13" viewBox="0 0 13 13" fill="none" className="text-slate-400 shrink-0">
                 <path d="M2.5 4l4 4.5 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </button>
           </Field>
 
-          <Field label="Одиниця виміру *" error={errors.unit}>
+          <Field label={t('materialEditor.unitLabel')} error={errors.unit}>
             <div className="relative">
               <select value={unitId ?? ''} onChange={e => { setUnitId(e.target.value || null); setErrors(p => ({ ...p, unit: '' })) }}
                 className={`w-full appearance-none rounded-2xl border px-4 pr-10 py-3.5 text-sm outline-none transition-all focus:ring-2 focus:ring-blue-100 ${errors.unit ? 'border-red-300 bg-red-50 focus:border-red-400' : 'border-slate-200 bg-white focus:border-blue-400'}`}>
-                <option value="">— Оберіть одиницю —</option>
-                {units.map(u => <option key={u.id} value={u.id}>{u.shortName} — {u.name}</option>)}
+                <option value="">{t('materialEditor.selectUnitPlaceholder')}</option>
+                {units.map(u => <option key={u.id} value={u.id}>{tn(u.shortName, u.shortNameEn)} — {tn(u.name, u.nameEn)}</option>)}
               </select>
               <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" width="13" height="13" viewBox="0 0 13 13" fill="none">
                 <path d="M2.5 4l4 4.5 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
@@ -280,7 +290,7 @@ export default function MaterialEditorPage({
             </div>
           </Field>
 
-          <Field label="Вартість за одиницю">
+          <Field label={t('materialEditor.costLabel')}>
             <div className="relative">
               <input type="number" min="0" step="any" value={cost} onChange={e => setCost(e.target.value)}
                 placeholder="0.00"
@@ -288,15 +298,15 @@ export default function MaterialEditorPage({
               <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm text-slate-400">{CURRENCY_SYMBOL[currency]}</span>
             </div>
             <p className="mt-1.5 text-[10px] text-slate-300">
-              Використовується для розрахунку собівартості продукту · валюта задається в Налаштуваннях
+              {t('materialEditor.costHint')}
             </p>
           </Field>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Постачальник</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">{t('materialEditor.supplierLabel')}</label>
             <button onClick={() => setShowSupplierPicker(true)}
               className="w-full flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-left hover:border-blue-300 transition-all">
-              <span className={primarySupplier ? 'text-slate-800 font-medium' : 'text-slate-400'}>{primarySupplier?.name ?? 'Не обрано...'}</span>
+              <span className={primarySupplier ? 'text-slate-800 font-medium' : 'text-slate-400'}>{primarySupplier ? tn(primarySupplier.name, primarySupplier.nameEn) : t('materialEditor.notSelected')}</span>
               <svg width="13" height="13" viewBox="0 0 13 13" fill="none" className="text-slate-400 shrink-0">
                 <path d="M2.5 4l4 4.5 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
@@ -305,11 +315,11 @@ export default function MaterialEditorPage({
 
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-              Додаткові постачальники
-              {supplierIds.length > 0 && <span className="ml-2 text-blue-500 normal-case">{supplierIds.length} обрано</span>}
+              {t('materialEditor.additionalSuppliers')}
+              {supplierIds.length > 0 && <span className="ml-2 text-blue-500 normal-case">{t('materialEditor.selectedCount', { count: supplierIds.length })}</span>}
             </label>
             {additionalSuppliers.length === 0 ? (
-              <p className="text-xs text-slate-400 italic">Немає інших постачальників</p>
+              <p className="text-xs text-slate-400 italic">{t('materialEditor.noOtherSuppliers')}</p>
             ) : (
               <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
                 <div className="relative border-b border-slate-100">
@@ -318,7 +328,7 @@ export default function MaterialEditorPage({
                     <path d="M9.5 9.5l2.5 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
                   </svg>
                   <input type="text" value={supSearch} onChange={e => setSupSearch(e.target.value)}
-                    placeholder="Пошук..." className="w-full py-2.5 pl-9 pr-4 text-sm outline-none bg-white placeholder:text-slate-300" />
+                    placeholder={t('common.searchGeneric')} className="w-full py-2.5 pl-9 pr-4 text-sm outline-none bg-white placeholder:text-slate-300" />
                 </div>
                 <div className="max-h-40 overflow-y-auto">
                   {filteredSuppliers.map((s, i) => {
@@ -332,7 +342,7 @@ export default function MaterialEditorPage({
                           {selected && <svg width="9" height="9" viewBox="0 0 9 9" fill="none"><path d="M1.5 4.5l2 2 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className={`text-sm truncate ${selected ? 'font-medium text-slate-800' : 'text-slate-600'}`}>{s.name}</p>
+                          <p className={`text-sm truncate ${selected ? 'font-medium text-slate-800' : 'text-slate-600'}`}>{tn(s.name, s.nameEn)}</p>
                           {s.contactPerson && <p className="text-xs text-slate-400 truncate">{s.contactPerson}</p>}
                         </div>
                       </button>
@@ -353,7 +363,7 @@ export default function MaterialEditorPage({
           {isNew ? (
             <>
               <div className="rounded-2xl px-4 py-3 text-xs text-amber-700" style={{ background: '#fffbeb', border: '1px solid #fcd34d' }}>
-                Поставки буде збережено після створення матеріалу
+                {t('materialEditor.deliveriesPendingHint')}
               </div>
 
               {!showDeliveryForm ? (
@@ -363,31 +373,31 @@ export default function MaterialEditorPage({
                   <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
                     <path d="M6.5 1v11M1 6.5h11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
                   </svg>
-                  Додати поставку
+                  {t('materialEditor.addDelivery')}
                 </button>
               ) : (
                 <div className="rounded-2xl bg-white p-4 space-y-4" style={{ border: '1px solid rgba(157,200,255,0.3)', boxShadow: '0 2px 12px rgba(157,200,255,0.12)' }}>
-                  <p className="text-sm font-semibold text-slate-800">Нова партія</p>
+                  <p className="text-sm font-semibold text-slate-800">{t('materials.newBatch')}</p>
 
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Код партії</label>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">{t('materials.batchCode')}</label>
                     <div className="w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm font-mono text-slate-600 select-all">{dBatchCode}</div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Кількість</label>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">{t('materialEditor.quantityLabel')}</label>
                     <Stepper value={dQty} min={0.01} onChange={v => { setDQty(v); if (dSeriesCount > 0) applyDSeriesCount(dSeriesCount, v) }} />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Склад</label>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">{t('materials.warehouse')}</label>
                     {warehouses.length === 0 ? (
-                      <p className="text-xs text-red-500">Додайте склади у Довідниках</p>
+                      <p className="text-xs text-red-500">{t('materials.addWarehousesHint')}</p>
                     ) : (
                       <div className="relative">
                         <select value={dWarehouseId ?? ''} onChange={e => setDWarehouseId(e.target.value || null)}
                           className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 pr-10 py-3 text-sm outline-none focus:border-blue-400 transition-all">
-                          {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                          {warehouses.map(w => <option key={w.id} value={w.id}>{tn(w.name, w.nameEn)}</option>)}
                         </select>
                         <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" width="13" height="13" viewBox="0 0 13 13" fill="none">
                           <path d="M2.5 4l4 4.5 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
@@ -397,14 +407,14 @@ export default function MaterialEditorPage({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Ціна за одиницю (₴)</label>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">{t('materials.pricePerUnitCurrency')}</label>
                     <input type="number" min="0" step="any" value={dCost} onChange={e => setDCost(e.target.value)} placeholder="0.00"
                       className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                      Кількість серій <span className="normal-case font-normal text-slate-300">(необов'язково)</span>
+                      {t('materials.seriesCount')} <span className="normal-case font-normal text-slate-300">{t('common.optional')}</span>
                     </label>
                     <Stepper value={dSeriesCount} onChange={v => { const c = Math.round(v); setDSeriesCount(c); applyDSeriesCount(c, dQty) }} />
                     {dSeriesItems.length > 0 && (
@@ -422,16 +432,16 @@ export default function MaterialEditorPage({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Примітка</label>
-                    <input value={dNote} onChange={e => setDNote(e.target.value)} placeholder="Необов'язково..."
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">{t('materials.note')}</label>
+                    <input value={dNote} onChange={e => setDNote(e.target.value)} placeholder={t('common.optionalPlaceholder')}
                       className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-400 transition-all" />
                   </div>
 
                   <div className="flex gap-2">
                     <button onClick={() => { setShowDeliveryForm(false); setDSeriesCount(0) }}
-                      className="flex-1 rounded-2xl border border-slate-200 py-3 text-sm text-slate-500 active:scale-[0.98]">Скасувати</button>
+                      className="flex-1 rounded-2xl border border-slate-200 py-3 text-sm text-slate-500 active:scale-[0.98]">{t('common.cancel')}</button>
                     <button onClick={addPendingDelivery} disabled={dQty <= 0}
-                      className="flex-1 rounded-2xl bg-green-600 py-3 text-sm font-semibold text-white disabled:opacity-40 active:scale-[0.98]">Додати</button>
+                      className="flex-1 rounded-2xl bg-green-600 py-3 text-sm font-semibold text-white disabled:opacity-40 active:scale-[0.98]">{t('common.add')}</button>
                   </div>
                 </div>
               )}
@@ -443,9 +453,9 @@ export default function MaterialEditorPage({
                     <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-green-50 text-green-600 text-sm font-bold shrink-0">+</div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-mono text-slate-500 mb-0.5">{d.batchCode}</p>
-                      <p className="text-sm font-semibold text-slate-800">{fmt(d.qty)} {selectedUnit?.shortName ?? ''}</p>
-                      <p className="text-xs text-slate-400">{[wh?.name, d.cost ? `${d.cost} ₴/од` : ''].filter(Boolean).join(' · ')}</p>
-                      {d.series.length > 0 && <p className="text-xs text-blue-500 mt-0.5">{d.series.length} серій</p>}
+                      <p className="text-sm font-semibold text-slate-800">{fmt(d.qty)} {selectedUnit ? tn(selectedUnit.shortName, selectedUnit.shortNameEn) : ''}</p>
+                      <p className="text-xs text-slate-400">{[wh ? tn(wh.name, wh.nameEn) : null, d.cost ? t('materialEditor.perUnitCost', { cost: d.cost }) : ''].filter(Boolean).join(' · ')}</p>
+                      {d.series.length > 0 && <p className="text-xs text-blue-500 mt-0.5">{t('materialEditor.seriesShortCount', { count: d.series.length })}</p>}
                     </div>
                     <button onClick={() => setPendingDeliveries(p => p.filter((_, j) => j !== i))}
                       className="text-slate-300 hover:text-red-400 transition-colors text-sm shrink-0">✕</button>
@@ -457,7 +467,7 @@ export default function MaterialEditorPage({
             <>
               {deliveries.filter(d => d.type === 'in').length === 0 ? (
                 <div className="flex flex-col items-center gap-2 rounded-2xl py-12 text-center" style={{ border: '1.5px dashed rgba(157,200,255,0.4)' }}>
-                  <p className="text-sm text-slate-400">Поставок ще немає</p>
+                  <p className="text-sm text-slate-400">{t('materialEditor.noDeliveriesYet')}</p>
                 </div>
               ) : deliveries.filter(d => d.type === 'in').sort((a, b) => b.createdAt - a.createdAt).map(d => {
                 const wh = warehouses.find(w => w.id === d.warehouseId)
@@ -467,16 +477,16 @@ export default function MaterialEditorPage({
                       <div className="flex items-center gap-2">
                         <span className="flex h-7 w-7 items-center justify-center rounded-xl text-xs font-bold" style={{ background: '#f0fdf4', color: '#16a34a' }}>+</span>
                         <div>
-                          <p className="text-sm font-semibold text-slate-800">Надходження</p>
+                          <p className="text-sm font-semibold text-slate-800">{t('materialEditor.incomingLabel')}</p>
                           <p className="text-xs text-slate-400">{dateStr(d.createdAt)}</p>
                         </div>
                       </div>
-                      <p className="text-base font-bold text-green-600">+{fmt(d.qty)} {editing?.unitShortName}</p>
+                      <p className="text-base font-bold text-green-600">+{fmt(d.qty)} {editing ? tn(editing.unitShortName, editing.unitShortNameEn) : ''}</p>
                     </div>
                     <div className="space-y-1 text-xs text-slate-500">
                       {d.batchCode && <p className="font-mono">{d.batchCode}</p>}
-                      {wh && <p>{wh.name}</p>}
-                      {d.cost !== null && <p>{d.cost} ₴/од</p>}
+                      {wh && <p>{tn(wh.name, wh.nameEn)}</p>}
+                      {d.cost !== null && <p>{t('materialEditor.perUnitCost', { cost: d.cost })}</p>}
                       {d.note && <p>{d.note}</p>}
                       {d.series.length > 0 && (
                         <div className="mt-2 space-y-1.5">
@@ -501,7 +511,7 @@ export default function MaterialEditorPage({
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)', background: 'linear-gradient(to top, rgba(248,251,255,1) 80%, transparent)' }}>
         <button onClick={handleSave} disabled={!canSave || isSaving}
           className="flex w-full items-center justify-center rounded-2xl bg-slate-800 py-4 text-sm font-semibold text-white disabled:opacity-40 active:scale-[0.98] transition-all">
-          {isSaving ? 'Збереження…' : editing ? 'Зберегти зміни' : 'Додати матеріал'}
+          {isSaving ? t('common.saving') : editing ? t('productEditor.saveChanges') : t('materialEditor.addMaterial')}
         </button>
       </div>
 
@@ -511,7 +521,7 @@ export default function MaterialEditorPage({
           <div className="relative z-10 rounded-t-3xl bg-white pb-8 flex flex-col" style={{ maxHeight: '85vh', boxShadow: '0 -8px 40px rgba(0,0,0,0.14)' }}>
             <div className="flex justify-center pt-3 pb-1 shrink-0"><div className="h-1 w-10 rounded-full bg-slate-200" /></div>
             <div className="flex items-center justify-between px-5 py-3 shrink-0">
-              <h2 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-lg text-slate-800">Категорія</h2>
+              <h2 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-lg text-slate-800">{t('filters.category')}</h2>
               <button onClick={() => setShowCatPicker(false)} className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-500 active:scale-90">
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
               </button>
@@ -523,10 +533,10 @@ export default function MaterialEditorPage({
                 <div className="h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0" style={{ borderColor: !categoryId ? '#3b82f6' : '#cbd5e1' }}>
                   {!categoryId && <div className="h-2 w-2 rounded-full bg-blue-500" />}
                 </div>
-                <span className="text-sm font-medium text-slate-700">Без категорії</span>
+                <span className="text-sm font-medium text-slate-700">{t('productEditor.noCategory')}</span>
               </button>
               {categories.length === 0 && (
-                <p className="py-4 text-center text-sm text-slate-400">Категорій ще немає — додайте першу нижче</p>
+                <p className="py-4 text-center text-sm text-slate-400">{t('materialEditor.noCategoriesAddFirst')}</p>
               )}
               {topLevelCats.map(cat => (
                 <CategoryTreeNode key={cat.id} cat={cat} depth={0} allCats={categories} selectedId={categoryId}
@@ -537,15 +547,15 @@ export default function MaterialEditorPage({
 
               {showAddCat ? (
                 <div className="rounded-2xl border border-blue-200 bg-blue-50 p-3 space-y-2.5">
-                  <p className="text-xs font-semibold text-blue-700">Нова категорія</p>
+                  <p className="text-xs font-semibold text-blue-700">{t('materialEditor.newCategory')}</p>
                   <input value={newCatName} onChange={e => setNewCatName(e.target.value)}
-                    placeholder="Назва категорії" autoFocus
+                    placeholder={t('materialEditor.categoryNamePlaceholder')} autoFocus
                     className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 transition-all" />
                   <div className="relative">
                     <select value={addCatParentId ?? ''} onChange={e => setAddCatParentId(e.target.value || null)}
                       className="w-full appearance-none rounded-xl border border-slate-200 bg-white pl-3 pr-8 py-2 text-sm outline-none focus:border-blue-400 transition-all">
-                      <option value="">— Верхнього рівня —</option>
-                      {categories.map(c => <option key={c.id} value={c.id}>{buildCatPath(c.id, categories)}</option>)}
+                      <option value="">{t('materialEditor.topLevelOption')}</option>
+                      {categories.map(c => <option key={c.id} value={c.id}>{buildCatPath(c.id, categories, tn)}</option>)}
                     </select>
                     <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="11" height="11" viewBox="0 0 11 11" fill="none">
                       <path d="M2 3.5l3.5 4 3.5-4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
@@ -553,9 +563,9 @@ export default function MaterialEditorPage({
                   </div>
                   <div className="flex gap-2">
                     <button onClick={() => { setShowAddCat(false); setNewCatName('') }}
-                      className="flex-1 rounded-xl border border-slate-200 py-2 text-xs text-slate-500 active:scale-[0.98]">Скасувати</button>
+                      className="flex-1 rounded-xl border border-slate-200 py-2 text-xs text-slate-500 active:scale-[0.98]">{t('common.cancel')}</button>
                     <button onClick={handleAddCategory} disabled={!newCatName.trim()}
-                      className="flex-1 rounded-xl bg-blue-600 py-2 text-xs font-semibold text-white disabled:opacity-40 active:scale-[0.98]">Додати</button>
+                      className="flex-1 rounded-xl bg-blue-600 py-2 text-xs font-semibold text-white disabled:opacity-40 active:scale-[0.98]">{t('common.add')}</button>
                   </div>
                 </div>
               ) : (
@@ -565,7 +575,7 @@ export default function MaterialEditorPage({
                   <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
                     <path d="M5.5 1v9M1 5.5h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
                   </svg>
-                  Додати категорію
+                  {t('materialEditor.addCategory')}
                 </button>
               )}
             </div>
@@ -579,7 +589,7 @@ export default function MaterialEditorPage({
           <div className="relative z-10 rounded-t-3xl bg-white pb-8" style={{ boxShadow: '0 -8px 40px rgba(0,0,0,0.14)' }}>
             <div className="flex justify-center pt-3 pb-1"><div className="h-1 w-10 rounded-full bg-slate-200" /></div>
             <div className="flex items-center justify-between px-5 py-3">
-              <h2 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-lg text-slate-800">Постачальник</h2>
+              <h2 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-lg text-slate-800">{t('materialEditor.supplierLabel')}</h2>
               <button onClick={() => setShowSupplierPicker(false)} className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-500 active:scale-90">
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
               </button>
@@ -591,9 +601,9 @@ export default function MaterialEditorPage({
                 <div className="h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0" style={{ borderColor: !primarySupplierId ? '#3b82f6' : '#cbd5e1' }}>
                   {!primarySupplierId && <div className="h-2 w-2 rounded-full bg-blue-500" />}
                 </div>
-                <span className="text-sm font-medium text-slate-500">Не обрано</span>
+                <span className="text-sm font-medium text-slate-500">{t('materialEditor.notSelectedShort')}</span>
               </button>
-              {suppliers.length === 0 && <p className="text-sm text-slate-400 text-center py-4">Постачальників ще немає — додайте нижче</p>}
+              {suppliers.length === 0 && <p className="text-sm text-slate-400 text-center py-4">{t('materialEditor.noSuppliersAddBelow')}</p>}
               {suppliers.map(s => {
                 const sel = primarySupplierId === s.id
                 return (
@@ -604,7 +614,7 @@ export default function MaterialEditorPage({
                       {sel && <div className="h-2 w-2 rounded-full bg-blue-500" />}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-700 truncate">{s.name}</p>
+                      <p className="text-sm font-medium text-slate-700 truncate">{tn(s.name, s.nameEn)}</p>
                       {s.contactPerson && <p className="text-xs text-slate-400 truncate">{s.contactPerson}</p>}
                     </div>
                   </button>
@@ -613,21 +623,21 @@ export default function MaterialEditorPage({
 
               {showAddSupplier ? (
                 <div className="rounded-2xl border border-blue-200 bg-blue-50 p-3 space-y-2.5">
-                  <p className="text-xs font-semibold text-blue-700">Новий постачальник</p>
+                  <p className="text-xs font-semibold text-blue-700">{t('materialEditor.newSupplier')}</p>
                   <input value={newSupName} onChange={e => setNewSupName(e.target.value)}
-                    placeholder="Назва компанії *" autoFocus
+                    placeholder={t('materialEditor.companyNamePlaceholder')} autoFocus
                     className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 transition-all" />
                   <input value={newSupContact} onChange={e => setNewSupContact(e.target.value)}
-                    placeholder="Контактна особа"
+                    placeholder={t('materialEditor.contactPersonPlaceholder')}
                     className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 transition-all" />
                   <input value={newSupPhone} onChange={e => setNewSupPhone(e.target.value)}
-                    placeholder="Телефон"
+                    placeholder={t('materialEditor.phonePlaceholder')}
                     className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 transition-all" />
                   <div className="flex gap-2">
                     <button onClick={() => { setShowAddSupplier(false); setNewSupName(''); setNewSupContact(''); setNewSupPhone('') }}
-                      className="flex-1 rounded-xl border border-slate-200 py-2 text-xs text-slate-500 active:scale-[0.98]">Скасувати</button>
+                      className="flex-1 rounded-xl border border-slate-200 py-2 text-xs text-slate-500 active:scale-[0.98]">{t('common.cancel')}</button>
                     <button onClick={handleAddSupplier} disabled={!newSupName.trim()}
-                      className="flex-1 rounded-xl bg-blue-600 py-2 text-xs font-semibold text-white disabled:opacity-40 active:scale-[0.98]">Додати</button>
+                      className="flex-1 rounded-xl bg-blue-600 py-2 text-xs font-semibold text-white disabled:opacity-40 active:scale-[0.98]">{t('common.add')}</button>
                   </div>
                 </div>
               ) : (
@@ -637,7 +647,7 @@ export default function MaterialEditorPage({
                   <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
                     <path d="M5.5 1v9M1 5.5h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
                   </svg>
-                  Додати постачальника
+                  {t('materialEditor.addSupplier')}
                 </button>
               )}
             </div>

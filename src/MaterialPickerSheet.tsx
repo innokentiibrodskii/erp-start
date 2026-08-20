@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Material } from './hooks/useMaterials'
 import type { Operation } from './hooks/useCatalog'
 import { useProductMaterialMutations } from './hooks/useProductMaterials'
+import { useLocale } from './LocaleContext'
 
 /* ───────────────────────────────────────────────────────────
    Пікер додавання матеріалу до продукту: матеріал → кількість →
@@ -16,6 +17,7 @@ export default function MaterialPickerSheet({ productId, allMaterials, alreadyAd
   onClose: () => void
   onAdd: (args: { productId: string; materialId: string; qty: number; unitId: string; operationId: string | null }) => Promise<void>
 }) {
+  const { t, tn } = useLocale()
   const { createOperation } = useProductMaterialMutations()
   const [search, setSearch] = useState('')
   const [materialId, setMaterialId] = useState<string | null>(null)
@@ -57,7 +59,7 @@ export default function MaterialPickerSheet({ productId, allMaterials, alreadyAd
           <button onClick={onClose} className="h-1 w-10 rounded-full bg-slate-200 sm:hidden" />
         </div>
         <h2 style={{ fontFamily: "'DM Serif Display', serif" }} className="px-5 text-2xl text-slate-800 mb-4">
-          Додати матеріал
+          {t('materialEditor.addMaterial')}
         </h2>
 
         {!selectedMaterial ? (
@@ -67,13 +69,13 @@ export default function MaterialPickerSheet({ productId, allMaterials, alreadyAd
                 <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4"/>
                 <path d="M9.5 9.5l2.5 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
               </svg>
-              <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Пошук матеріалу..."
+              <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder={t('materials.search')}
                 className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm outline-none placeholder:text-slate-300 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
             </div>
             <div className="space-y-1.5 max-h-64 overflow-y-auto">
               {available.length === 0 ? (
                 <p className="py-6 text-center text-sm text-slate-400">
-                  {allMaterials.length === 0 ? 'У каталозі ще немає матеріалів' : 'Усі матеріали вже додані або не знайдено'}
+                  {allMaterials.length === 0 ? t('materialPicker.emptyCatalog') : t('materialPicker.allAddedOrNotFound')}
                 </p>
               ) : available.map(m => (
                 <button key={m.id} onClick={() => setMaterialId(m.id)}
@@ -83,8 +85,8 @@ export default function MaterialPickerSheet({ productId, allMaterials, alreadyAd
                     {m.photo ? <img src={m.photo} alt="" className="h-full w-full object-cover" /> : <span className="text-xs">📦</span>}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-800 truncate">{m.name}</p>
-                    <p className="text-xs text-slate-400">{m.unitShortName}{m.categoryName ? ` · ${m.categoryName}` : ''}</p>
+                    <p className="text-sm font-medium text-slate-800 truncate">{tn(m.name, m.nameEn)}</p>
+                    <p className="text-xs text-slate-400">{tn(m.unitShortName, m.unitShortNameEn)}{m.categoryName ? ` · ${tn(m.categoryName, m.categoryNameEn)}` : ''}</p>
                   </div>
                 </button>
               ))}
@@ -97,27 +99,27 @@ export default function MaterialPickerSheet({ productId, allMaterials, alreadyAd
                 {selectedMaterial.photo ? <img src={selectedMaterial.photo} alt="" className="h-full w-full object-cover" /> : <span className="text-xs">📦</span>}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-800 truncate">{selectedMaterial.name}</p>
-                <p className="text-xs text-slate-400">{selectedMaterial.unitShortName}</p>
+                <p className="text-sm font-medium text-slate-800 truncate">{tn(selectedMaterial.name, selectedMaterial.nameEn)}</p>
+                <p className="text-xs text-slate-400">{tn(selectedMaterial.unitShortName, selectedMaterial.unitShortNameEn)}</p>
               </div>
-              <button onClick={() => setMaterialId(null)} className="text-xs text-blue-500 font-medium shrink-0">Змінити</button>
+              <button onClick={() => setMaterialId(null)} className="text-xs text-blue-500 font-medium shrink-0">{t('common.change')}</button>
             </div>
 
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">
-                Кількість ({selectedMaterial.unitShortName})
+                {t('materials.quantityWithUnit', { unit: tn(selectedMaterial.unitShortName, selectedMaterial.unitShortNameEn) })}
               </label>
               <input type="number" min="0" step="any" value={qty} onChange={e => setQty(e.target.value)}
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
             </div>
 
             <div>
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-widest text-slate-400">Операція</label>
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('common.operation')}</label>
               <div className="flex flex-wrap gap-2 mb-2">
                 <button onClick={() => setOperationId(null)}
                   className="rounded-xl px-3 py-2 text-xs font-medium border transition-all"
                   style={operationId === null ? { background: '#1e293b', color: '#fff', borderColor: '#1e293b' } : { background: '#f8fafc', color: '#94a3b8', borderColor: '#e2e8f0' }}>
-                  Без операції
+                  {t('products.noOperation')}
                 </button>
                 {operations.map(o => {
                   const active = operationId === o.id
@@ -125,7 +127,7 @@ export default function MaterialPickerSheet({ productId, allMaterials, alreadyAd
                     <button key={o.id} onClick={() => setOperationId(o.id)}
                       className="rounded-xl px-3 py-2 text-xs font-medium border transition-all"
                       style={active ? { background: '#ea580c', color: '#fff', borderColor: '#ea580c' } : { background: '#fff7ed', color: '#ea580c', borderColor: 'transparent' }}>
-                      {o.name}
+                      {tn(o.name, o.nameEn)}
                     </button>
                   )
                 })}
@@ -133,17 +135,17 @@ export default function MaterialPickerSheet({ productId, allMaterials, alreadyAd
 
               {!newOpMode ? (
                 <button onClick={() => setNewOpMode(true)} className="text-xs text-blue-500 font-medium hover:underline">
-                  + Операції немає в списку — додати нову
+                  {t('materialPicker.operationNotInList')}
                 </button>
               ) : (
                 <div className="rounded-2xl border border-slate-200 p-3 space-y-3 mt-2">
-                  <input type="text" value={newOpName} onChange={e => setNewOpName(e.target.value)} placeholder="Назва операції"
+                  <input type="text" value={newOpName} onChange={e => setNewOpName(e.target.value)} placeholder={t('materialPicker.operationNamePlaceholder')}
                     className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-all" />
                   <div className="flex gap-2">
-                    <button onClick={() => setNewOpMode(false)} className="flex-1 rounded-xl border border-slate-200 py-2 text-xs text-slate-600">Скасувати</button>
+                    <button onClick={() => setNewOpMode(false)} className="flex-1 rounded-xl border border-slate-200 py-2 text-xs text-slate-600">{t('common.cancel')}</button>
                     <button onClick={handleCreateOperation} disabled={!newOpName.trim()}
                       className="flex-1 rounded-xl bg-slate-800 py-2 text-xs font-medium text-white disabled:opacity-40">
-                      Створити і обрати
+                      {t('materialPicker.createAndSelect')}
                     </button>
                   </div>
                 </div>
@@ -153,10 +155,10 @@ export default function MaterialPickerSheet({ productId, allMaterials, alreadyAd
         )}
 
         <div className="flex gap-3 mt-6 px-5">
-          <button onClick={onClose} className="flex-1 rounded-2xl border border-slate-200 py-3.5 text-sm text-slate-600">Скасувати</button>
+          <button onClick={onClose} className="flex-1 rounded-2xl border border-slate-200 py-3.5 text-sm text-slate-600">{t('common.cancel')}</button>
           <button onClick={handleConfirm} disabled={!canConfirm || saving}
             className="flex-1 rounded-2xl bg-slate-800 py-3.5 text-sm font-medium text-white disabled:opacity-40 active:scale-[0.98] transition-all">
-            {saving ? 'Додавання…' : 'Додати'}
+            {saving ? t('materialPicker.adding') : t('common.add')}
           </button>
         </div>
       </div>

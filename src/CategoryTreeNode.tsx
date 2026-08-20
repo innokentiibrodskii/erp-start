@@ -1,8 +1,11 @@
+import { useLocale } from './LocaleContext'
+
 /** Мінімальна форма категорії, потрібна для побудови дерева — підходить
  *  і для ProductCategory (продукти), і для MaterialCategory (матеріали). */
 interface CategoryLike {
   id: string
   name: string
+  nameEn: string | null
   parentId: string | null
 }
 
@@ -17,6 +20,7 @@ export function CategoryTreeNode<T extends CategoryLike>({ cat, depth, allCats, 
   onSelect: (id: string) => void
   onToggleExpand: (id: string) => void
 }) {
+  const { tn } = useLocale()
   const children = allCats.filter(c => c.parentId === cat.id)
   const isExpanded = expandedIds.includes(cat.id)
   const isSelected = selectedId === cat.id
@@ -29,7 +33,7 @@ export function CategoryTreeNode<T extends CategoryLike>({ cat, depth, allCats, 
           <div className="h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0" style={{ borderColor: isSelected ? 'white' : '#cbd5e1' }}>
             {isSelected && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
           </div>
-          <span className="text-sm font-medium" style={{ color: isSelected ? 'white' : '#1e293b' }}>{cat.name}</span>
+          <span className="text-sm font-medium" style={{ color: isSelected ? 'white' : '#1e293b' }}>{tn(cat.name, cat.nameEn)}</span>
           {children.length > 0 && (
             <span className="ml-auto rounded-full text-[10px] font-bold px-1.5 py-0.5 shrink-0"
               style={{ background: isSelected ? 'rgba(255,255,255,0.2)' : '#e2e8f0', color: isSelected ? 'white' : '#64748b' }}>

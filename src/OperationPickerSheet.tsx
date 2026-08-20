@@ -3,6 +3,7 @@ import type { Operation } from './hooks/useCatalog'
 import { createOperationDirect } from './hooks/useCatalog'
 import { useProductTasks, useProductOperationMutations, type ProductTask } from './hooks/useProductOperations'
 import { useActiveOrgId } from './OrgContext'
+import { useLocale } from './LocaleContext'
 
 /* ───────────────────────────────────────────────────────────
    Пікер додавання операції до продукту: операція з каталогу →
@@ -18,6 +19,7 @@ export default function OperationPickerSheet({ productId, allOperations, already
   onClose: () => void
   onAdded: () => void
 }) {
+  const { t, tn } = useLocale()
   const orgId = useActiveOrgId()
   const productTasksQ = useProductTasks(productId)
   const productTasks = productTasksQ.data ?? []
@@ -53,7 +55,7 @@ export default function OperationPickerSheet({ productId, allOperations, already
     setCreatingOp(true)
     try {
       const id = await createOperationDirect(orgId, newOpName.trim())
-      const created: Operation = { id, name: newOpName.trim(), description: '' }
+      const created: Operation = { id, name: newOpName.trim(), nameEn: null, description: '' }
       setOperations(prev => [...prev, created])
       selectOperation(id, created.name)
       setNewOpMode(false)
@@ -96,7 +98,7 @@ export default function OperationPickerSheet({ productId, allOperations, already
           <button onClick={onClose} className="h-1 w-10 rounded-full bg-slate-200 sm:hidden" />
         </div>
         <h2 style={{ fontFamily: "'DM Serif Display', serif" }} className="px-5 text-2xl text-slate-800 mb-4">
-          Додати операцію
+          {t('operationPicker.addOperation')}
         </h2>
 
         {!selectedOperation ? (
@@ -106,16 +108,16 @@ export default function OperationPickerSheet({ productId, allOperations, already
                 <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4"/>
                 <path d="M9.5 9.5l2.5 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
               </svg>
-              <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Пошук операції..."
+              <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder={t('operationPicker.searchOperation')}
                 className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm outline-none placeholder:text-slate-300 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
             </div>
             <div className="space-y-1.5 max-h-56 overflow-y-auto mb-3">
               {available.length === 0 ? (
                 <p className="py-6 text-center text-sm text-slate-400">
-                  {operations.length === 0 ? 'У каталозі ще немає операцій' : 'Не знайдено'}
+                  {operations.length === 0 ? t('operationPicker.emptyCatalog') : t('operationPicker.notFoundShort')}
                 </p>
               ) : available.map(o => (
-                <button key={o.id} onClick={() => selectOperation(o.id, o.name)}
+                <button key={o.id} onClick={() => selectOperation(o.id, tn(o.name, o.nameEn))}
                   className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left hover:bg-orange-50/50 transition-colors"
                   style={{ border: '1px solid rgba(157,200,255,0.2)' }}>
                   <div className="h-8 w-8 shrink-0 rounded-lg bg-orange-50 flex items-center justify-center text-orange-500">
@@ -125,12 +127,12 @@ export default function OperationPickerSheet({ productId, allOperations, already
                     </svg>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-800 truncate">{o.name}</p>
+                    <p className="text-sm font-medium text-slate-800 truncate">{tn(o.name, o.nameEn)}</p>
                     {o.description && <p className="text-xs text-slate-400">{o.description}</p>}
                   </div>
                   {addedCount(o.id) > 0 && (
                     <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
-                      вже {addedCount(o.id)}
+                      {t('operationPicker.alreadyCount', { count: addedCount(o.id) })}
                     </span>
                   )}
                 </button>
@@ -139,17 +141,17 @@ export default function OperationPickerSheet({ productId, allOperations, already
 
             {!newOpMode ? (
               <button onClick={() => setNewOpMode(true)} className="text-xs text-blue-500 font-medium hover:underline">
-                + Операції немає в списку — додати нову
+                {t('materialPicker.operationNotInList')}
               </button>
             ) : (
               <div className="rounded-2xl border border-slate-200 p-3 space-y-3">
-                <input type="text" value={newOpName} onChange={e => setNewOpName(e.target.value)} placeholder="Назва операції"
+                <input type="text" value={newOpName} onChange={e => setNewOpName(e.target.value)} placeholder={t('materialPicker.operationNamePlaceholder')}
                   className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-all" />
                 <div className="flex gap-2">
-                  <button onClick={() => setNewOpMode(false)} className="flex-1 rounded-xl border border-slate-200 py-2 text-xs text-slate-600">Скасувати</button>
+                  <button onClick={() => setNewOpMode(false)} className="flex-1 rounded-xl border border-slate-200 py-2 text-xs text-slate-600">{t('common.cancel')}</button>
                   <button onClick={handleCreateOperation} disabled={!newOpName.trim() || creatingOp}
                     className="flex-1 rounded-xl bg-slate-800 py-2 text-xs font-medium text-white disabled:opacity-40">
-                    {creatingOp ? 'Створення…' : 'Створити і обрати'}
+                    {creatingOp ? t('operationPicker.creating') : t('materialPicker.createAndSelect')}
                   </button>
                 </div>
               </div>
@@ -165,39 +167,39 @@ export default function OperationPickerSheet({ productId, allOperations, already
                 </svg>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-800 truncate">{selectedOperation.name}</p>
+                <p className="text-sm font-medium text-slate-800 truncate">{tn(selectedOperation.name, selectedOperation.nameEn)}</p>
                 {selectedOperation.description && <p className="text-xs text-slate-400">{selectedOperation.description}</p>}
               </div>
-              <button onClick={() => { setOperationId(null); resetAddErrors() }} className="text-xs text-blue-500 font-medium shrink-0">Змінити</button>
+              <button onClick={() => { setOperationId(null); resetAddErrors() }} className="text-xs text-blue-500 font-medium shrink-0">{t('common.change')}</button>
             </div>
 
             <div>
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-widest text-slate-400">Завдання</label>
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('operationPicker.taskLabel')}</label>
 
               <div className="flex gap-2 mb-3">
                 <button onClick={() => setTaskMode('new')}
                   className="flex-1 rounded-xl py-2 text-xs font-medium transition-all"
                   style={taskMode === 'new' ? { background: '#1e293b', color: '#fff' } : { background: '#f1f5f9', color: '#64748b' }}>
-                  Нове завдання
+                  {t('operationPicker.newTask')}
                 </button>
                 <button onClick={() => setTaskMode('existing')} disabled={productTasks.length === 0}
                   className="flex-1 rounded-xl py-2 text-xs font-medium transition-all disabled:opacity-40"
                   style={taskMode === 'existing' ? { background: '#1e293b', color: '#fff' } : { background: '#f1f5f9', color: '#64748b' }}>
-                  Наявні у продукті ({productTasks.length})
+                  {t('operationPicker.existingInProduct', { count: productTasks.length })}
                 </button>
               </div>
 
               {taskMode === 'existing' ? (
                 <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                  {productTasks.map((t: ProductTask) => (
-                    <button key={t.id} onClick={() => setExistingTaskId(t.id)}
+                  {productTasks.map((pt: ProductTask) => (
+                    <button key={pt.id} onClick={() => setExistingTaskId(pt.id)}
                       className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all"
-                      style={existingTaskId === t.id ? { background: '#fff7ed', border: '1px solid #fdba74' } : { background: '#f8fafc', border: '1px solid transparent' }}>
+                      style={existingTaskId === pt.id ? { background: '#fff7ed', border: '1px solid #fdba74' } : { background: '#f8fafc', border: '1px solid transparent' }}>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-800 truncate">{t.name}</p>
+                        <p className="text-sm font-medium text-slate-800 truncate">{pt.name}</p>
                       </div>
                       <span className="text-xs text-slate-400 shrink-0">
-                        {t.durationMinutes ? `${t.durationMinutes} хв` : ''}{t.durationMinutes && t.cost ? ' · ' : ''}{t.cost ? `${t.cost} ₴` : ''}
+                        {pt.durationMinutes ? `${pt.durationMinutes} ${t('common.minutesShort')}` : ''}{pt.durationMinutes && pt.cost ? ' · ' : ''}{pt.cost ? `${pt.cost} ₴` : ''}
                       </span>
                     </button>
                   ))}
@@ -205,7 +207,7 @@ export default function OperationPickerSheet({ productId, allOperations, already
               ) : (
                 <div className="space-y-3">
                   <div>
-                    <input type="text" value={taskName} onChange={e => { setTaskName(e.target.value); if (addTaskError) resetAddErrors() }} placeholder="Назва завдання"
+                    <input type="text" value={taskName} onChange={e => { setTaskName(e.target.value); if (addTaskError) resetAddErrors() }} placeholder={t('operationPicker.taskNamePlaceholder')}
                       className="w-full rounded-2xl border bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:ring-2 transition-all"
                       style={addTaskError ? { borderColor: '#fca5a5', boxShadow: '0 0 0 2px rgba(252,165,165,0.25)' } : undefined} />
                     {addTaskError && (
@@ -214,12 +216,12 @@ export default function OperationPickerSheet({ productId, allOperations, already
                   </div>
                   <div className="flex gap-3">
                     <div className="flex-1">
-                      <label className="mb-1 block text-[10px] font-medium text-slate-400 uppercase tracking-wide">Час, хв</label>
+                      <label className="mb-1 block text-[10px] font-medium text-slate-400 uppercase tracking-wide">{t('operationPicker.timeMinLabel')}</label>
                       <input type="number" min="0" step="any" value={duration} onChange={e => setDuration(e.target.value)} placeholder="0"
                         className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
                     </div>
                     <div className="flex-1">
-                      <label className="mb-1 block text-[10px] font-medium text-slate-400 uppercase tracking-wide">Вартість, ₴</label>
+                      <label className="mb-1 block text-[10px] font-medium text-slate-400 uppercase tracking-wide">{t('operationPicker.costLabel')}</label>
                       <input type="number" min="0" step="any" value={cost} onChange={e => setCost(e.target.value)} placeholder="0"
                         className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
                     </div>
@@ -231,10 +233,10 @@ export default function OperationPickerSheet({ productId, allOperations, already
         )}
 
         <div className="flex gap-3 mt-6 px-5">
-          <button onClick={onClose} className="flex-1 rounded-2xl border border-slate-200 py-3.5 text-sm text-slate-600">Скасувати</button>
+          <button onClick={onClose} className="flex-1 rounded-2xl border border-slate-200 py-3.5 text-sm text-slate-600">{t('common.cancel')}</button>
           <button onClick={handleConfirm} disabled={!canConfirm || isSaving}
             className="flex-1 rounded-2xl bg-slate-800 py-3.5 text-sm font-medium text-white disabled:opacity-40 active:scale-[0.98] transition-all">
-            {isSaving ? 'Додавання…' : 'Додати'}
+            {isSaving ? t('materialPicker.adding') : t('common.add')}
           </button>
         </div>
       </div>

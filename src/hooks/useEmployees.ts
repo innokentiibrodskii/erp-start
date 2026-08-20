@@ -20,15 +20,18 @@ export interface Employee {
   role: UserRole
   departmentId: string | null
   departmentName: string | null
+  departmentNameEn: string | null
   positionId: string | null
   positionName: string | null
+  positionNameEn: string | null
 }
 
 interface RawPosition {
   id: string
   name: string
+  name_en: string | null
   department_id: string
-  departments: { name: string } | null
+  departments: { name: string; name_en: string | null } | null
 }
 
 interface RawUserPosition {
@@ -56,7 +59,7 @@ export function useEmployees() {
         .select(`
           id, first_name, last_name, email, phone, role,
           user_organizations!inner(organization_id),
-          user_positions(position_id, positions(id, name, department_id, departments(name)))
+          user_positions(position_id, positions(id, name, name_en, department_id, departments(name, name_en)))
         `)
         .eq('user_organizations.organization_id', orgId)
         .eq('user_positions.organization_id', orgId)
@@ -74,8 +77,10 @@ export function useEmployees() {
           role: (u.role as UserRole) ?? 'performer',
           departmentId: pos?.department_id ?? null,
           departmentName: pos?.departments?.name ?? null,
+          departmentNameEn: pos?.departments?.name_en ?? null,
           positionId: pos?.id ?? null,
           positionName: pos?.name ?? null,
+          positionNameEn: pos?.name_en ?? null,
         }
       })
     },

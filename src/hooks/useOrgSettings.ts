@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useActiveOrgId } from '../OrgContext'
+import type { TranslationKey } from '../i18n'
 
 /* ───────────────────────────────────────────────────────────
    Налаштування організації — поки що лише валюта, в якій
@@ -11,7 +12,7 @@ import { useActiveOrgId } from '../OrgContext'
 export type Currency = 'UAH' | 'USD' | 'EUR'
 
 export const CURRENCY_SYMBOL: Record<Currency, string> = { UAH: '₴', USD: '$', EUR: '€' }
-export const CURRENCY_LABEL: Record<Currency, string> = { UAH: 'Гривня (₴)', USD: 'Долар США ($)', EUR: 'Євро (€)' }
+export const CURRENCY_LABEL_KEY: Record<Currency, TranslationKey> = { UAH: 'currency.UAH', USD: 'currency.USD', EUR: 'currency.EUR' }
 export const CURRENCIES: Currency[] = ['UAH', 'USD', 'EUR']
 
 export function useMaterialCostCurrency() {

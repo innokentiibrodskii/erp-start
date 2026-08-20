@@ -15,6 +15,7 @@ import {
 import { fmt, dateStr, buildCatPath, genBatchCode, genSeries } from './lib/materialFormat'
 import MaterialEditorPage, { type PendingDelivery, type CustomFieldInput } from './MaterialEditorPage'
 import { CategoryTreeNode } from './CategoryTreeNode'
+import { useLocale } from './LocaleContext'
 
 interface Props { onNavigate: (page: string) => void; initialMaterialId?: string | null }
 
@@ -27,6 +28,7 @@ type View =
 
 export default function MaterialStock({ onNavigate: _onNavigate, initialMaterialId }: Props) {
   const [view, setView] = useState<View>(initialMaterialId ? { type: 'detail', materialId: initialMaterialId } : { type: 'list' })
+  const { t, tn } = useLocale()
 
   const { materialCategories, units, suppliers, warehouses } = useCatalog()
   const materialsQ = useMaterials()
@@ -52,9 +54,8 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
   const [expandedFilterCats, setExpandedFilterCats] = useState<string[]>([])
   const toggleExpandFilterCat = (id: string) =>
     setExpandedFilterCats(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id])
-  const selectedCatLabel = filterCatId === null
-    ? 'Всі категорії'
-    : (materialCategories.find(c => c.id === filterCatId)?.name ?? 'Всі категорії')
+  const filterCat = filterCatId === null ? null : materialCategories.find(c => c.id === filterCatId) ?? null
+  const selectedCatLabel = filterCat ? tn(filterCat.name, filterCat.nameEn) : t('common.allCategories')
   const [filterMinStock, setFilterMinStock] = useState('')
   const [filterMaxStock, setFilterMaxStock] = useState('')
   const [sortKey, setSortKey] = useState<'name' | 'stock' | 'date'>('name')
@@ -131,7 +132,7 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
     const materialDeliveries = editing ? movements.filter(mv => mv.materialId === editing.id) : []
 
     const handleSaveMaterial = async (args: {
-      name: string; code: string; categoryId: string | null; unitId: string; cost: number | null
+      name: string; nameEn: string | null; code: string; categoryId: string | null; unitId: string; cost: number | null
       photoFile: File | null; photoUrl: string | null
       primarySupplierId: string | null; supplierIds: string[]
       customInputs: Record<string, CustomFieldInput>
@@ -140,14 +141,14 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
       let materialId: string
       if (editing) {
         await updateMaterial({
-          id: editing.id, name: args.name, categoryId: args.categoryId, unitId: args.unitId, cost: args.cost,
+          id: editing.id, name: args.name, nameEn: args.nameEn, categoryId: args.categoryId, unitId: args.unitId, cost: args.cost,
           photoFile: args.photoFile, photoUrl: args.photoUrl,
           primarySupplierId: args.primarySupplierId, supplierIds: args.supplierIds,
         })
         materialId = editing.id
       } else {
         materialId = await createMaterial({
-          name: args.name, code: args.code, categoryId: args.categoryId, unitId: args.unitId, cost: args.cost, photoFile: args.photoFile,
+          name: args.name, nameEn: args.nameEn, code: args.code, categoryId: args.categoryId, unitId: args.unitId, cost: args.cost, photoFile: args.photoFile,
           primarySupplierId: args.primarySupplierId, supplierIds: args.supplierIds,
         })
         for (const d of args.pendingDeliveries) {
@@ -157,7 +158,7 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
       }
       await saveCustomFieldValues(materialId, args.customInputs)
       setView({ type: 'list' })
-      showToast(editing ? 'Збережено' : 'Додано')
+      showToast(editing ? t('materials.toastSaved') : t('materials.toastAdded'))
     }
 
     return (
@@ -195,7 +196,7 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
           balances={balances}
           nextBatchSeq={nextBatchSeq}
           onBack={() => setView({ type: 'list' })}
-          onDone={mode => { setView({ type: 'list' }); showToast(mode === 'in' ? 'Додано' : 'Списано') }}
+          onDone={mode => { setView({ type: 'list' }); showToast(mode === 'in' ? t('materials.toastAdded') : t('materials.toastWrittenOff')) }}
         />
       </>
     )
@@ -207,7 +208,7 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
     return (
       <MaterialQRPage
         material={mat}
-        categoryPath={buildCatPath(mat.categoryId, materialCategories)}
+        categoryPath={buildCatPath(mat.categoryId, materialCategories, tn)}
         stock={totalFor(balances, mat.id)}
         onBack={() => setView({ type: 'list' })}
       />
@@ -225,7 +226,7 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
         {toastNode}
         <MaterialDetail
           material={mat}
-          categoryPath={buildCatPath(mat.categoryId, materialCategories)}
+          categoryPath={buildCatPath(mat.categoryId, materialCategories, tn)}
           suppliers={suppliers.filter(s => mat.supplierIds.includes(s.id))}
           warehouses={warehouses}
           movements={movements.filter(mv => mv.materialId === mat.id)}
@@ -243,24 +244,24 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
 
       <div className="px-4 pt-5 pb-3">
         <div className="flex items-start justify-between mb-1">
-          <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-2xl text-slate-800">Матеріали</h1>
+          <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-2xl text-slate-800">{t('nav.materials')}</h1>
           {!showArchived && (
             <button onClick={openAdd}
               className="flex items-center gap-1.5 rounded-2xl bg-slate-800 px-4 py-2.5 text-xs font-semibold text-white active:scale-95 transition-all shrink-0 mt-1">
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                 <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
               </svg>
-              Новий
+              {t('common.new')}
             </button>
           )}
         </div>
         <div className="flex items-center gap-2 mb-3">
-          <p className="text-xs text-slate-400">{filtered.length} позицій</p>
+          <p className="text-xs text-slate-400">{filtered.length} {t('products.items')}</p>
           {archivedCount > 0 && (
             <button onClick={() => setShowArchived(v => !v)}
               className="rounded-full px-2 py-0.5 text-[10px] font-semibold transition-all"
               style={showArchived ? { background: '#1e293b', color: '#fff' } : { background: '#f1f5f9', color: '#64748b' }}>
-              {showArchived ? 'До активних' : `Архів (${archivedCount})`}
+              {showArchived ? t('materials.toActive') : t('materials.archiveWithCount', { count: archivedCount })}
             </button>
           )}
         </div>
@@ -271,7 +272,7 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
               <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4"/>
               <path d="M9.5 9.5l2.5 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
             </svg>
-            <input type="search" placeholder="Пошук матеріалу..." value={search} onChange={e => setSearch(e.target.value)}
+            <input type="search" placeholder={t('materials.search')} value={search} onChange={e => setSearch(e.target.value)}
               className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm outline-none placeholder:text-slate-300 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
           </div>
           <button onClick={() => setShowFilters(v => !v)}
@@ -292,7 +293,7 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
           <div className="mb-3 rounded-2xl bg-white p-4 space-y-3"
             style={{ border: '1px solid rgba(157,200,255,0.3)', boxShadow: '0 2px 12px rgba(157,200,255,0.1)' }}>
             <div>
-              <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Категорія</label>
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">{t('filters.category')}</label>
 
               {!catSectionOpen ? (
                 // Згорнутий вигляд — звичайний select, як інші фільтри нижче
@@ -313,7 +314,7 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
                       <div className="h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0" style={{ borderColor: filterCatId === null ? 'white' : '#cbd5e1' }}>
                         {filterCatId === null && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
                       </div>
-                      <span className="text-sm font-medium" style={{ color: filterCatId === null ? 'white' : '#1e293b' }}>Всі категорії</span>
+                      <span className="text-sm font-medium" style={{ color: filterCatId === null ? 'white' : '#1e293b' }}>{t('common.allCategories')}</span>
                     </button>
                     {/* Шеврон згортає всю секцію "Категорія" назад у компактний select */}
                     <button onClick={() => setCatSectionOpen(false)} className="flex h-9 w-9 items-center justify-center shrink-0"
@@ -332,15 +333,15 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
             </div>
 
             <div>
-              <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">К-сть на складі</label>
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">{t('materials.filterStockLabel')}</label>
               <div className="flex items-center gap-0 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
                 <div className="flex-1 flex items-center gap-1.5 px-3 py-2.5 border-r border-slate-200">
-                  <span className="text-[10px] font-semibold text-slate-400 shrink-0">ВІД</span>
+                  <span className="text-[10px] font-semibold text-slate-400 shrink-0">{t('common.from')}</span>
                   <input type="number" value={filterMinStock} onChange={e => setFilterMinStock(e.target.value)}
                     placeholder="0" min="0" className="flex-1 bg-transparent text-sm text-slate-800 outline-none min-w-0 w-0" />
                 </div>
                 <div className="flex-1 flex items-center gap-1.5 px-3 py-2.5">
-                  <span className="text-[10px] font-semibold text-slate-400 shrink-0">ДО</span>
+                  <span className="text-[10px] font-semibold text-slate-400 shrink-0">{t('common.to')}</span>
                   <input type="number" value={filterMaxStock} onChange={e => setFilterMaxStock(e.target.value)}
                     placeholder="∞" min="0" className="flex-1 bg-transparent text-sm text-slate-800 outline-none min-w-0 w-0" />
                 </div>
@@ -348,9 +349,9 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
             </div>
 
             <div>
-              <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Сортування</label>
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">{t('filters.sort')}</label>
               <div className="flex gap-1.5 flex-wrap">
-                {([['name', 'Назва'], ['stock', 'К-сть'], ['date', 'Поставка']] as [typeof sortKey, string][]).map(([key, label]) => (
+                {([['name', t('materials.sortByName')], ['stock', t('materials.sortByStock')], ['date', t('materials.sortByDelivery')]] as [typeof sortKey, string][]).map(([key, label]) => (
                   <button key={key} onClick={() => toggleSort(key)}
                     className="flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all active:scale-95"
                     style={sortKey === key ? { background: '#1e293b', color: 'white' } : { background: '#f1f5f9', color: '#64748b' }}>
@@ -368,7 +369,7 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
             {activeFilters > 0 && (
               <button onClick={() => { setFilterCatId(null); setFilterMinStock(''); setFilterMaxStock('') }}
                 className="text-xs text-red-400 font-medium hover:text-red-600 transition-colors">
-                Скинути фільтри
+                {t('filters.reset')}
               </button>
             )}
           </div>
@@ -377,14 +378,14 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
 
       <div className="px-4 space-y-2 pb-8">
         {materialsQ.isLoading || movementsQ.isLoading ? (
-          <div className="py-10 text-center text-sm text-slate-400">Завантаження…</div>
+          <div className="py-10 text-center text-sm text-slate-400">{t('common.loading')}</div>
         ) : filtered.length === 0 ? (
           <div className="rounded-2xl bg-white py-12 text-center text-sm text-slate-400"
             style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
-            {showArchived ? 'Архів порожній' : 'Нічого не знайдено'}
+            {showArchived ? t('materials.archiveEmpty') : t('common.notFound')}
           </div>
         ) : filtered.map(m => {
-          const cat = buildCatPath(m.categoryId, materialCategories)
+          const cat = buildCatPath(m.categoryId, materialCategories, tn)
           const stock = totalFor(balances, m.id)
           return (
             <div key={m.id} className="rounded-2xl bg-white"
@@ -393,7 +394,7 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
                 onClick={() => setView({ type: 'detail', materialId: m.id })}>
                 <div className="h-12 w-12 shrink-0 rounded-xl overflow-hidden bg-amber-50 flex items-center justify-center text-amber-400">
                   {m.photo
-                    ? <img src={m.photo} alt={m.name} className="h-full w-full object-cover" />
+                    ? <img src={m.photo} alt={tn(m.name, m.nameEn)} className="h-full w-full object-cover" />
                     : <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                         <path d="M8 1L14 4.5V11.5L8 15L2 11.5V4.5L8 1Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
                         <path d="M2 4.5L8 8L14 4.5M8 15V8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
@@ -401,13 +402,13 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
                   }
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-slate-800 truncate">{m.name}</p>
+                  <p className="text-sm font-semibold text-slate-800 truncate">{tn(m.name, m.nameEn)}</p>
                   {m.code && <p className="text-xs text-slate-400 font-mono mt-0.5">{m.code}</p>}
                   {cat && <p className="text-xs text-blue-400 mt-0.5 truncate">{cat}</p>}
                 </div>
                 <div className="text-right shrink-0 mr-1">
                   <p className="text-lg font-bold leading-tight" style={{ color: stock > 0 ? '#16a34a' : '#94a3b8' }}>{fmt(stock)}</p>
-                  <p className="text-xs text-slate-400">{m.unitShortName}</p>
+                  <p className="text-xs text-slate-400">{tn(m.unitShortName, m.unitShortNameEn)}</p>
                 </div>
                 <div className="relative shrink-0" onClick={e => e.stopPropagation()}>
                   <button onClick={() => setOpenMenu(openMenu === m.id ? null : m.id)}
@@ -424,14 +425,14 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
                       <div className="absolute right-0 top-9 z-20 w-48 rounded-2xl bg-white py-1.5"
                         style={{ border: '1px solid rgba(157,200,255,0.3)', boxShadow: '0 8px 32px rgba(15,23,42,0.14)' }}>
                         {showArchived ? (
-                          <MenuBtn icon={<ArchiveIcon />} label="Повернути з архіву" onClick={() => { archiveMaterial(m.id, false); setOpenMenu(null) }} />
+                          <MenuBtn icon={<ArchiveIcon />} label={t('materials.returnFromArchive')} onClick={() => { archiveMaterial(m.id, false); setOpenMenu(null) }} />
                         ) : (
                           <>
-                            <MenuBtn icon={<PencilIcon />} label="Редагувати" onClick={() => { openEdit(m); setOpenMenu(null) }} />
-                            <MenuBtn icon={<QRIcon />} label="Друк QR" onClick={() => { setView({ type: 'qr', materialId: m.id }); setOpenMenu(null) }} />
-                            <MenuBtn icon={<ArchiveIcon />} label="Архівувати" onClick={() => { archiveMaterial(m.id, true); setOpenMenu(null) }} />
+                            <MenuBtn icon={<PencilIcon />} label={t('common.edit')} onClick={() => { openEdit(m); setOpenMenu(null) }} />
+                            <MenuBtn icon={<QRIcon />} label={t('products.printQr')} onClick={() => { setView({ type: 'qr', materialId: m.id }); setOpenMenu(null) }} />
+                            <MenuBtn icon={<ArchiveIcon />} label={t('materials.archive')} onClick={() => { archiveMaterial(m.id, true); setOpenMenu(null) }} />
                             <div className="my-1 mx-3 border-t border-slate-100" />
-                            <MenuBtn icon={<TrashIcon />} label="Видалити" danger onClick={() => { setConfirmDelete(m); setOpenMenu(null) }} />
+                            <MenuBtn icon={<TrashIcon />} label={t('common.delete')} danger onClick={() => { setConfirmDelete(m); setOpenMenu(null) }} />
                           </>
                         )}
                       </div>
@@ -448,14 +449,14 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                       <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
                     </svg>
-                    Додати
+                    {t('common.add')}
                   </button>
                   <button onClick={() => setView({ type: 'stock', materialId: m.id, mode: 'out' })}
                     className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold text-red-500 hover:bg-red-50 transition-all active:scale-[0.97]">
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                       <path d="M1 6h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
                     </svg>
-                    Списати
+                    {t('materials.writeOff')}
                   </button>
                 </div>
               )}
@@ -469,16 +470,16 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setConfirmDelete(null)} />
           <div className="relative z-10 w-full max-w-sm rounded-3xl bg-white px-6 py-6"
             style={{ boxShadow: '0 16px 48px rgba(0,0,0,0.18)' }}>
-            <p className="text-base font-semibold text-slate-800 mb-2">Видалити «{confirmDelete.name}»?</p>
-            <p className="text-sm text-slate-500 mb-6">Дію неможливо скасувати.</p>
+            <p className="text-base font-semibold text-slate-800 mb-2">{t('materials.deleteConfirm', { name: tn(confirmDelete.name, confirmDelete.nameEn) })}</p>
+            <p className="text-sm text-slate-500 mb-6">{t('common.actionIrreversible')}</p>
             <div className="flex gap-3">
               <button onClick={() => setConfirmDelete(null)}
                 className="flex-1 rounded-2xl border border-slate-200 py-3 text-sm font-medium text-slate-500 active:scale-[0.98]">
-                Скасувати
+                {t('common.cancel')}
               </button>
               <button onClick={() => { removeMaterial(confirmDelete.id); setConfirmDelete(null) }}
                 className="flex-1 rounded-2xl bg-red-500 py-3 text-sm font-semibold text-white active:scale-[0.98]">
-                Видалити
+                {t('common.delete')}
               </button>
             </div>
           </div>
@@ -560,6 +561,7 @@ function MaterialQRPage({ material, categoryPath, stock, onBack }: {
   stock: number
   onBack: () => void
 }) {
+  const { t, tn } = useLocale()
   // QR веде на сторінку перегляду матеріалу в застосунку — сканування відкриває картку.
   const qrValue = `${window.location.origin}/?material=${material.id}`
 
@@ -605,7 +607,7 @@ function MaterialQRPage({ material, categoryPath, stock, onBack }: {
     // Назва — DM Serif Display, той самий стиль заголовків, що й у застосунку
     ctx.font = `${mm(3.4)}px 'DM Serif Display', serif`
     ctx.fillStyle = '#1d293d'
-    const words = material.name.split(' ')
+    const words = tn(material.name, material.nameEn).split(' ')
     const lines: string[] = []
     let cur = ''
     for (const w of words) {
@@ -652,7 +654,7 @@ function MaterialQRPage({ material, categoryPath, stock, onBack }: {
     const dataUrl = canvas.toDataURL('image/png')
     const win = window.open('', '_blank', 'width=400,height=320')
     if (!win) return
-    win.document.write(`<!DOCTYPE html><html><head><title>QR — ${material.name}</title>
+    win.document.write(`<!DOCTYPE html><html><head><title>QR — ${tn(material.name, material.nameEn)}</title>
     <style>
       @page{size:40mm 58mm;margin:0}
       *{margin:0;padding:0}
@@ -696,7 +698,7 @@ function MaterialQRPage({ material, categoryPath, stock, onBack }: {
             <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </button>
-        <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="flex-1 text-lg text-slate-800">QR-мітка</h1>
+        <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="flex-1 text-lg text-slate-800">{t('materials.qrLabelTitle')}</h1>
         <button onClick={handleDownloadImage}
           className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 active:scale-95 transition-all">
           <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
@@ -709,7 +711,7 @@ function MaterialQRPage({ material, categoryPath, stock, onBack }: {
           <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
             <path d="M3 5V1.5h7V5M3 9.5H1.5V5h10v4.5H10M3 7.5h7v4H3v-4z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
           </svg>
-          Друкувати PDF
+          {t('materials.printPdf')}
         </button>
       </div>
 
@@ -718,7 +720,7 @@ function MaterialQRPage({ material, categoryPath, stock, onBack }: {
         <div className="w-full max-w-xs rounded-3xl bg-white px-6 py-7 flex flex-col items-center gap-4"
           style={{ border: '1.5px solid rgba(157,200,255,0.35)', boxShadow: '0 4px 32px rgba(157,200,255,0.15)' }}>
           <div className="text-center">
-            <p style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800 leading-snug">{material.name}</p>
+            <p style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800 leading-snug">{tn(material.name, material.nameEn)}</p>
             {material.code && (
               <p className="mt-1 text-xs text-slate-500">{material.code}</p>
             )}
@@ -734,20 +736,20 @@ function MaterialQRPage({ material, categoryPath, stock, onBack }: {
         <div className="w-full max-w-xs mt-4 rounded-2xl bg-white px-5 py-4 space-y-2.5"
           style={{ border: '1px solid rgba(157,200,255,0.2)' }}>
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">На складі</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('materials.inStock')}</span>
             <span className="text-2xl font-bold" style={{ color: stock > 0 ? '#16a34a' : '#94a3b8' }}>
-              {fmt(stock)} <span className="text-sm font-semibold text-slate-400">{material.unitShortName}</span>
+              {fmt(stock)} <span className="text-sm font-semibold text-slate-400">{tn(material.unitShortName, material.unitShortNameEn)}</span>
             </span>
           </div>
           {categoryPath && (
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Категорія</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('filters.category')}</span>
               <span className="text-xs font-medium text-slate-700 text-right max-w-[55%] truncate">{categoryPath}</span>
             </div>
           )}
         </div>
 
-        <p className="mt-5 text-xs text-slate-400 text-center">Натисніть «Друкувати PDF» для збереження або друку мітки</p>
+        <p className="mt-5 text-xs text-slate-400 text-center">{t('materials.qrPrintHint')}</p>
       </div>
     </div>
   )
@@ -766,6 +768,7 @@ function MaterialDetail({ material, categoryPath, suppliers, warehouses, movemen
   fields: CustomFieldDefinition[]
   onBack: () => void
 }) {
+  const { t, tn } = useLocale()
   const productsQ = useProducts()
   const products = productsQ.data ?? []
   const usedIn = products.filter(p => p.materials.some(pm => pm.materialId === material.id))
@@ -799,7 +802,7 @@ function MaterialDetail({ material, categoryPath, suppliers, warehouses, movemen
             <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </button>
-        <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="flex-1 text-lg text-slate-800 truncate">{material.name}</h1>
+        <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="flex-1 text-lg text-slate-800 truncate">{tn(material.name, material.nameEn)}</h1>
       </div>
 
       <div className="px-4 pt-5 pb-10 space-y-4">
@@ -816,10 +819,10 @@ function MaterialDetail({ material, categoryPath, suppliers, warehouses, movemen
             </div>
           )}
           <div className="flex-1 min-w-0">
-            <p style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800 leading-tight truncate">{material.name}</p>
+            <p style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800 leading-tight truncate">{tn(material.name, material.nameEn)}</p>
             {material.code && <p className="font-mono text-sm text-slate-400 mt-0.5">{material.code}</p>}
             {material.archived && (
-              <span className="mt-1 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-600">Архів</span>
+              <span className="mt-1 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-600">{t('materials.archived')}</span>
             )}
           </div>
         </div>
@@ -827,15 +830,15 @@ function MaterialDetail({ material, categoryPath, suppliers, warehouses, movemen
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-2xl bg-white px-4 py-4 flex flex-col gap-1"
             style={{ border: '1px solid rgba(157,200,255,0.2)' }}>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">На складі</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('materials.inStock')}</p>
             <p className="text-2xl font-bold leading-tight" style={{ color: stock > 0 ? '#16a34a' : '#94a3b8' }}>
               {fmt(stock)}
             </p>
-            <p className="text-xs text-slate-400">{material.unitShortName}</p>
+            <p className="text-xs text-slate-400">{tn(material.unitShortName, material.unitShortNameEn)}</p>
           </div>
           <div className="rounded-2xl bg-white px-4 py-4 flex flex-col gap-1"
             style={{ border: '1px solid rgba(157,200,255,0.2)' }}>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Остання поставка</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('materials.lastDelivery')}</p>
             {lastDelivery ? (
               <>
                 <p className="text-base font-bold text-slate-800 leading-tight">+{fmt(lastDelivery.qty)}</p>
@@ -849,10 +852,10 @@ function MaterialDetail({ material, categoryPath, suppliers, warehouses, movemen
 
         <div className="rounded-2xl bg-white overflow-hidden" style={{ border: '1px solid rgba(157,200,255,0.2)' }}>
           {[
-            ['Категорія', categoryPath || '—'],
-            ['Одиниця', material.unitShortName || '—'],
-            ['Постачальники', suppliers.length > 0 ? suppliers.map(s => s.name).join(', ') : '—'],
-            ...(lastDelivery?.cost ? [['Ціна/од', `${lastDelivery.cost} ₴`]] : []),
+            [t('filters.category'), categoryPath || '—'],
+            [t('materials.unit'), tn(material.unitShortName, material.unitShortNameEn) || '—'],
+            [t('materials.suppliers'), suppliers.length > 0 ? suppliers.map(s => tn(s.name, s.nameEn)).join(', ') : '—'],
+            ...(lastDelivery?.cost ? [[t('materials.pricePerUnit'), `${lastDelivery.cost} ₴`]] : []),
           ].map((row, i, arr) => (
             <div key={row[0]} className="flex items-center justify-between px-4 py-3"
               style={{ borderBottom: i < arr.length - 1 ? '1px solid rgba(157,200,255,0.15)' : 'none' }}>
@@ -864,19 +867,22 @@ function MaterialDetail({ material, categoryPath, suppliers, warehouses, movemen
 
         {filledFields.length > 0 && (
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">Додаткові поля</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">{t('materials.customFields')}</p>
             <div className="rounded-2xl bg-white overflow-hidden" style={{ border: '1px solid rgba(157,200,255,0.2)' }}>
               {filledFields.map((def, i) => {
                 const v = valuesQ.values.find(x => x.fieldDefinitionId === def.id)
                 let display = '—'
                 if (def.fieldType === 'text') display = v?.valueText ?? '—'
                 if (def.fieldType === 'number') display = v?.valueNumber !== null && v?.valueNumber !== undefined ? String(v.valueNumber) : '—'
-                if (def.fieldType === 'boolean') display = v?.valueBoolean ? 'Так' : 'Ні'
-                if (def.fieldType === 'select') display = def.options.find(o => o.id === v?.valueOptionId)?.value ?? '—'
+                if (def.fieldType === 'boolean') display = v?.valueBoolean ? t('common.yes') : t('common.no')
+                if (def.fieldType === 'select') {
+                  const opt = def.options.find(o => o.id === v?.valueOptionId)
+                  display = opt ? tn(opt.value, opt.valueEn) : '—'
+                }
                 return (
                   <div key={def.id} className="flex items-center justify-between px-4 py-3"
                     style={{ borderBottom: i < filledFields.length - 1 ? '1px solid rgba(157,200,255,0.15)' : 'none' }}>
-                    <span className="text-xs text-slate-400">{def.name}</span>
+                    <span className="text-xs text-slate-400">{tn(def.name, def.nameEn)}</span>
                     {def.fieldType === 'file' ? (
                       <div className="flex flex-col items-end gap-1 max-w-[60%]">
                         {(valuesQ.files[def.id] ?? []).map(f => (
@@ -897,7 +903,7 @@ function MaterialDetail({ material, categoryPath, suppliers, warehouses, movemen
           <button onClick={() => setOpenUsedIn(v => !v)}
             className="w-full flex items-center justify-between px-4 py-3.5 text-left transition-colors hover:bg-slate-50 active:bg-slate-100">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-slate-700">Використовується у продуктах</span>
+              <span className="text-sm font-semibold text-slate-700">{t('materials.usedInProducts')}</span>
               {usedIn.length > 0 && <span className="rounded-full bg-blue-100 text-blue-600 text-[10px] font-bold px-1.5 py-0.5">{usedIn.length}</span>}
             </div>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="shrink-0 text-slate-400 transition-transform duration-200"
@@ -908,7 +914,7 @@ function MaterialDetail({ material, categoryPath, suppliers, warehouses, movemen
           {openUsedIn && (
             <div className="border-t" style={{ borderColor: 'rgba(157,200,255,0.2)' }}>
               {usedIn.length === 0 ? (
-                <p className="px-4 py-5 text-sm text-slate-400 text-center">Не використовується у жодному продукті</p>
+                <p className="px-4 py-5 text-sm text-slate-400 text-center">{t('materials.notUsedInProducts')}</p>
               ) : usedIn.map((p, i) => {
                 const usage = p.materials.find(pm => pm.materialId === material.id)!
                 return (
@@ -944,7 +950,7 @@ function MaterialDetail({ material, categoryPath, suppliers, warehouses, movemen
             <button onClick={() => setOpenHistory(v => !v)}
               className="w-full flex items-center justify-between px-4 py-3.5 text-left transition-colors hover:bg-slate-50 active:bg-slate-100">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-slate-700">Останні рухи</span>
+                <span className="text-sm font-semibold text-slate-700">{t('materials.recentMovements')}</span>
                 <span className="rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold px-1.5 py-0.5">{recentMovements.length}</span>
               </div>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="shrink-0 text-slate-400 transition-transform duration-200"
@@ -965,7 +971,7 @@ function MaterialDetail({ material, categoryPath, suppliers, warehouses, movemen
                         {isIn ? '+' : '−'}
                       </span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs text-slate-600">{dateStr(mv.createdAt)}{wh ? ` · ${wh.name}` : ''}</p>
+                        <p className="text-xs text-slate-600">{dateStr(mv.createdAt)}{wh ? ` · ${tn(wh.name, wh.nameEn)}` : ''}</p>
                         {mv.batchCode && <p className="text-[10px] font-mono text-slate-400">{mv.batchCode}</p>}
                       </div>
                       <p className="text-sm font-bold shrink-0" style={{ color: isIn ? '#16a34a' : '#ef4444' }}>
@@ -1010,6 +1016,7 @@ function StockActionPage({ material, initialMode, warehouses, balances, nextBatc
   onBack: () => void
   onDone: (mode: MovementType) => void
 }) {
+  const { t, tn } = useLocale()
   const productsQ = useProducts()
   const statusesQ = useProductStatuses()
   const activeStatusId = statusesQ.data?.find(s => s.code === 'active')?.id ?? null
@@ -1062,12 +1069,12 @@ function StockActionPage({ material, initialMode, warehouses, balances, nextBatc
           </svg>
         </button>
         <div className="flex-1 min-w-0">
-          <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-lg text-slate-800 truncate">{material.name}</h1>
+          <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-lg text-slate-800 truncate">{tn(material.name, material.nameEn)}</h1>
           {material.code && <p className="text-xs text-slate-400 font-mono">{material.code}</p>}
         </div>
         <div className="text-right shrink-0">
-          <p className="text-sm font-bold" style={{ color: stock > 0 ? '#16a34a' : '#94a3b8' }}>{fmt(stock)} {material.unitShortName}</p>
-          <p className="text-[10px] text-slate-400">на складі</p>
+          <p className="text-sm font-bold" style={{ color: stock > 0 ? '#16a34a' : '#94a3b8' }}>{fmt(stock)} {tn(material.unitShortName, material.unitShortNameEn)}</p>
+          <p className="text-[10px] text-slate-400">{t('materials.inStock').toLowerCase()}</p>
         </div>
       </div>
 
@@ -1076,41 +1083,41 @@ function StockActionPage({ material, initialMode, warehouses, balances, nextBatc
           <button onClick={() => setMode('in')}
             className="flex-1 flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold transition-all"
             style={mode === 'in' ? { background: 'white', color: '#16a34a', boxShadow: '0 1px 6px rgba(0,0,60,0.08)' } : { color: '#94a3b8' }}>
-            + Додати
+            {t('materials.addShort')}
           </button>
           <button onClick={() => setMode('out')}
             className="flex-1 flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold transition-all"
             style={mode === 'out' ? { background: 'white', color: '#ef4444', boxShadow: '0 1px 6px rgba(0,0,60,0.08)' } : { color: '#94a3b8' }}>
-            − Списати
+            {t('materials.writeOffShort')}
           </button>
         </div>
 
         {mode === 'in' ? (
           <div className="rounded-2xl bg-white p-4 space-y-4" style={{ border: '1px solid rgba(157,200,255,0.3)' }}>
-            <p className="text-sm font-semibold text-slate-800">Нова партія</p>
+            <p className="text-sm font-semibold text-slate-800">{t('materials.newBatch')}</p>
 
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">Код партії</label>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">{t('materials.batchCode')}</label>
               <div className="w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm font-mono text-slate-600 select-all">
                 {batchCode}
               </div>
             </div>
 
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">Кількість ({material.unitShortName})</label>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">{t('materials.quantityWithUnit', { unit: tn(material.unitShortName, material.unitShortNameEn) })}</label>
               <Stepper value={qty} min={0.01}
                 onChange={v => { setQty(v); if (seriesCount > 0) applySeriesCount(seriesCount, v) }} />
             </div>
 
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">Склад</label>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">{t('materials.warehouse')}</label>
               {warehouses.length === 0 ? (
-                <p className="text-xs text-red-500">Додайте склади у Довідниках</p>
+                <p className="text-xs text-red-500">{t('materials.addWarehousesHint')}</p>
               ) : (
                 <div className="relative">
                   <select value={warehouseId ?? ''} onChange={e => setWarehouseId(e.target.value || null)}
                     className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 pr-10 py-3 text-sm text-slate-700 outline-none focus:border-blue-400 transition-all">
-                    {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                    {warehouses.map(w => <option key={w.id} value={w.id}>{tn(w.name, w.nameEn)}</option>)}
                   </select>
                   <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" width="13" height="13" viewBox="0 0 13 13" fill="none">
                     <path d="M2.5 4l4 4.5 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
@@ -1120,14 +1127,14 @@ function StockActionPage({ material, initialMode, warehouses, balances, nextBatc
             </div>
 
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">Ціна за одиницю (₴)</label>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">{t('materials.pricePerUnitCurrency')}</label>
               <input type="number" min="0" step="any" value={cost} onChange={e => setCost(e.target.value)} placeholder="0.00"
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
             </div>
 
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Кількість серій <span className="normal-case font-normal text-slate-300">(необов'язково)</span>
+                {t('materials.seriesCount')} <span className="normal-case font-normal text-slate-300">{t('common.optional')}</span>
               </label>
               <Stepper value={seriesCount}
                 onChange={v => { const c = Math.round(v); setSeriesCount(c); applySeriesCount(c, qty) }} />
@@ -1139,7 +1146,7 @@ function StockActionPage({ material, initialMode, warehouses, balances, nextBatc
                       <input type="number" value={s.qty} min="0.01" step="0.01"
                         onChange={e => updateSeriesQty(i, parseFloat(e.target.value) || 0)}
                         className="w-20 rounded-lg border border-blue-200 bg-white px-2 py-1 text-xs font-bold text-blue-700 text-right outline-none focus:border-blue-400 transition-all" />
-                      <span className="text-xs text-blue-500 shrink-0">{material.unitShortName}</span>
+                      <span className="text-xs text-blue-500 shrink-0">{tn(material.unitShortName, material.unitShortNameEn)}</span>
                     </div>
                   ))}
                 </div>
@@ -1147,30 +1154,30 @@ function StockActionPage({ material, initialMode, warehouses, balances, nextBatc
             </div>
 
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">Примітка</label>
-              <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="Необов'язково..."
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">{t('materials.note')}</label>
+              <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder={t('common.optionalPlaceholder')}
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
             </div>
           </div>
         ) : (
           <>
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">Кількість ({material.unitShortName})</label>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">{t('materials.quantityWithUnit', { unit: tn(material.unitShortName, material.unitShortNameEn) })}</label>
               <Stepper value={qty} min={0.01} onChange={setQty} />
               {qty > currentBalance && (
-                <p className="mt-1.5 text-xs text-red-500">Кількість перевищує наявний залишок ({currentBalance})</p>
+                <p className="mt-1.5 text-xs text-red-500">{t('materials.qtyExceedsBalance', { balance: currentBalance })}</p>
               )}
             </div>
 
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">Склад</label>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">{t('materials.warehouse')}</label>
               {warehouses.length === 0 ? (
-                <p className="text-xs text-red-500">Додайте склади у Довідниках</p>
+                <p className="text-xs text-red-500">{t('materials.addWarehousesHint')}</p>
               ) : (
                 <div className="relative">
                   <select value={warehouseId ?? ''} onChange={e => setWarehouseId(e.target.value || null)}
                     className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 pr-10 py-3 text-sm text-slate-700 outline-none focus:border-blue-400 transition-all">
-                    {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                    {warehouses.map(w => <option key={w.id} value={w.id}>{tn(w.name, w.nameEn)}</option>)}
                   </select>
                   <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" width="13" height="13" viewBox="0 0 13 13" fill="none">
                     <path d="M2.5 4l4 4.5 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
@@ -1180,11 +1187,11 @@ function StockActionPage({ material, initialMode, warehouses, balances, nextBatc
             </div>
 
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">Під який продукт</label>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">{t('materials.forProduct')}</label>
               <div className="relative">
                 <select value={productId ?? ''} onChange={e => setProductId(e.target.value || null)}
                   className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 pr-10 py-3 text-sm text-slate-700 outline-none focus:border-blue-400 transition-all">
-                  <option value="">{products.length === 0 ? 'Немає активних продуктів' : '— Оберіть продукт —'}</option>
+                  <option value="">{products.length === 0 ? t('materials.noActiveProducts') : t('materials.selectProduct')}</option>
                   {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
                 <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" width="13" height="13" viewBox="0 0 13 13" fill="none">
@@ -1194,8 +1201,8 @@ function StockActionPage({ material, initialMode, warehouses, balances, nextBatc
             </div>
 
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">Примітка</label>
-              <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="Необов'язково..."
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">{t('materials.note')}</label>
+              <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder={t('common.optionalPlaceholder')}
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
             </div>
           </>
@@ -1204,7 +1211,7 @@ function StockActionPage({ material, initialMode, warehouses, balances, nextBatc
         <button onClick={handleConfirm} disabled={!canConfirm || isSaving}
           className="flex w-full items-center justify-center gap-2 rounded-2xl py-4 text-sm font-semibold text-white disabled:opacity-40 active:scale-[0.98] transition-all"
           style={{ background: mode === 'in' ? '#16a34a' : '#ef4444' }}>
-          {isSaving ? 'Збереження…' : mode === 'in' ? '+ Додати на склад' : '− Списати зі складу'}
+          {isSaving ? t('common.saving') : mode === 'in' ? t('materials.addToStock') : t('materials.writeOffFromStock')}
         </button>
       </div>
     </div>

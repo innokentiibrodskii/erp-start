@@ -5,6 +5,7 @@ import { useProductAttributeMutations } from './hooks/useProductAttributes'
 import { useCustomFieldDefinitions, useCustomFieldValues, useCustomFieldValueMutations } from './hooks/useCustomFields'
 import { CategoryTreeNode } from './CategoryTreeNode'
 import { CustomFieldsSection, emptyCustomInput, type CustomFieldInput } from './CustomFieldsEditor'
+import { useLocale } from './LocaleContext'
 
 interface Props {
   productId: string | null
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export default function ProductEditor({ productId, onBack }: Props) {
+  const { t, tn } = useLocale()
   const { categories, attributes } = useCatalog()
   const productsQ = useProducts()
   const photosQ = useProductPhotos(productId)
@@ -127,7 +129,7 @@ export default function ProductEditor({ productId, onBack }: Props) {
     }
     await saveCustomFieldValues(id, customInputs)
     setSaved(true)
-    setToast(isNew ? 'Доданий продукт' : 'Дані збережено')
+    setToast(isNew ? t('productEditor.toastAdded') : t('productEditor.toastSaved'))
     setTimeout(() => { setSaved(false); setToast(null); onBack() }, 1100)
   }
 
@@ -136,9 +138,8 @@ export default function ProductEditor({ productId, onBack }: Props) {
   // Характеристики — яка саме розгорнута в спадний список (одночасно лише одна)
   const [openAttrId, setOpenAttrId] = useState<string | null>(null)
   const toggleAttrOpen = (id: string) => setOpenAttrId(cur => cur === id ? null : id)
-  const selectedCatLabel = categoryId === null
-    ? 'Без категорії'
-    : (categories.find(c => c.id === categoryId)?.name ?? 'Без категорії')
+  const selectedCat = categoryId === null ? null : categories.find(c => c.id === categoryId) ?? null
+  const selectedCatLabel = selectedCat ? tn(selectedCat.name, selectedCat.nameEn) : t('productEditor.noCategory')
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -164,14 +165,14 @@ export default function ProductEditor({ productId, onBack }: Props) {
           </svg>
         </button>
         <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="flex-1 text-lg text-slate-800 leading-tight">
-          {isNew ? 'Новий продукт' : 'Редагувати продукт'}
+          {isNew ? t('productEditor.new') : t('productEditor.edit')}
         </h1>
       </div>
 
       <div className="px-4 pt-5 pb-36 space-y-6">
         {/* ── Photos ── */}
         <div>
-          <label className="mb-3 block text-xs font-semibold uppercase tracking-widest text-slate-400">Фото</label>
+          <label className="mb-3 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('productEditor.photo')}</label>
           {/* Photo grid */}
           {photos.length > 0 && (
             <div className="flex gap-2 flex-wrap mb-3">
@@ -187,11 +188,11 @@ export default function ProductEditor({ productId, onBack }: Props) {
                         <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
                           <path d="M1 4l1.8 1.8L7 2" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
                         </svg>
-                        Головне
+                        {t('productEditor.main')}
                       </span>
                     ) : (
                       <span className="absolute bottom-1.5 left-1.5 rounded-lg bg-black/40 px-1.5 py-0.5 text-[9px] text-white/80">
-                        Обрати
+                        {t('productEditor.choose')}
                       </span>
                     )}
                     <button
@@ -233,9 +234,9 @@ export default function ProductEditor({ productId, onBack }: Props) {
             </div>
             <div className="text-center">
               <p className="text-sm font-medium text-slate-600">
-                {photos.length === 0 ? 'Додати фото' : 'Ще фото'}
+                {photos.length === 0 ? t('productEditor.addPhoto') : t('productEditor.morePhotos')}
               </p>
-              <p className="text-xs text-slate-400 mt-0.5">Камера або файл · JPG, PNG, HEIC</p>
+              <p className="text-xs text-slate-400 mt-0.5">{t('productEditor.photoHint')}</p>
             </div>
           </div>
         </div>
@@ -243,14 +244,14 @@ export default function ProductEditor({ productId, onBack }: Props) {
         {/* ── Name ── */}
         <div>
           <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">
-            Назва продукту
+            {t('productEditor.name')}
           </label>
           <input
             autoFocus={isNew}
             type="text"
             value={name}
             onChange={e => setName(e.target.value)}
-            placeholder="Введіть назву"
+            placeholder={t('productEditor.namePlaceholder')}
             className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
           />
         </div>
@@ -258,12 +259,12 @@ export default function ProductEditor({ productId, onBack }: Props) {
         {/* ── Description ── */}
         <div>
           <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">
-            Опис
+            {t('productEditor.description')}
           </label>
           <textarea
             value={description}
             onChange={e => setDescription(e.target.value)}
-            placeholder="Короткий опис продукту..."
+            placeholder={t('productEditor.descriptionPlaceholder')}
             rows={3}
             className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
           />
@@ -272,8 +273,8 @@ export default function ProductEditor({ productId, onBack }: Props) {
         {/* ── SKU ── */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <label className="text-xs font-semibold uppercase tracking-widest text-slate-400">Артикул</label>
-            <span className="text-[10px] text-slate-400 bg-slate-100 rounded-lg px-2 py-0.5">Авто</span>
+            <label className="text-xs font-semibold uppercase tracking-widest text-slate-400">{t('productEditor.sku')}</label>
+            <span className="text-[10px] text-slate-400 bg-slate-100 rounded-lg px-2 py-0.5">{t('productEditor.auto')}</span>
           </div>
           <div className="flex items-center rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5">
             <svg className="mr-2 text-slate-400 shrink-0" width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -287,7 +288,7 @@ export default function ProductEditor({ productId, onBack }: Props) {
         {/* ── Status (edit only) ── */}
         {!isNew && statuses.length > 0 && (
           <div>
-            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">Статус</label>
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('productEditor.status')}</label>
             <div className="relative">
               {statusId !== null && (
                 <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-2 w-2 rounded-full"
@@ -298,9 +299,9 @@ export default function ProductEditor({ productId, onBack }: Props) {
                 onChange={e => setStatusId(e.target.value ? e.target.value : null)}
                 className="w-full appearance-none rounded-2xl border border-slate-200 bg-white py-3.5 pr-10 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
                 style={{ paddingLeft: statusId !== null ? '2.25rem' : '1rem' }}>
-                <option value="">— Без статусу —</option>
+                <option value="">{t('productEditor.noStatus')}</option>
                 {statuses.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
+                  <option key={s.id} value={s.id}>{tn(s.name, s.nameEn)}</option>
                 ))}
               </select>
               <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -312,9 +313,9 @@ export default function ProductEditor({ productId, onBack }: Props) {
 
         {/* ── Category ── */}
         <div>
-          <label className="mb-2 block text-xs font-semibold uppercase tracking-widest text-slate-400">Категорія</label>
+          <label className="mb-2 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('productEditor.category')}</label>
           {categories.length === 0 ? (
-            <p className="text-xs text-slate-400 italic">Категорій ще немає — додайте у Довідниках</p>
+            <p className="text-xs text-slate-400 italic">{t('productEditor.noCategoriesYet')}</p>
           ) : !catSectionOpen ? (
             // Згорнутий вигляд — звичайний select
             <button onClick={() => setCatSectionOpen(true)}
@@ -338,7 +339,7 @@ export default function ProductEditor({ productId, onBack }: Props) {
                     {categoryId === null && <div className="h-2.5 w-2.5 rounded-full bg-white" />}
                   </div>
                   <span className={`text-sm ${categoryId === null ? 'text-white font-medium' : 'text-slate-500'}`}>
-                    Без категорії
+                    {t('productEditor.noCategory')}
                   </span>
                 </button>
                 <button onClick={() => setCatSectionOpen(false)} className="flex h-10 w-10 items-center justify-center shrink-0"
@@ -364,9 +365,9 @@ export default function ProductEditor({ productId, onBack }: Props) {
         {/* ── Characteristics (edit only) ── */}
         {!isNew && existing && (
           <div>
-            <label className="mb-2 block text-xs font-semibold uppercase tracking-widest text-slate-400">Характеристики</label>
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('productEditor.attributes')}</label>
             {attributes.length === 0 ? (
-              <p className="text-xs text-slate-400 italic">Характеристик ще немає — додайте у Довідниках</p>
+              <p className="text-xs text-slate-400 italic">{t('productEditor.noAttributesYet')}</p>
             ) : (
               <div className="space-y-4">
                 {attributes.map(attr => {
@@ -375,10 +376,10 @@ export default function ProductEditor({ productId, onBack }: Props) {
                   const isOpen = openAttrId === attr.id
                   return (
                     <div key={attr.id}>
-                      <p className="mb-1.5 text-xs font-medium text-slate-500">{attr.name}</p>
+                      <p className="mb-1.5 text-xs font-medium text-slate-500">{tn(attr.name, attr.nameEn)}</p>
                       {attr.values.length === 0 ? (
                         <div className="w-full flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm cursor-not-allowed">
-                          <span className="text-slate-400">Немає значень у цій характеристиці</span>
+                          <span className="text-slate-400">{t('productEditor.noValuesInAttribute')}</span>
                           <svg className="text-slate-300 shrink-0" width="13" height="13" viewBox="0 0 13 13" fill="none">
                             <path d="M2.5 4l4 4.5 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
                           </svg>
@@ -389,7 +390,7 @@ export default function ProductEditor({ productId, onBack }: Props) {
                           <button type="button" onClick={() => toggleAttrOpen(attr.id)}
                             className="w-full flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-left transition-all active:scale-[0.99]">
                             <span className={selectedValues.length > 0 ? 'text-slate-800' : 'text-slate-400'}>
-                              {selectedValues.length > 0 ? selectedValues.map(v => v.value).join(', ') : '— Оберіть —'}
+                              {selectedValues.length > 0 ? selectedValues.map(v => tn(v.value, v.valueEn)).join(', ') : t('productEditor.selectPlaceholder')}
                             </span>
                             <svg className="text-slate-400 shrink-0" width="13" height="13" viewBox="0 0 13 13" fill="none"
                               style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
@@ -415,7 +416,7 @@ export default function ProductEditor({ productId, onBack }: Props) {
                                         </svg>
                                       )}
                                     </div>
-                                    <span className="text-xs font-medium" style={{ color: active ? '#fff' : '#7c3aed' }}>{v.value}</span>
+                                    <span className="text-xs font-medium" style={{ color: active ? '#fff' : '#7c3aed' }}>{tn(v.value, v.valueEn)}</span>
                                   </button>
                                 )
                               })}
@@ -438,7 +439,7 @@ export default function ProductEditor({ productId, onBack }: Props) {
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)', background: 'linear-gradient(to top, rgba(248,251,255,1) 80%, transparent)' }}>
         <button onClick={handleSave} disabled={!canSave}
           className="flex w-full items-center justify-center rounded-2xl bg-slate-800 py-4 text-sm font-medium text-white disabled:opacity-40 active:scale-[0.98] transition-all">
-          {isSaving ? 'Збереження…' : isNew ? 'Додати продукт' : 'Зберегти зміни'}
+          {isSaving ? t('productEditor.saving') : isNew ? t('productEditor.addProduct') : t('productEditor.saveChanges')}
         </button>
       </div>
     </div>

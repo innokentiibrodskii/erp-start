@@ -10,6 +10,7 @@ import MaterialPickerSheet from './MaterialPickerSheet'
 import OperationPickerSheet from './OperationPickerSheet'
 import { CategoryTreeNode } from './CategoryTreeNode'
 import { useMaterialCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
+import { useLocale } from './LocaleContext'
 import { fmt } from './lib/materialFormat'
 
 type QuickActionType = 'materials' | 'operations' | 'attributes'
@@ -39,6 +40,7 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
   const productStatuses = statusesQ.data ?? []
   const currencyQ = useMaterialCostCurrency()
   const currencySymbol = CURRENCY_SYMBOL[currencyQ.data ?? 'UAH']
+  const { t, tn } = useLocale()
 
   const defaultStatusId = productStatuses.find(s => s.isDefault)?.id ?? null
 
@@ -61,9 +63,8 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
   const [expandedFilterCats, setExpandedFilterCats] = useState<string[]>([])
   const toggleExpandFilterCat = (id: string) =>
     setExpandedFilterCats(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id])
-  const selectedCatLabel = filterCatId === null
-    ? 'Всі категорії'
-    : (categories.find(c => c.id === filterCatId)?.name ?? 'Всі категорії')
+  const filterCat = filterCatId === null ? null : categories.find(c => c.id === filterCatId) ?? null
+  const selectedCatLabel = filterCat ? tn(filterCat.name, filterCat.nameEn) : t('common.allCategories')
 
   const toggleSort = (key: 'name' | 'createdAt' | 'updatedAt') => {
     if (sortBy === key) {
@@ -103,19 +104,23 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
   /** Формує друковану специфікацію собівартості продукту (матеріали + операції)
    *  за наданим шаблоном і відкриває діалог друку — користувач зберігає як PDF. */
   const handleExportCost = (product: Product) => {
-    const catName = getCat(product.categoryId)?.name ?? ''
+    const catCat = getCat(product.categoryId)
+    const catName = catCat ? tn(catCat.name, catCat.nameEn) : ''
 
     const matRows = product.materials.map(pm => {
       const material = materials.find(m => m.id === pm.materialId)
       const unitCost = material?.cost ?? 0
-      return { name: material?.name ?? '—', qty: pm.qty, unit: pm.unitShortName, unitCost, total: unitCost * pm.qty }
+      return { name: material ? tn(material.name, material.nameEn) : '—', qty: pm.qty, unit: tn(pm.unitShortName, pm.unitShortNameEn), unitCost, total: unitCost * pm.qty }
     })
-    const opRows = product.operations.map(po => ({
-      opName: operations.find(o => o.id === po.operationId)?.name ?? '—',
-      taskName: po.taskName || '—',
-      minutes: po.durationMinutes ?? 0,
-      cost: po.cost ?? 0,
-    }))
+    const opRows = product.operations.map(po => {
+      const opCat = operations.find(o => o.id === po.operationId)
+      return {
+        opName: opCat ? tn(opCat.name, opCat.nameEn) : '—',
+        taskName: po.taskName || '—',
+        minutes: po.durationMinutes ?? 0,
+        cost: po.cost ?? 0,
+      }
+    })
 
     const materialsCost = matRows.reduce((s, r) => s + r.total, 0)
     const operationsCost = opRows.reduce((s, r) => s + r.cost, 0)
@@ -140,7 +145,7 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
 
     const win = window.open('', '_blank')
     if (!win) return
-    win.document.write(`<!DOCTYPE html><html><head><title>Собівартість — ${esc(product.name)}</title>
+    win.document.write(`<!DOCTYPE html><html><head><title>${esc(t('costExport.title', { name: product.name }))}</title>
     <meta charset="utf-8" />
     <style>
       body{font-family:'DM Sans',Arial,sans-serif;font-size:12px;color:#1e293b;margin:24px}
@@ -156,26 +161,26 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
     </style></head><body>
     <table class="summary">
       <tr>
-        <td class="label">Назва продукту</td><td>${esc(product.name)}</td>
-        <td class="label pink">Собівартість матеріалів</td><td class="pink">${fmt(materialsCost)} ${currencySymbol}</td>
-        <td class="label pink" colspan="2">сумарна к-сть хв на виготовлення</td><td class="pink">${fmt(totalMinutes)} хв</td>
+        <td class="label">${esc(t('costExport.productName'))}</td><td>${esc(product.name)}</td>
+        <td class="label pink">${esc(t('productView.materialsCost'))}</td><td class="pink">${fmt(materialsCost)} ${currencySymbol}</td>
+        <td class="label pink" colspan="2">${esc(t('costExport.totalMinutesLabel'))}</td><td class="pink">${fmt(totalMinutes)} ${esc(t('common.minutesShort'))}</td>
       </tr>
       <tr>
-        <td class="label">Назва колекції</td><td>${esc(catName)}</td>
-        <td class="label pink">Собівартість операцій</td><td class="pink">${fmt(operationsCost)} ₴</td>
+        <td class="label">${esc(t('costExport.collectionName'))}</td><td>${esc(catName)}</td>
+        <td class="label pink">${esc(t('productView.operationsCost'))}</td><td class="pink">${fmt(operationsCost)} ₴</td>
         <td colspan="3"></td>
       </tr>
     </table>
     <table>
       <thead><tr class="yellow">
-        <th>назва матеріалів</th>
-        <th>к-сть яка потрібна</th>
-        <th>вартість матеріалу за одиницю</th>
-        <th>загальна вартість</th>
-        <th>назва операції</th>
-        <th>назва завдання</th>
-        <th>к-сть хв на виконання</th>
-        <th>вартість операцій</th>
+        <th>${esc(t('costExport.materialNameHeader'))}</th>
+        <th>${esc(t('costExport.qtyNeededHeader'))}</th>
+        <th>${esc(t('costExport.unitCostHeader'))}</th>
+        <th>${esc(t('costExport.totalCostHeader'))}</th>
+        <th>${esc(t('costExport.operationNameHeader'))}</th>
+        <th>${esc(t('costExport.taskNameHeader'))}</th>
+        <th>${esc(t('costExport.minutesHeader'))}</th>
+        <th>${esc(t('costExport.operationsCostHeader'))}</th>
       </tr></thead>
       <tbody>${bodyRows}</tbody>
     </table>
@@ -196,19 +201,19 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
       {/* Header */}
       <div className="px-4 pt-5 pb-4">
         <div className="flex items-start justify-between mb-1">
-          <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-2xl text-slate-800">Продукти</h1>
+          <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-2xl text-slate-800">{t('products.title')}</h1>
           <button onClick={() => setEditId('new')}
             className="flex items-center gap-1.5 rounded-2xl bg-slate-800 px-4 py-2.5 text-xs font-semibold text-white active:scale-95 transition-all shrink-0 mt-1">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
               <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
             </svg>
-            Новий
+            {t('products.new')}
           </button>
         </div>
         <p className="text-xs text-slate-400 mb-4">
           {filtered.length !== products.length
-            ? <>{filtered.length} з {products.length} · {activeStatus ? <span style={{ color: activeStatus.color }}>{activeStatus.name}</span> : 'Всі'}</>
-            : <>{products.length} позицій</>
+            ? <>{t('products.filteredOfTotal', { filtered: filtered.length, total: products.length })} · {activeStatus ? <span style={{ color: activeStatus.color }}>{tn(activeStatus.name, activeStatus.nameEn)}</span> : t('filters.all')}</>
+            : <>{products.length} {t('products.items')}</>
           }
         </p>
 
@@ -219,7 +224,7 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
               <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4"/>
               <path d="M9.5 9.5l2.5 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
             </svg>
-            <input type="search" placeholder="Пошук..." value={search} onChange={e => setSearch(e.target.value)}
+            <input type="search" placeholder={t('products.search')} value={search} onChange={e => setSearch(e.target.value)}
               className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm outline-none placeholder:text-slate-300 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
           </div>
           {/* Filter/sort button */}
@@ -243,7 +248,7 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
             {/* Category filter */}
                 {categories.length > 0 && (
                   <div>
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Категорія</p>
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">{t('filters.category')}</p>
                     {!catSectionOpen ? (
                       // Згорнутий вигляд — звичайний select, як інші фільтри
                       <button onClick={() => setCatSectionOpen(true)}
@@ -263,7 +268,7 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
                             <div className="h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0" style={{ borderColor: filterCatId === null ? 'white' : '#cbd5e1' }}>
                               {filterCatId === null && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
                             </div>
-                            <span className="text-sm font-medium" style={{ color: filterCatId === null ? 'white' : '#1e293b' }}>Всі категорії</span>
+                            <span className="text-sm font-medium" style={{ color: filterCatId === null ? 'white' : '#1e293b' }}>{t('common.allCategories')}</span>
                           </button>
                           {/* Шеврон згортає всю секцію "Категорія" назад у компактний select */}
                           <button onClick={() => setCatSectionOpen(false)} className="flex h-9 w-9 items-center justify-center shrink-0"
@@ -283,9 +288,9 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
                 )}
                 {/* Sort */}
                 <div>
-                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Сортування</p>
+                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">{t('filters.sort')}</p>
                   <div className="space-y-1">
-                    {([['name', 'За назвою'], ['createdAt', 'За датою створення'], ['updatedAt', 'За датою змін']] as ['name' | 'createdAt' | 'updatedAt', string][]).map(([key, label]) => {
+                    {([['name', t('filters.sortByName')], ['createdAt', t('filters.sortByCreated')], ['updatedAt', t('filters.sortByUpdated')]] as ['name' | 'createdAt' | 'updatedAt', string][]).map(([key, label]) => {
                       const active = sortBy === key
                       return (
                         <button key={key} onClick={() => toggleSort(key)}
@@ -306,13 +311,13 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
                 {/* Status filter */}
                 {productStatuses.length > 0 && (
                   <div>
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Статус</p>
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">{t('filters.status')}</p>
                     <div className="space-y-1">
                       <button onClick={() => setFilter(null)}
                         className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-all"
                         style={filterStatusId === null ? { background: '#f8fafc', color: '#1e293b', fontWeight: 500 } : { color: '#64748b' }}>
                         <span className="h-2 w-2 rounded-full bg-slate-300" />
-                        Всі
+                        {t('filters.all')}
                       </button>
                       {productStatuses.map(s => {
                         const active = filterStatusId === s.id
@@ -321,7 +326,7 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
                             className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-all"
                             style={active ? { background: s.color + '12', color: s.color, fontWeight: 500 } : { color: '#64748b' }}>
                             <span className="h-2 w-2 rounded-full shrink-0" style={{ background: s.color }} />
-                            {s.name}
+                            {tn(s.name, s.nameEn)}
                           </button>
                         )
                       })}
@@ -332,7 +337,7 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
                 {hasActiveFilters && (
                   <button onClick={() => { setFilter(defaultStatusId); setFilterCatId(null); setSortBy('createdAt'); setSortDir('desc'); lsSet(LS_SORT_BY, 'createdAt'); lsSet(LS_SORT_DIR, 'desc') }}
                     className="w-full rounded-xl py-2 text-xs text-slate-400 hover:text-red-400 transition-colors text-center">
-                    Скинути фільтри
+                    {t('filters.reset')}
                   </button>
                 )}
               </div>
@@ -343,11 +348,11 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
       {/* Cards */}
       <div className="px-4 space-y-3 pb-8">
         {productsQ.isLoading ? (
-          <div className="py-10 text-center text-sm text-slate-400">Завантаження…</div>
+          <div className="py-10 text-center text-sm text-slate-400">{t('common.loading')}</div>
         ) : filtered.length === 0 ? (
           <div className="rounded-2xl bg-white py-14 text-center" style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
             <p className="text-2xl mb-2">📦</p>
-            <p className="text-sm text-slate-400">Продуктів ще немає</p>
+            <p className="text-sm text-slate-400">{t('products.empty')}</p>
           </div>
         ) : (
           filtered.map(product => {
@@ -373,26 +378,26 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
                       {statusObj && (
                         <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
                           <span className="h-1.5 w-1.5 rounded-full" style={{ background: statusObj.color }} />
-                          {statusObj.name}
+                          {tn(statusObj.name, statusObj.nameEn)}
                         </span>
                       )}
                       {cat && (
                         <span className="rounded-full px-2 py-0.5 text-[10px] font-medium"
-                          style={{ background: '#f5f3ff', color: cat.color ?? '#7c3aed' }}>{cat.name}</span>
+                          style={{ background: '#f5f3ff', color: cat.color ?? '#7c3aed' }}>{tn(cat.name, cat.nameEn)}</span>
                       )}
                       {product.materials.length > 0 && (
                         <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-600">
-                          {product.materials.length} мат.
+                          {t('products.materialsCount', { count: product.materials.length })}
                         </span>
                       )}
                       {product.operations.length > 0 && (
                         <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[10px] text-orange-500">
-                          {product.operations.length} опер.
+                          {t('products.operationsCount', { count: product.operations.length })}
                         </span>
                       )}
                       {product.attributes.length > 0 && (
                         <span className="rounded-full px-2 py-0.5 text-[10px]" style={{ background: '#f5f3ff', color: '#7c3aed' }}>
-                          {product.attributes.length} характ.
+                          {t('products.attributesCount', { count: product.attributes.length })}
                         </span>
                       )}
                     </div>
@@ -408,9 +413,9 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
                         <div className="fixed inset-0 z-10" onClick={() => setOpenMenu(null)} />
                         <div className="absolute right-0 top-9 z-20 w-52 rounded-2xl bg-white py-1.5"
                           style={{ border: '1px solid rgba(157,200,255,0.3)', boxShadow: '0 8px 32px rgba(15,23,42,0.14)' }}>
-                          <MenuBtn icon={<PencilIcon />} label="Редагувати" onClick={() => { setEditId(product.id); setOpenMenu(null) }} />
-                          <MenuBtn icon={<QRIcon />} label="Друк QR" onClick={() => { setQrProductId(product.id); setOpenMenu(null) }} />
-                          <MenuBtn icon={<CostIcon />} label="Собівартість" onClick={() => { handleExportCost(product); setOpenMenu(null) }} />
+                          <MenuBtn icon={<PencilIcon />} label={t('common.edit')} onClick={() => { setEditId(product.id); setOpenMenu(null) }} />
+                          <MenuBtn icon={<QRIcon />} label={t('products.printQr')} onClick={() => { setQrProductId(product.id); setOpenMenu(null) }} />
+                          <MenuBtn icon={<CostIcon />} label={t('products.cost')} onClick={() => { handleExportCost(product); setOpenMenu(null) }} />
                         </div>
                       </>
                     )}
@@ -423,8 +428,8 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
                     className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 py-2.5 text-xs font-medium text-amber-600 active:scale-[0.97] transition-all">
                     <LayersIcon />
                     <span className="text-center leading-4">
-                      <span className="block">Специфікація</span>
-                      <span className="block">Матеріали</span>
+                      <span className="block">{t('products.spec')}</span>
+                      <span className="block">{t('nav.materials')}</span>
                     </span>
                   </button>
                   <button
@@ -432,8 +437,8 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
                     className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-orange-200 bg-orange-50 py-2.5 text-xs font-medium text-orange-500 active:scale-[0.97] transition-all">
                     <GearIcon />
                     <span className="text-center leading-4">
-                      <span className="block">Специфікація</span>
-                      <span className="block">Операції</span>
+                      <span className="block">{t('products.spec')}</span>
+                      <span className="block">{t('products.operationsLabel')}</span>
                     </span>
                   </button>
                 </div>
@@ -469,7 +474,7 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
                   </div>
                   <div>
                     <p style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800">
-                      {isMat ? 'Матеріали' : 'Операції'}
+                      {isMat ? t('nav.materials') : t('products.operationsLabel')}
                     </p>
                     <p className="text-xs text-slate-400">{product.name}</p>
                   </div>
@@ -477,14 +482,14 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
                 <button onClick={() => isMat ? setMaterialPickerOpen(true) : setOperationPickerOpen(true)}
                   className={`flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium active:scale-95 transition-all shrink-0 ${isMat ? 'bg-amber-50 text-amber-600' : 'bg-orange-50 text-orange-600'}`}>
                   <svg width="10" height="10" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v11M1 6.5h11" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>
-                  Додати
+                  {t('common.add')}
                 </button>
               </div>
 
               {isMat ? (
                 product.materials.length === 0 ? (
                   <div className="px-5 py-6 text-center">
-                    <p className="text-sm text-slate-400">Не додано жодного матеріалу</p>
+                    <p className="text-sm text-slate-400">{t('products.noMaterials')}</p>
                   </div>
                 ) : (
                   <div className="px-5 space-y-2">
@@ -495,10 +500,10 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
                         <div key={pm.materialId} className="flex items-center gap-3 rounded-2xl px-4 py-3"
                           style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-slate-800 truncate">{m?.name ?? '—'}</p>
-                            <p className="text-xs text-slate-400 truncate">{op ? `Операція: ${op.name}` : (m?.categoryName || 'Без операції')}</p>
+                            <p className="text-sm font-medium text-slate-800 truncate">{m ? tn(m.name, m.nameEn) : '—'}</p>
+                            <p className="text-xs text-slate-400 truncate">{op ? t('products.operationPrefix', { name: tn(op.name, op.nameEn) }) : (m?.categoryName ? tn(m.categoryName, m.categoryNameEn) : t('products.noOperation'))}</p>
                           </div>
-                          <span className="text-sm font-mono text-slate-600 shrink-0">{pm.qty} {pm.unitShortName}</span>
+                          <span className="text-sm font-mono text-slate-600 shrink-0">{pm.qty} {tn(pm.unitShortName, pm.unitShortNameEn)}</span>
                           <button onClick={() => removeMaterial({ productId: product.id, materialId: pm.materialId })}
                             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:text-red-500 transition-all">
                             <svg width="12" height="12" viewBox="0 0 13 13" fill="none">
@@ -512,7 +517,7 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
                 )
               ) : product.operations.length === 0 ? (
                 <div className="px-5 py-6 text-center">
-                  <p className="text-sm text-slate-400">Не додано жодної операції</p>
+                  <p className="text-sm text-slate-400">{t('products.noOperations')}</p>
                 </div>
               ) : (
                 <div className="px-5 space-y-2">
@@ -522,11 +527,11 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
                       <div key={po.id} className="flex items-center gap-3 rounded-2xl px-4 py-3"
                         style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-800 truncate">{o?.name ?? '—'}</p>
-                          <p className="text-xs text-slate-400 truncate">{po.taskName || 'Без завдання'}</p>
+                          <p className="text-sm font-medium text-slate-800 truncate">{o ? tn(o.name, o.nameEn) : '—'}</p>
+                          <p className="text-xs text-slate-400 truncate">{po.taskName || t('products.noTask')}</p>
                         </div>
                         <span className="text-xs font-mono text-slate-600 shrink-0 text-right">
-                          {po.durationMinutes ? `${po.durationMinutes} хв` : ''}
+                          {po.durationMinutes ? `${po.durationMinutes} ${t('common.minutesShort')}` : ''}
                           {po.durationMinutes && po.cost ? ' · ' : ''}
                           {po.cost ? `${po.cost} ₴` : ''}
                         </span>
@@ -585,6 +590,7 @@ function drawRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w:
 
 /* ── QR Modal ── */
 function QRModal({ productId, products, onClose }: { productId: string; products: Product[]; onClose: () => void }) {
+  const { t } = useLocale()
   const product = products.find(p => p.id === productId)
   if (!product) return null
   const qrUrl = `${window.location.origin}/?product=${product.id}`
@@ -724,10 +730,10 @@ function QRModal({ productId, products, onClose }: { productId: string; products
           <div className="rounded-2xl bg-white p-5" style={{ border: '1px solid rgba(157,200,255,0.3)' }}>
             <QRCodeLib id="qr-svg-print" value={qrUrl} size={180} />
           </div>
-          <p className="text-[10px] text-slate-400 text-center">Скануйте для перегляду картки продукту · Етикетка 40×58мм</p>
+          <p className="text-[10px] text-slate-400 text-center">{t('products.qrHint')}</p>
           <div className="flex gap-2 w-full pt-2">
             <button onClick={onClose} className="flex-1 rounded-2xl border border-slate-200 py-3 text-sm text-slate-600">
-              Закрити
+              {t('common.close')}
             </button>
             <button onClick={handleDownloadImage}
               className="flex items-center justify-center gap-1.5 rounded-2xl border border-slate-200 px-3.5 py-3 text-sm font-medium text-slate-600">
@@ -741,7 +747,7 @@ function QRModal({ productId, products, onClose }: { productId: string; products
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                 <path d="M3 5V2h8v3M3 9H2a1 1 0 01-1-1V6a1 1 0 011-1h10a1 1 0 011 1v2a1 1 0 01-1 1h-1M3 9v3h8V9H3z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
               </svg>
-              Друк
+              {t('common.print')}
             </button>
           </div>
         </div>

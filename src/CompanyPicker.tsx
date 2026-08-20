@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { OrgMembership } from './OrgContext'
+import { useLocale } from './LocaleContext'
 
 interface CompanyPickerProps {
   memberships: OrgMembership[]
@@ -8,6 +9,7 @@ interface CompanyPickerProps {
 }
 
 export default function CompanyPicker({ memberships, onSelect, onLogout }: CompanyPickerProps) {
+  const { t } = useLocale()
   const [selectedId, setSelectedId] = useState<string | null>(memberships[0]?.id ?? null)
 
   const handleConfirm = () => {
@@ -36,14 +38,14 @@ export default function CompanyPicker({ memberships, onSelect, onLogout }: Compa
             onClick={onLogout}
             className="mb-5 flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 transition-colors"
           >
-            <BackArrow /> Назад
+            <BackArrow /> {t('auth.back')}
           </button>
 
           <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="mb-1 text-[1.65rem] leading-tight text-slate-800">
-            Компанія
+            {t('company.title')}
           </h1>
           <p className="mb-7 text-sm text-slate-500 font-light">
-            Оберіть компанію для роботи
+            {t('company.selectPrompt')}
           </p>
 
           <div className="space-y-2.5">
@@ -73,13 +75,13 @@ export default function CompanyPicker({ memberships, onSelect, onLogout }: Compa
             disabled={!selectedId}
             className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 py-3 text-sm font-medium text-white transition-all hover:bg-slate-700 active:scale-[0.98] disabled:opacity-60"
           >
-            Увійти <Arrow />
+            {t('auth.login')} <Arrow />
           </button>
         </div>
 
         <p className="mt-6 text-center text-xs text-slate-400">
-          Продовжуючи, ви погоджуєтесь з{' '}
-          <a href="#" className="hover:underline">Умовами використання</a>
+          {t('auth.continueAgree')}{' '}
+          <a href="#" className="hover:underline">{t('auth.termsOfUse')}</a>
         </p>
       </div>
     </div>

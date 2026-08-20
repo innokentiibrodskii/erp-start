@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useActiveOrgId } from '../OrgContext'
+import { useLocale } from '../LocaleContext'
+import type { TranslationKey } from '../i18n'
 
 /* ───────────────────────────────────────────────────────────
    Types
@@ -11,6 +13,7 @@ export interface ProductMaterialLink {
   qty: number
   unitId: string
   unitShortName: string
+  unitShortNameEn: string | null
   operationId: string | null
 }
 
@@ -26,8 +29,10 @@ export interface ProductOperationLink {
 export interface ProductAttributeLink {
   valueId: string
   value: string
+  valueEn: string | null
   attributeId: string
   attributeName: string
+  attributeNameEn: string | null
 }
 
 export interface Product {
@@ -60,6 +65,7 @@ export interface ProductStatus {
   id: string
   code: string
   name: string
+  nameEn: string | null
   color: string
   isDefault: boolean
 }
@@ -71,11 +77,11 @@ export function useProductStatuses() {
     queryFn: async (): Promise<ProductStatus[]> => {
       const { data, error } = await supabase
         .from('product_statuses')
-        .select('id, code, name, color, is_default')
+        .select('id, code, name, name_en, color, is_default')
         .eq('organization_id', orgId)
         .order('name')
       if (error) throw error
-      return data.map(s => ({ id: s.id, code: s.code, name: s.name, color: s.color ?? '#94a3b8', isDefault: s.is_default }))
+      return data.map(s => ({ id: s.id, code: s.code, name: s.name, nameEn: s.name_en, color: s.color ?? '#94a3b8', isDefault: s.is_default }))
     },
   })
 }
@@ -90,15 +96,16 @@ function slugifyStatusCode(name: string): string {
 export function useProductStatusMutations() {
   const qc = useQueryClient()
   const orgId = useActiveOrgId()
+  const { t } = useLocale()
   const invalidate = () => qc.invalidateQueries({ queryKey: ['product-statuses', orgId] })
-  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error))
+  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error, t))
 
   const add = useMutation({
-    mutationFn: async ({ name, color }: { name: string; color: string }) => {
+    mutationFn: async ({ name, nameEn, color }: { name: string; nameEn: string | null; color: string }) => {
       const base = slugifyStatusCode(name)
       let code = base
       for (let attempt = 0; attempt < 6; attempt++) {
-        const { error } = await supabase.from('product_statuses').insert({ name, color, code, organization_id: orgId })
+        const { error } = await supabase.from('product_statuses').insert({ name, name_en: nameEn, color, code, organization_id: orgId })
         if (!error) return
         if (error.code === '23505') { code = `${base}-${attempt + 2}`; continue }
         throw error
@@ -109,8 +116,8 @@ export function useProductStatusMutations() {
   })
 
   const update = useMutation({
-    mutationFn: async ({ id, name, color }: { id: string; name: string; color: string }) => {
-      const { error } = await supabase.from('product_statuses').update({ name, color }).eq('id', id)
+    mutationFn: async ({ id, name, nameEn, color }: { id: string; name: string; nameEn: string | null; color: string }) => {
+      const { error } = await supabase.from('product_statuses').update({ name, name_en: nameEn, color }).eq('id', id)
       if (error) throw error
     },
     onSuccess: invalidate,
@@ -138,8 +145,8 @@ export function useProductStatusMutations() {
   })
 
   return {
-    addStatus: (name: string, color: string) => add.mutateAsync({ name, color }),
-    updateStatus: (id: string, name: string, color: string) => update.mutateAsync({ id, name, color }),
+    addStatus: (name: string, color: string, nameEn: string | null = null) => add.mutateAsync({ name, nameEn, color }),
+    updateStatus: (id: string, name: string, color: string, nameEn: string | null = null) => update.mutateAsync({ id, name, nameEn, color }),
     removeStatus: (id: string) => remove.mutate(id),
     setDefaultStatus: (id: string) => setDefault.mutate(id),
     isSaving: add.isPending || update.isPending,
@@ -155,9 +162,9 @@ export interface PhotoItem {
   file?: File
 }
 
-function friendlyError(error: { message: string; code?: string }): string {
-  if (error.code === '23503') return 'Неможливо видалити: запис використовується в інших довідниках'
-  if (error.code === '23505') return 'Такий запис уже існує'
+function friendlyError(error: { message: string; code?: string }, t: (key: TranslationKey) => string): string {
+  if (error.code === '23503') return t('errors.cannotDeleteInUse')
+  if (error.code === '23505') return t('errors.alreadyExists')
   return error.message
 }
 
@@ -175,9 +182,9 @@ export function useProducts() {
         .select(`
           id, name, description, sku, category_id, status_id, created_at, updated_at,
           product_images(url, position),
-          product_materials(material_id, qty, unit_id, operation_id, units(short_name)),
+          product_materials(material_id, qty, unit_id, operation_id, units(short_name, short_name_en)),
           product_operations(id, operation_id, task_id, tasks!product_operations_task_id_fkey(name, duration_minutes, cost)),
-          product_attribute_values(attribute_value_id, attribute_values(value, attribute_id, attributes(name)))
+          product_attribute_values(attribute_value_id, attribute_values(value, value_en, attribute_id, attributes(name, name_en)))
         `)
         .eq('organization_id', orgId)
         .order('name')
@@ -199,7 +206,8 @@ export function useProducts() {
             materialId: m.material_id,
             qty: Number(m.qty),
             unitId: m.unit_id,
-            unitShortName: (m.units as unknown as { short_name: string } | null)?.short_name ?? '',
+            unitShortName: (m.units as unknown as { short_name: string; short_name_en: string | null } | null)?.short_name ?? '',
+            unitShortNameEn: (m.units as unknown as { short_name: string; short_name_en: string | null } | null)?.short_name_en ?? null,
             operationId: m.operation_id,
           })),
           operations: (p.product_operations ?? []).map(o => {
@@ -214,12 +222,14 @@ export function useProducts() {
             }
           }),
           attributes: (p.product_attribute_values ?? []).map(pav => {
-            const av = pav.attribute_values as unknown as { value: string; attribute_id: string; attributes: { name: string } | null } | null
+            const av = pav.attribute_values as unknown as { value: string; value_en: string | null; attribute_id: string; attributes: { name: string; name_en: string | null } | null } | null
             return {
               valueId: pav.attribute_value_id,
               value: av?.value ?? '',
+              valueEn: av?.value_en ?? null,
               attributeId: av?.attribute_id ?? '',
               attributeName: av?.attributes?.name ?? '',
+              attributeNameEn: av?.attributes?.name_en ?? null,
             }
           }),
         }
@@ -259,8 +269,9 @@ async function getDefaultStatusId(orgId: string): Promise<string | null> {
 export function useProductMutations() {
   const qc = useQueryClient()
   const orgId = useActiveOrgId()
+  const { t } = useLocale()
   const invalidate = () => qc.invalidateQueries({ queryKey: ['products', orgId] })
-  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error))
+  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error, t))
 
   const create = useMutation({
     mutationFn: async ({ name, description, categoryId, sku, photos }: { name: string; description: string; categoryId: string | null; sku: string; photos: PhotoItem[] }) => {

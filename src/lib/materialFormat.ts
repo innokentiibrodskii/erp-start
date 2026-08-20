@@ -6,14 +6,16 @@ export function dateStr(ts: number) {
   return new Date(ts).toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
-export function buildCatPath(id: string | null, all: MaterialCategory[]): string {
+/** `tn` — опційна функція білінгвального відображення (з useLocale()); якщо не
+ *  передана, шлях будується з української назви без англійського відповідника. */
+export function buildCatPath(id: string | null, all: MaterialCategory[], tn?: (name: string, nameEn: string | null | undefined) => string): string {
   if (!id) return ''
   const parts: string[] = []
   let cur: string | null = id
   while (cur) {
     const cat = all.find(c => c.id === cur)
     if (!cat) break
-    parts.unshift(cat.name)
+    parts.unshift(tn ? tn(cat.name, cat.nameEn) : cat.name)
     cur = cat.parentId
   }
   return parts.join(' / ')

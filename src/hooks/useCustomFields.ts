@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useActiveOrgId } from '../OrgContext'
+import { useLocale } from '../LocaleContext'
+import type { TranslationKey } from '../i18n'
 
 /* ───────────────────────────────────────────────────────────
    Кастомні поля — конструктор додаткових полів для трьох сутностей
@@ -41,6 +43,7 @@ const ID_COLUMN: Record<EntityType, string> = {
 export interface CustomFieldOption {
   id: string
   value: string
+  valueEn: string | null
   position: number
 }
 
@@ -48,6 +51,7 @@ export interface CustomFieldDefinition {
   id: string
   entityType: EntityType
   name: string
+  nameEn: string | null
   fieldType: FieldType
   isRequired: boolean
   position: number
@@ -69,9 +73,9 @@ export interface CustomFieldValue {
   valueOptionId: string | null
 }
 
-function friendlyError(error: { message: string; code?: string }): string {
-  if (error.code === '23503') return 'Помилка зв\'язку з довідником'
-  if (error.code === '23505') return 'Такий запис уже існує'
+function friendlyError(error: { message: string; code?: string }, t: (key: TranslationKey) => string): string {
+  if (error.code === '23503') return t('errors.referenceError')
+  if (error.code === '23505') return t('errors.alreadyExists')
   return error.message
 }
 
@@ -86,7 +90,7 @@ export function useCustomFieldDefinitions(entityType: EntityType) {
     queryFn: async (): Promise<CustomFieldDefinition[]> => {
       const { data, error } = await supabase
         .from('custom_field_definitions')
-        .select('id, entity_type, name, field_type, is_required, position, custom_field_options(id, value, position)')
+        .select('id, entity_type, name, name_en, field_type, is_required, position, custom_field_options(id, value, value_en, position)')
         .eq('entity_type', entityType)
         .eq('organization_id', orgId)
         .order('position')
@@ -95,13 +99,14 @@ export function useCustomFieldDefinitions(entityType: EntityType) {
         id: d.id,
         entityType: d.entity_type as EntityType,
         name: d.name,
+        nameEn: d.name_en,
         fieldType: d.field_type as FieldType,
         isRequired: d.is_required,
         position: d.position,
         options: (d.custom_field_options ?? [])
           .slice()
-          .sort((a: CustomFieldOption, b: CustomFieldOption) => a.position - b.position)
-          .map((o: { id: string; value: string; position: number }) => ({ id: o.id, value: o.value, position: o.position })),
+          .sort((a: { position: number }, b: { position: number }) => a.position - b.position)
+          .map((o: { id: string; value: string; value_en: string | null; position: number }) => ({ id: o.id, value: o.value, valueEn: o.value_en, position: o.position })),
       }))
     },
   })
@@ -110,13 +115,14 @@ export function useCustomFieldDefinitions(entityType: EntityType) {
 export function useCustomFieldDefinitionMutations(entityType: EntityType) {
   const qc = useQueryClient()
   const orgId = useActiveOrgId()
+  const { t } = useLocale()
   const invalidate = () => qc.invalidateQueries({ queryKey: ['custom-field-definitions', entityType, orgId] })
-  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error))
+  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error, t))
 
   const add = useMutation({
-    mutationFn: async ({ name, fieldType, isRequired, position }: { name: string; fieldType: FieldType; isRequired: boolean; position: number }) => {
+    mutationFn: async ({ name, nameEn, fieldType, isRequired, position }: { name: string; nameEn: string | null; fieldType: FieldType; isRequired: boolean; position: number }) => {
       const { error } = await supabase.from('custom_field_definitions').insert({
-        organization_id: orgId, entity_type: entityType, name, field_type: fieldType, is_required: isRequired, position,
+        organization_id: orgId, entity_type: entityType, name, name_en: nameEn, field_type: fieldType, is_required: isRequired, position,
       })
       if (error) throw error
     },
@@ -125,9 +131,9 @@ export function useCustomFieldDefinitionMutations(entityType: EntityType) {
   })
 
   const update = useMutation({
-    mutationFn: async ({ id, name, isRequired }: { id: string; name: string; isRequired: boolean }) => {
+    mutationFn: async ({ id, name, nameEn, isRequired }: { id: string; name: string; nameEn: string | null; isRequired: boolean }) => {
       // Тип поля свідомо не редагується після створення — зміна типу зробила б наявні значення несумісними.
-      const { error } = await supabase.from('custom_field_definitions').update({ name, is_required: isRequired }).eq('id', id)
+      const { error } = await supabase.from('custom_field_definitions').update({ name, name_en: nameEn, is_required: isRequired }).eq('id', id)
       if (error) throw error
     },
     onSuccess: invalidate,
@@ -143,7 +149,7 @@ export function useCustomFieldDefinitionMutations(entityType: EntityType) {
         .from(FILE_TABLE[entityType]).select('*', { count: 'exact', head: true }).eq('field_definition_id', id)
       if (filesErr) throw filesErr
       if ((valuesCount ?? 0) > 0 || (filesCount ?? 0) > 0) {
-        throw new Error('Неможливо видалити: поле використовується в записах')
+        throw new Error(t('errors.cannotDeleteFieldInUse'))
       }
       const { error } = await supabase.from('custom_field_definitions').delete().eq('id', id)
       if (error) throw error
@@ -153,8 +159,17 @@ export function useCustomFieldDefinitionMutations(entityType: EntityType) {
   })
 
   const addOption = useMutation({
-    mutationFn: async ({ fieldDefinitionId, value, position }: { fieldDefinitionId: string; value: string; position: number }) => {
-      const { error } = await supabase.from('custom_field_options').insert({ field_definition_id: fieldDefinitionId, value, position, organization_id: orgId })
+    mutationFn: async ({ fieldDefinitionId, value, valueEn, position }: { fieldDefinitionId: string; value: string; valueEn: string | null; position: number }) => {
+      const { error } = await supabase.from('custom_field_options').insert({ field_definition_id: fieldDefinitionId, value, value_en: valueEn, position, organization_id: orgId })
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+    onError: onErr,
+  })
+
+  const updateOption = useMutation({
+    mutationFn: async ({ id, value, valueEn }: { id: string; value: string; valueEn: string | null }) => {
+      const { error } = await supabase.from('custom_field_options').update({ value, value_en: valueEn }).eq('id', id)
       if (error) throw error
     },
     onSuccess: invalidate,
@@ -171,10 +186,15 @@ export function useCustomFieldDefinitionMutations(entityType: EntityType) {
   })
 
   return {
-    addDefinition: (args: { name: string; fieldType: FieldType; isRequired: boolean; position: number }) => add.mutateAsync(args),
-    updateDefinition: (args: { id: string; name: string; isRequired: boolean }) => update.mutateAsync(args),
+    addDefinition: (args: { name: string; nameEn?: string | null; fieldType: FieldType; isRequired: boolean; position: number }) =>
+      add.mutateAsync({ ...args, nameEn: args.nameEn ?? null }),
+    updateDefinition: (args: { id: string; name: string; nameEn?: string | null; isRequired: boolean }) =>
+      update.mutateAsync({ ...args, nameEn: args.nameEn ?? null }),
     removeDefinition: (id: string) => remove.mutate(id),
-    addOption: (args: { fieldDefinitionId: string; value: string; position: number }) => addOption.mutateAsync(args),
+    addOption: (args: { fieldDefinitionId: string; value: string; valueEn?: string | null; position: number }) =>
+      addOption.mutateAsync({ ...args, valueEn: args.valueEn ?? null }),
+    updateOption: (args: { id: string; value: string; valueEn?: string | null }) =>
+      updateOption.mutateAsync({ ...args, valueEn: args.valueEn ?? null }),
     removeOption: (id: string) => removeOption.mutate(id),
     isSaving: add.isPending || update.isPending,
   }
@@ -235,12 +255,13 @@ export function useCustomFieldValues(entityType: EntityType, entityId: string | 
 export function useCustomFieldValueMutations(entityType: EntityType) {
   const qc = useQueryClient()
   const orgId = useActiveOrgId()
+  const { t } = useLocale()
   const idCol = ID_COLUMN[entityType]
   const invalidate = (entityId: string) => {
     qc.invalidateQueries({ queryKey: ['custom-field-values', entityType, entityId] })
     qc.invalidateQueries({ queryKey: ['custom-field-files', entityType, entityId] })
   }
-  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error))
+  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error, t))
 
   const setValue = useMutation({
     mutationFn: async (args: { entityId: string; fieldDefinitionId: string; valueText?: string | null; valueNumber?: number | null; valueBoolean?: boolean | null; valueOptionId?: string | null }) => {

@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useActiveOrgId } from '../OrgContext'
+import { useLocale } from '../LocaleContext'
+import type { TranslationKey } from '../i18n'
 
 /* ───────────────────────────────────────────────────────────
    Додавання операцій до продукту: операція з каталогу + завдання
@@ -18,9 +20,9 @@ export interface ProductTask {
   cost: number | null
 }
 
-function friendlyError(error: { message: string; code?: string }): string {
-  if (error.code === '23505') return 'Завдання з такою назвою вже існує для цієї операції в цьому продукті'
-  if (error.code === '23503') return 'Помилка зв\'язку з довідником'
+function friendlyError(error: { message: string; code?: string }, t: (key: TranslationKey) => string): string {
+  if (error.code === '23505') return t('errors.taskNameExists')
+  if (error.code === '23503') return t('errors.referenceError')
   return error.message
 }
 
@@ -50,9 +52,10 @@ export function useProductTasks(productId: string | null) {
 export function useProductOperationMutations() {
   const qc = useQueryClient()
   const orgId = useActiveOrgId()
+  const { t } = useLocale()
   const invalidateProducts = () => qc.invalidateQueries({ queryKey: ['products', orgId] })
   const invalidateTasks = (productId: string) => qc.invalidateQueries({ queryKey: ['product-tasks', productId] })
-  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error))
+  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error, t))
 
   /** Додати операцію до продукту разом з новим завданням. Одну операцію можна
    *  додати декілька разів — кожне додавання створює свій рядок і своє завдання
@@ -110,9 +113,9 @@ export function useProductOperationMutations() {
   })
 
   const addTaskError = addWithNewTask.error
-    ? friendlyError(addWithNewTask.error as { message: string; code?: string })
+    ? friendlyError(addWithNewTask.error as { message: string; code?: string }, t)
     : addWithExistingTask.error
-    ? friendlyError(addWithExistingTask.error as { message: string; code?: string })
+    ? friendlyError(addWithExistingTask.error as { message: string; code?: string }, t)
     : null
 
   const resetAddErrors = () => {

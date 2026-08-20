@@ -1,6 +1,7 @@
 import { useCatalog } from './hooks/useCatalog'
 import { useProductAttributeMutations } from './hooks/useProductAttributes'
 import type { ProductAttributeLink } from './hooks/useProducts'
+import { useLocale } from './LocaleContext'
 
 /* ───────────────────────────────────────────────────────────
    Вибір характеристик продукту з довідника: атрибути згруповані,
@@ -12,6 +13,7 @@ export default function AttributePickerSheet({ productId, selected, onClose }: {
   selected: ProductAttributeLink[]
   onClose: () => void
 }) {
+  const { t, tn } = useLocale()
   const { attributes } = useCatalog()
   const { addAttributeValue, removeAttributeValue, isSaving } = useProductAttributeMutations()
   const selectedIds = new Set(selected.map(s => s.valueId))
@@ -30,17 +32,17 @@ export default function AttributePickerSheet({ productId, selected, onClose }: {
           <button onClick={onClose} className="h-1 w-10 rounded-full bg-slate-200" />
         </div>
         <h2 style={{ fontFamily: "'DM Serif Display', serif" }} className="px-5 text-2xl text-slate-800 mb-4">
-          Характеристики
+          {t('productEditor.attributes')}
         </h2>
 
         <div className="px-5 space-y-5">
           {attributes.length === 0 ? (
-            <p className="py-6 text-center text-sm text-slate-400">У довіднику ще немає характеристик</p>
+            <p className="py-6 text-center text-sm text-slate-400">{t('attributePicker.emptyCatalog')}</p>
           ) : attributes.map(attr => (
             <div key={attr.id}>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-400">{attr.name}</p>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-400">{tn(attr.name, attr.nameEn)}</p>
               {attr.values.length === 0 ? (
-                <p className="text-xs text-slate-400">Немає значень у цій характеристиці</p>
+                <p className="text-xs text-slate-400">{t('productEditor.noValuesInAttribute')}</p>
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {attr.values.map(v => {
@@ -49,7 +51,7 @@ export default function AttributePickerSheet({ productId, selected, onClose }: {
                       <button key={v.id} onClick={() => toggle(v.id)} disabled={isSaving}
                         className="rounded-xl px-3 py-2 text-xs font-medium border transition-all disabled:opacity-50"
                         style={active ? { background: '#7c3aed', color: '#fff', borderColor: '#7c3aed' } : { background: '#f5f3ff', color: '#7c3aed', borderColor: 'transparent' }}>
-                        {v.value}
+                        {tn(v.value, v.valueEn)}
                       </button>
                     )
                   })}
@@ -62,7 +64,7 @@ export default function AttributePickerSheet({ productId, selected, onClose }: {
         <div className="flex gap-3 mt-6 px-5">
           <button onClick={onClose}
             className="flex-1 rounded-2xl bg-slate-800 py-3.5 text-sm font-medium text-white active:scale-[0.98] transition-all">
-            Готово
+            {t('attributePicker.done')}
           </button>
         </div>
       </div>

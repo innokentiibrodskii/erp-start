@@ -7,6 +7,8 @@ import { useCatalog } from './hooks/useCatalog'
 import type { Operation } from './hooks/useCatalog'
 import { useProductTasks, type ProductTask } from './hooks/useProductOperations'
 import { useAssignments, useAssignmentMutations, isAssignmentLocked, isArchivedCompleted, type Assignment, type AssignmentStatus } from './hooks/useAssignments'
+import { useLocale } from './LocaleContext'
+import type { TranslationKey } from './i18n'
 
 /* ───────────────────────────────────────────────────────────
    Сторінка "Завдання" для виконавців. Видимість рядків керується
@@ -14,12 +16,12 @@ import { useAssignments, useAssignmentMutations, isAssignmentLocked, isArchivedC
    тут просто рендеримо те, що прийшло з useAssignments().
 ─────────────────────────────────────────────────────────── */
 
-const STATUS_LABEL: Record<AssignmentStatus, string> = {
-  pending: 'В очікуванні',
-  in_progress: 'В роботі',
-  paused: 'Перерва',
-  done: 'Завершено',
-  cancelled: 'Скасовано',
+const STATUS_LABEL_KEY: Record<AssignmentStatus, TranslationKey> = {
+  pending: 'assignmentStatus.pending',
+  in_progress: 'assignmentStatus.inProgress',
+  paused: 'assignmentStatus.paused',
+  done: 'assignmentStatus.done',
+  cancelled: 'assignmentStatus.cancelled',
 }
 
 const STATUS_STYLE: Record<AssignmentStatus, { bg: string; text: string }> = {
@@ -42,6 +44,7 @@ interface Filters {
 const EMPTY_FILTERS: Filters = { assigneeId: null, productId: null, operationId: null, status: null, showArchived: false }
 
 export default function AssignmentsPage() {
+  const { t, tn } = useLocale()
   const { data: currentUser } = useCurrentUser()
   const isManager = currentUser?.role === 'manager'
 
@@ -60,7 +63,7 @@ export default function AssignmentsPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [detail, setDetail] = useState<Assignment | null>(null)
   const [toast, setToast] = useState<string | null>(null)
-  const showToast = (t: string) => { setToast(t); setTimeout(() => setToast(null), 2200) }
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2200) }
 
   let list = all
   const q = search.trim().toLowerCase()
@@ -89,17 +92,17 @@ export default function AssignmentsPage() {
 
       <div className="px-4 pt-5 pb-3">
         <div className="flex items-start justify-between mb-1">
-          <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-2xl text-slate-800">Завдання</h1>
+          <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-2xl text-slate-800">{t('nav.tasks')}</h1>
           <button onClick={() => setFormOpen(true)}
             className="flex items-center gap-1.5 rounded-2xl bg-slate-800 px-4 py-2.5 text-xs font-semibold text-white active:scale-95 transition-all shrink-0 mt-1">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
               <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
             </svg>
-            Нове
+            {t('assignments.newTask')}
           </button>
         </div>
         <p className="text-xs text-slate-400 mb-3">
-          {isManager ? 'Усі завдання команди' : 'Ваші завдання'} · {list.length}
+          {isManager ? t('assignments.allTeamTasks') : t('assignments.yourTasks')} · {list.length}
         </p>
 
         <div className="flex gap-2 mb-3">
@@ -108,7 +111,7 @@ export default function AssignmentsPage() {
               <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4"/>
               <path d="M9.5 9.5l2.5 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
             </svg>
-            <input type="search" placeholder="Пошук завдання..." value={search} onChange={e => setSearch(e.target.value)}
+            <input type="search" placeholder={t('assignments.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)}
               className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm outline-none placeholder:text-slate-300 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
           </div>
           <button onClick={() => setFilterOpen(true)} className="relative flex items-center justify-center rounded-2xl px-4"
@@ -128,10 +131,10 @@ export default function AssignmentsPage() {
 
       <div className="px-4 space-y-2 pb-8">
         {assignmentsQ.isLoading ? (
-          <div className="py-10 text-center text-sm text-slate-400">Завантаження…</div>
+          <div className="py-10 text-center text-sm text-slate-400">{t('common.loading')}</div>
         ) : list.length === 0 ? (
           <div className="rounded-2xl bg-white py-12 text-center text-sm text-slate-400" style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
-            {all.length === 0 ? 'Завдань ще немає' : 'Нічого не знайдено'}
+            {all.length === 0 ? t('assignments.empty') : t('common.notFound')}
           </div>
         ) : list.map(a => {
           const style = STATUS_STYLE[a.status]
@@ -141,11 +144,11 @@ export default function AssignmentsPage() {
               style={{ border: '1px solid rgba(157,200,255,0.22)', boxShadow: '0 1px 6px rgba(157,200,255,0.07)' }}>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-slate-800 truncate">{a.name}</p>
-                <p className="text-xs text-slate-400 truncate mt-0.5">{a.productName} · {a.operationName}</p>
-                {isManager && <p className="text-xs text-slate-400 mt-0.5">Виконавець: {a.assigneeName}</p>}
+                <p className="text-xs text-slate-400 truncate mt-0.5">{a.productName} · {tn(a.operationName, a.operationNameEn)}</p>
+                {isManager && <p className="text-xs text-slate-400 mt-0.5">{t('assignments.assigneePrefix', { name: a.assigneeName })}</p>}
               </div>
               <span className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold" style={{ background: style.bg, color: style.text }}>
-                {STATUS_LABEL[a.status]}
+                {t(STATUS_LABEL_KEY[a.status])}
               </span>
             </button>
           )
@@ -172,7 +175,7 @@ export default function AssignmentsPage() {
           products={products}
           operations={operations}
           onClose={() => setFormOpen(false)}
-          onCreated={() => { setFormOpen(false); showToast('Завдання створено') }}
+          onCreated={() => { setFormOpen(false); showToast(t('assignments.toastCreated')) }}
         />
       )}
 
@@ -182,8 +185,8 @@ export default function AssignmentsPage() {
           currentUser={currentUser}
           isManager={!!isManager}
           onClose={() => setDetail(null)}
-          onSaved={() => showToast('Збережено')}
-          onDeleted={() => { setDetail(null); showToast('Видалено') }}
+          onSaved={() => showToast(t('materials.toastSaved'))}
+          onDeleted={() => { setDetail(null); showToast(t('assignments.toastDeleted')) }}
         />
       )}
     </div>
@@ -203,6 +206,7 @@ function FilterSheet({ isManager, users, products, operations, filters, onApply,
   onApply: (f: Filters) => void
   onClose: () => void
 }) {
+  const { t, tn } = useLocale()
   const [local, setLocal] = useState(filters)
 
   return (
@@ -213,56 +217,56 @@ function FilterSheet({ isManager, users, products, operations, filters, onApply,
         <div className="flex justify-center py-3">
           <button onClick={onClose} className="h-1 w-10 rounded-full bg-slate-200 sm:hidden" />
         </div>
-        <h2 style={{ fontFamily: "'DM Serif Display', serif" }} className="px-5 text-2xl text-slate-800 mb-4">Фільтри</h2>
+        <h2 style={{ fontFamily: "'DM Serif Display', serif" }} className="px-5 text-2xl text-slate-800 mb-4">{t('assignments.filtersTitle')}</h2>
 
         <div className="px-5 space-y-4">
           {isManager && (
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">Працівник</label>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.worker')}</label>
               <select value={local.assigneeId ?? ''} onChange={e => setLocal(f => ({ ...f, assigneeId: e.target.value || null }))}
                 className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all">
-                <option value="">Усі</option>
+                <option value="">{t('filters.all')}</option>
                 {users.map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
               </select>
             </div>
           )}
           <div>
-            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">Продукт</label>
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.product')}</label>
             <select value={local.productId ?? ''} onChange={e => setLocal(f => ({ ...f, productId: e.target.value || null }))}
               className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all">
-              <option value="">Усі</option>
+              <option value="">{t('filters.all')}</option>
               {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">Операція</label>
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('common.operation')}</label>
             <select value={local.operationId ?? ''} onChange={e => setLocal(f => ({ ...f, operationId: e.target.value || null }))}
               className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all">
-              <option value="">Усі</option>
-              {operations.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+              <option value="">{t('filters.all')}</option>
+              {operations.map(o => <option key={o.id} value={o.id}>{tn(o.name, o.nameEn)}</option>)}
             </select>
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">Статус</label>
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('filters.status')}</label>
             <select value={local.status ?? ''} onChange={e => setLocal(f => ({ ...f, status: (e.target.value || null) as AssignmentStatus | null }))}
               className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all">
-              <option value="">Усі</option>
-              <option value="pending">В очікуванні</option>
-              <option value="in_progress">В роботі</option>
-              <option value="done">Завершено</option>
-              <option value="cancelled">Скасовано</option>
+              <option value="">{t('filters.all')}</option>
+              <option value="pending">{t('assignmentStatus.pending')}</option>
+              <option value="in_progress">{t('assignmentStatus.inProgress')}</option>
+              <option value="done">{t('assignmentStatus.done')}</option>
+              <option value="cancelled">{t('assignmentStatus.cancelled')}</option>
             </select>
           </div>
           <label className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3 cursor-pointer">
-            <span className="text-sm text-slate-600">Показати завершені за минулі місяці</span>
+            <span className="text-sm text-slate-600">{t('assignments.showArchivedCompleted')}</span>
             <input type="checkbox" checked={local.showArchived} onChange={e => setLocal(f => ({ ...f, showArchived: e.target.checked }))}
               className="h-4 w-4 rounded accent-slate-800" />
           </label>
         </div>
 
         <div className="flex gap-3 mt-6 px-5">
-          <button onClick={() => onApply(EMPTY_FILTERS)} className="flex-1 rounded-2xl border border-slate-200 py-3.5 text-sm text-slate-600">Скинути</button>
-          <button onClick={() => onApply(local)} className="flex-1 rounded-2xl bg-slate-800 py-3.5 text-sm font-medium text-white active:scale-[0.98] transition-all">Застосувати</button>
+          <button onClick={() => onApply(EMPTY_FILTERS)} className="flex-1 rounded-2xl border border-slate-200 py-3.5 text-sm text-slate-600">{t('assignments.reset')}</button>
+          <button onClick={() => onApply(local)} className="flex-1 rounded-2xl bg-slate-800 py-3.5 text-sm font-medium text-white active:scale-[0.98] transition-all">{t('assignments.apply')}</button>
         </div>
       </div>
     </div>
@@ -285,6 +289,7 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
   onClose: () => void
   onCreated: () => void
 }) {
+  const { t, tn } = useLocale()
   const { createAssignment, isSaving } = useAssignmentMutations()
 
   // При створенні завдання пропонуємо обрати лише активні продукти.
@@ -308,12 +313,12 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
   const selectedProduct = productId ? activeProducts.find(p => p.id === productId) ?? null : null
   const filteredProducts = activeProducts.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.sku.toLowerCase().includes(productSearch.toLowerCase()))
 
-  const pickRecommended = (t: ProductTask) => {
-    setPickedTaskId(t.id)
-    setOperationId(t.operationId)
-    setName(t.name)
-    setDuration(t.durationMinutes !== null ? String(t.durationMinutes) : '')
-    setCost(t.cost)
+  const pickRecommended = (pt: ProductTask) => {
+    setPickedTaskId(pt.id)
+    setOperationId(pt.operationId)
+    setName(pt.name)
+    setDuration(pt.durationMinutes !== null ? String(pt.durationMinutes) : '')
+    setCost(pt.cost)
     setManualMode(false)
   }
 
@@ -348,12 +353,12 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
         <div className="flex justify-center py-3">
           <button onClick={onClose} className="h-1 w-10 rounded-full bg-slate-200 sm:hidden" />
         </div>
-        <h2 style={{ fontFamily: "'DM Serif Display', serif" }} className="px-5 text-2xl text-slate-800 mb-4">Нове завдання</h2>
+        <h2 style={{ fontFamily: "'DM Serif Display', serif" }} className="px-5 text-2xl text-slate-800 mb-4">{t('assignments.newTaskTitle')}</h2>
 
         <div className="px-5 space-y-5">
           {/* Продукт */}
           <div>
-            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">Продукт</label>
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.product')}</label>
             {selectedProduct ? (
               <div className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3">
                 <div className="h-9 w-9 shrink-0 rounded-lg overflow-hidden bg-slate-100 flex items-center justify-center text-slate-400">
@@ -363,7 +368,7 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
                   <p className="text-sm font-medium text-slate-800 truncate">{selectedProduct.name}</p>
                   <p className="text-xs font-mono text-slate-400">{selectedProduct.sku}</p>
                 </div>
-                <button onClick={changeProduct} className="text-xs text-blue-500 font-medium shrink-0">Змінити</button>
+                <button onClick={changeProduct} className="text-xs text-blue-500 font-medium shrink-0">{t('common.change')}</button>
               </div>
             ) : (
               <>
@@ -372,12 +377,12 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
                     <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4"/>
                     <path d="M9.5 9.5l2.5 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
                   </svg>
-                  <input type="search" value={productSearch} onChange={e => setProductSearch(e.target.value)} placeholder="Пошук продукту..."
+                  <input type="search" value={productSearch} onChange={e => setProductSearch(e.target.value)} placeholder={t('assignments.searchProductPlaceholder')}
                     className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm outline-none placeholder:text-slate-300 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
                 </div>
                 <div className="space-y-1.5 max-h-48 overflow-y-auto">
                   {filteredProducts.length === 0 ? (
-                    <p className="py-4 text-center text-sm text-slate-400">{activeProducts.length === 0 ? 'Немає активних продуктів' : 'Не знайдено'}</p>
+                    <p className="py-4 text-center text-sm text-slate-400">{activeProducts.length === 0 ? t('materials.noActiveProducts') : t('operationPicker.notFoundShort')}</p>
                   ) : filteredProducts.map(p => (
                     <button key={p.id} onClick={() => setProductId(p.id)}
                       className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left hover:bg-slate-50 transition-colors"
@@ -399,52 +404,53 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
           {/* Рекомендовані завдання / вручну */}
           {selectedProduct && (
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">Завдання</label>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('operationPicker.taskLabel')}</label>
               {!manualMode && recommended.length > 0 && (
                 <div className="space-y-1.5 mb-2">
-                  {recommended.map(t => {
-                    const op = operations.find(o => o.id === t.operationId)
-                    const active = pickedTaskId === t.id
+                  {recommended.map(pt => {
+                    const op = operations.find(o => o.id === pt.operationId)
+                    const active = pickedTaskId === pt.id
                     return (
-                      <button key={t.id} onClick={() => pickRecommended(t)}
+                      <button key={pt.id} onClick={() => pickRecommended(pt)}
                         className="flex w-full items-center gap-3 rounded-2xl px-3.5 py-2.5 text-left transition-all"
                         style={active ? { background: '#fff7ed', border: '1px solid #fdba74' } : { background: 'white', border: '1px solid rgba(157,200,255,0.2)' }}>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-800 truncate">{t.name}</p>
-                          <p className="text-xs text-slate-400 truncate">{op?.name ?? '—'}</p>
+                          <p className="text-sm font-medium text-slate-800 truncate">{pt.name}</p>
+                          <p className="text-xs text-slate-400 truncate">{op ? tn(op.name, op.nameEn) : '—'}</p>
                         </div>
-                        {t.durationMinutes !== null && <span className="text-xs text-slate-400 shrink-0">{t.durationMinutes} хв</span>}
+                        {pt.durationMinutes !== null && <span className="text-xs text-slate-400 shrink-0">{pt.durationMinutes} {t('common.minutesShort')}</span>}
                       </button>
                     )
                   })}
                 </div>
               )}
               {recommended.length === 0 && !manualMode && (
-                <p className="text-xs text-slate-400 mb-2">Для цього продукту ще немає готових завдань з операціями — вкажіть вручну.</p>
+                <p className="text-xs text-slate-400 mb-2">{t('assignments.noReadyTasksHint')}</p>
               )}
               {!manualMode ? (
                 <button onClick={startManual} className="text-xs text-blue-500 font-medium hover:underline">
-                  + Вказати вручну
+                  {t('assignments.specifyManually')}
                 </button>
               ) : (
                 <div className="rounded-2xl border border-slate-200 p-3 space-y-3">
                   <div>
-                    <label className="mb-1 block text-[10px] font-medium text-slate-400 uppercase tracking-wide">Операція</label>
+                    <label className="mb-1 block text-[10px] font-medium text-slate-400 uppercase tracking-wide">{t('common.operation')}</label>
                     <select value={operationId ?? ''} onChange={e => {
                       const id = e.target.value || null
                       setOperationId(id)
                       // Назва завдання одразу підставляється з назви операції, можна відредагувати.
-                      setName(id ? operations.find(o => o.id === id)?.name ?? '' : '')
+                      const op = id ? operations.find(o => o.id === id) : null
+                      setName(op ? tn(op.name, op.nameEn) : '')
                     }}
                       className="w-full appearance-none rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-all">
-                      <option value="">Оберіть операцію</option>
-                      {operations.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                      <option value="">{t('assignments.selectOperationPlaceholder')}</option>
+                      {operations.map(o => <option key={o.id} value={o.id}>{tn(o.name, o.nameEn)}</option>)}
                     </select>
                   </div>
-                  <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Назва завдання"
+                  <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder={t('operationPicker.taskNamePlaceholder')}
                     className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-all" />
                   {recommended.length > 0 && (
-                    <button onClick={() => setManualMode(false)} className="text-xs text-slate-500 hover:underline">Обрати з рекомендованих</button>
+                    <button onClick={() => setManualMode(false)} className="text-xs text-slate-500 hover:underline">{t('assignments.selectFromRecommended')}</button>
                   )}
                 </div>
               )}
@@ -454,15 +460,15 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
           {/* Виконавець */}
           {selectedProduct && operationId && (
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">Виконавець</label>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.assigneeLabel')}</label>
               {isManager ? (
                 <select value={assigneeId ?? ''} onChange={e => setAssigneeId(e.target.value || null)}
                   className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all">
-                  <option value="">Оберіть виконавця</option>
+                  <option value="">{t('assignments.selectAssigneePlaceholder')}</option>
                   {users.map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
                 </select>
               ) : (
-                <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">{currentUser.fullName} (ви)</p>
+                <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">{currentUser.fullName} {t('assignments.youSuffix')}</p>
               )}
             </div>
           )}
@@ -470,21 +476,21 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
           {/* Витрачений час */}
           {selectedProduct && operationId && (
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">Витрачений час, хв</label>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.spentTimeLabel')}</label>
               <input type="number" min="0" step="any" value={duration} onChange={e => setDuration(e.target.value)} placeholder="0"
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
               {isManager && cost !== null && (
-                <p className="mt-1.5 text-xs text-slate-400">Вартість за шаблоном: {cost} ₴</p>
+                <p className="mt-1.5 text-xs text-slate-400">{t('assignments.templateCost', { cost })}</p>
               )}
             </div>
           )}
         </div>
 
         <div className="flex gap-3 mt-6 px-5">
-          <button onClick={onClose} className="flex-1 rounded-2xl border border-slate-200 py-3.5 text-sm text-slate-600">Скасувати</button>
+          <button onClick={onClose} className="flex-1 rounded-2xl border border-slate-200 py-3.5 text-sm text-slate-600">{t('common.cancel')}</button>
           <button onClick={handleConfirm} disabled={!canConfirm || isSaving}
             className="flex-1 rounded-2xl bg-slate-800 py-3.5 text-sm font-medium text-white disabled:opacity-40 active:scale-[0.98] transition-all">
-            {isSaving ? 'Створення…' : 'Створити'}
+            {isSaving ? t('employees.creating') : t('employees.create')}
           </button>
         </div>
       </div>
@@ -505,6 +511,7 @@ function AssignmentDetailSheet({ assignment, currentUser, isManager, onClose, on
   onSaved: () => void
   onDeleted: () => void
 }) {
+  const { t, tn } = useLocale()
   const { updateStatus, removeAssignment, isSaving } = useAssignmentMutations()
   const [status, setStatus] = useState<AssignmentStatus>(assignment.status)
   const initialDuration = assignment.durationMinutes !== null ? String(assignment.durationMinutes) : ''
@@ -544,27 +551,27 @@ function AssignmentDetailSheet({ assignment, currentUser, isManager, onClose, on
           <button onClick={onClose} className="h-1 w-10 rounded-full bg-slate-200 sm:hidden" />
         </div>
         <h2 style={{ fontFamily: "'DM Serif Display', serif" }} className="px-5 text-2xl text-slate-800 mb-1">{assignment.name}</h2>
-        <p className="px-5 text-sm text-slate-400 mb-4">{assignment.productName} · {assignment.operationName}</p>
+        <p className="px-5 text-sm text-slate-400 mb-4">{assignment.productName} · {tn(assignment.operationName, assignment.operationNameEn)}</p>
 
         <div className="px-5 space-y-5">
           {locked && (
             <div className="rounded-2xl px-4 py-3 text-xs" style={{ background: '#f1f5f9', color: '#64748b' }}>
-              Завдання заблоковано для редагування — день завершення вже минув.
+              {t('assignments.lockedHint')}
             </div>
           )}
           {isManager && (
             <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-              <span className="text-xs text-slate-400">Виконавець</span>
+              <span className="text-xs text-slate-400">{t('assignments.assigneeLabel')}</span>
               <span className="text-sm font-medium text-slate-700">{assignment.assigneeName}</span>
             </div>
           )}
           <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-            <span className="text-xs text-slate-400">Призначив</span>
+            <span className="text-xs text-slate-400">{t('assignments.assignedBy')}</span>
             <span className="text-sm font-medium text-slate-700">{assignment.assignedByName}</span>
           </div>
 
           <div>
-            <label className="mb-2 block text-xs font-semibold uppercase tracking-widest text-slate-400">Статус</label>
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('filters.status')}</label>
             <div className="grid grid-cols-2 gap-2">
               {/* "В очікуванні" — лише стартовий стан, вручну повертати завдання в нього сенсу немає */}
               {(['in_progress', 'paused', 'done', 'cancelled'] as AssignmentStatus[]).map(s => {
@@ -574,7 +581,7 @@ function AssignmentDetailSheet({ assignment, currentUser, isManager, onClose, on
                 <button key={s} onClick={() => canEdit && setStatus(s)} disabled={!canEdit}
                   className="rounded-xl py-2.5 text-xs font-medium transition-all disabled:opacity-50"
                   style={active ? { background: style.text, color: '#fff' } : { background: style.bg, color: style.text }}>
-                  {STATUS_LABEL[s]}
+                  {t(STATUS_LABEL_KEY[s])}
                 </button>
                 )
               })}
@@ -582,17 +589,17 @@ function AssignmentDetailSheet({ assignment, currentUser, isManager, onClose, on
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">Витрачений час, хв</label>
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.spentTimeLabel')}</label>
             <input type="number" min="0" step="any" value={duration} onChange={e => setDuration(e.target.value)} disabled={!canEdit} placeholder="0"
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all disabled:opacity-50" />
             <p className="mt-1.5 text-xs text-slate-400">
-              Час додається автоматично при переведенні зі статусу «В роботі» — за потреби можна відкоригувати вручну.
+              {t('assignments.timeAutoHint')}
             </p>
           </div>
 
           {assignment.completedAt !== null && (
             <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-              <span className="text-xs text-slate-400">Завершено</span>
+              <span className="text-xs text-slate-400">{t('assignmentStatus.done')}</span>
               <span className="text-sm font-medium text-slate-700">
                 {new Date(assignment.completedAt).toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
               </span>
@@ -601,7 +608,7 @@ function AssignmentDetailSheet({ assignment, currentUser, isManager, onClose, on
 
           {isManager && assignment.cost !== null && (
             <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-              <span className="text-xs text-slate-400">Вартість</span>
+              <span className="text-xs text-slate-400">{t('assignments.costLabel')}</span>
               <span className="text-sm font-medium text-slate-700">{assignment.cost} ₴</span>
             </div>
           )}
@@ -610,14 +617,14 @@ function AssignmentDetailSheet({ assignment, currentUser, isManager, onClose, on
         <div className="flex gap-3 mt-6 px-5">
           {canDelete && (
             <button onClick={del} className="flex items-center justify-center rounded-2xl border border-red-200 px-4 py-3.5 text-sm text-red-500">
-              Видалити
+              {t('common.delete')}
             </button>
           )}
-          <button onClick={onClose} className="flex-1 rounded-2xl border border-slate-200 py-3.5 text-sm text-slate-600">Закрити</button>
+          <button onClick={onClose} className="flex-1 rounded-2xl border border-slate-200 py-3.5 text-sm text-slate-600">{t('common.close')}</button>
           {canEdit && (
             <button onClick={save} disabled={!dirty || isSaving}
               className="flex-1 rounded-2xl bg-slate-800 py-3.5 text-sm font-medium text-white disabled:opacity-40 active:scale-[0.98] transition-all">
-              {isSaving ? 'Збереження…' : 'Зберегти'}
+              {isSaving ? t('common.saving') : t('common.save')}
             </button>
           )}
         </div>

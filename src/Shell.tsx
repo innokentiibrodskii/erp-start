@@ -7,6 +7,8 @@ import EmployeesPage from './EmployeesPage'
 import ProfilePage from './ProfilePage'
 import { useCurrentUser } from './hooks/useCurrentUser'
 import { useOrg } from './OrgContext'
+import { useLocale } from './LocaleContext'
+import { LOCALE_LABEL, type Locale } from './i18n'
 
 type Page = 'products' | 'materials' | 'tasks' | 'directory' | 'settings' | 'employees' | 'profile'
 
@@ -28,6 +30,7 @@ export default function Shell({ onLogout }: Props) {
   const isAdmin = currentUser?.role === 'admin'
   const isManager = currentUser?.role === 'manager' || isAdmin
   const { activeOrgName, canSwitch, requestSwitch } = useOrg()
+  const { locale, setLocale, t } = useLocale()
 
   // Діп-лінк із QR-коду (?material=... чи ?product=...) — відкриває картку одразу при вході.
   const [deepLink] = useState(() => {
@@ -72,7 +75,7 @@ export default function Shell({ onLogout }: Props) {
   const allNavItems: { id: Page; label: string; icon: (active: boolean) => React.ReactNode }[] = [
     {
       id: 'products',
-      label: 'Продукти',
+      label: t('nav.products'),
       icon: a => (
         <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
           <rect x="2" y="2" width="8" height="8" rx="2" stroke="currentColor" strokeWidth={a ? 2 : 1.5} fill={a ? 'currentColor' : 'none'} fillOpacity="0.12"/>
@@ -84,7 +87,7 @@ export default function Shell({ onLogout }: Props) {
     },
     {
       id: 'materials',
-      label: 'Матеріали',
+      label: t('nav.materials'),
       icon: a => (
         <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
           <path d="M11 2L19 6.5V15.5L11 20L3 15.5V6.5L11 2Z" stroke="currentColor" strokeWidth={a ? 2 : 1.5} fill={a ? 'currentColor' : 'none'} fillOpacity="0.12"/>
@@ -94,7 +97,7 @@ export default function Shell({ onLogout }: Props) {
     },
     {
       id: 'tasks',
-      label: 'Завдання',
+      label: t('nav.tasks'),
       icon: a => (
         <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
           <rect x="4" y="2.5" width="14" height="17" rx="2.5" stroke="currentColor" strokeWidth={a ? 2 : 1.5} fill={a ? 'currentColor' : 'none'} fillOpacity="0.1"/>
@@ -104,7 +107,7 @@ export default function Shell({ onLogout }: Props) {
     },
     {
       id: 'employees',
-      label: 'Працівники',
+      label: t('nav.employees'),
       icon: a => (
         <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
           <circle cx="8" cy="7" r="3" stroke="currentColor" strokeWidth={a ? 2 : 1.5} fill={a ? 'currentColor' : 'none'} fillOpacity="0.12"/>
@@ -116,7 +119,7 @@ export default function Shell({ onLogout }: Props) {
     },
     {
       id: 'directory',
-      label: 'Довідники',
+      label: t('nav.directory'),
       icon: a => (
         <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
           <rect x="3" y="3" width="16" height="16" rx="3" stroke="currentColor" strokeWidth={a ? 2 : 1.5} fill={a ? 'currentColor' : 'none'} fillOpacity="0.1"/>
@@ -126,7 +129,7 @@ export default function Shell({ onLogout }: Props) {
     },
     {
       id: 'settings',
-      label: 'Налаштування',
+      label: t('nav.settings'),
       icon: a => (
         <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
           <circle cx="11" cy="11" r="3" stroke="currentColor" strokeWidth={a ? 2 : 1.5} fill={a ? 'currentColor' : 'none'} fillOpacity="0.15"/>
@@ -151,12 +154,12 @@ export default function Shell({ onLogout }: Props) {
             <span className="text-blue-500">●</span> R&D
           </span>
         </div>
-        <div className="px-3 pb-3">
+        <div className="px-3 pb-3 space-y-2">
           {canSwitch ? (
             <button
               onClick={requestSwitch}
               className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-              title="Змінити компанію"
+              title={t('shell.changeCompany')}
             >
               <span className="truncate">{activeOrgName}</span>
               <svg width="12" height="12" viewBox="0 0 14 14" fill="none" className="shrink-0">
@@ -166,6 +169,9 @@ export default function Shell({ onLogout }: Props) {
           ) : (
             <div className="px-2.5 py-1.5 text-xs font-medium text-slate-400 truncate">{activeOrgName}</div>
           )}
+          <div className="px-2.5">
+            <LocaleSwitcher locale={locale} setLocale={setLocale} />
+          </div>
         </div>
         <nav className="flex-1 px-3 space-y-1">
           {navItems.map(item => {
@@ -186,7 +192,7 @@ export default function Shell({ onLogout }: Props) {
             <svg width="16" height="16" viewBox="0 0 14 14" fill="none">
               <path d="M5 2H2a1 1 0 00-1 1v8a1 1 0 001 1h3M9 10l3-3-3-3M12 7H5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
-            Вийти
+            {t('nav.logout')}
           </button>
         </div>
       </aside>
@@ -201,7 +207,7 @@ export default function Shell({ onLogout }: Props) {
             </span>
           </div>
           <span className="hidden md:block text-sm font-medium text-slate-500">
-            {page === 'profile' ? 'Профіль' : navItems.find(i => i.id === page)?.label}
+            {page === 'profile' ? t('nav.profile') : navItems.find(i => i.id === page)?.label}
           </span>
           <div className="flex items-center gap-2">
             <button onClick={openProfile}
@@ -259,7 +265,7 @@ export default function Shell({ onLogout }: Props) {
             <div className="absolute right-0 top-0 h-full w-[85%] max-w-xs bg-white flex flex-col"
               style={{ boxShadow: '-8px 0 32px rgba(15,23,42,0.14)' }}>
               <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(157,200,255,0.2)' }}>
-                <h2 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-lg text-slate-800">Меню</h2>
+                <h2 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-lg text-slate-800">{t('shell.menuTitle')}</h2>
                 <button onClick={() => setMenuOpen(false)}
                   className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500 active:scale-90 transition-all">
                   <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
@@ -276,7 +282,7 @@ export default function Shell({ onLogout }: Props) {
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-slate-800 truncate">
-                      {currentUser?.fullName?.trim() || 'Адміністратор'}
+                      {currentUser?.fullName?.trim() || t('role.admin')}
                     </p>
                     <p className="text-xs text-slate-400 truncate">{currentUser?.email ?? ''}</p>
                   </div>
@@ -290,29 +296,32 @@ export default function Shell({ onLogout }: Props) {
                     </svg>
                   </button>
                 )}
+                <div className="mt-2 px-1">
+                  <LocaleSwitcher locale={locale} setLocale={setLocale} />
+                </div>
               </div>
 
               <div className="flex-1 px-4 pt-4 space-y-1">
                 <DrawerItem
                   icon={<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="3" y="2.5" width="12" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.4"/><path d="M6 7h6M6 10h6M6 13h3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>}
-                  label="Завдання"
+                  label={t('nav.tasks')}
                   onClick={() => { setPage('tasks'); setMenuOpen(false) }}
                 />
                 {isAdmin && (
                   <DrawerItem
                     icon={<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="6.5" cy="5.5" r="2.5" stroke="currentColor" strokeWidth="1.4"/><path d="M1.5 15c0-2.49 2.24-4.5 5-4.5s5 2.01 5 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><circle cx="13" cy="6" r="2" stroke="currentColor" strokeWidth="1.4"/><path d="M11.5 10.7c1.98.3 3.5 1.86 3.5 3.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>}
-                    label="Працівники"
+                    label={t('nav.employees')}
                     onClick={() => { setPage('employees'); setMenuOpen(false) }}
                   />
                 )}
                 <DrawerItem
                   icon={<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="3" y="2.5" width="12" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.4"/><path d="M6 7h6M6 10h6M6 13h3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>}
-                  label="Довідники"
+                  label={t('nav.directory')}
                   onClick={() => { if (isManager) setPage('directory'); setMenuOpen(false) }}
                 />
                 <DrawerItem
                   icon={<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.4"/><path d="M9 1.5v2M9 14.5v2M1.5 9h2M14.5 9h2M3.6 3.6l1.4 1.4M13 13l1.4 1.4M3.6 14.4L5 13M13 5l1.4-1.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>}
-                  label="Налаштування"
+                  label={t('nav.settings')}
                   onClick={() => { if (isManager) setPage('settings'); setMenuOpen(false) }}
                 />
               </div>
@@ -323,13 +332,29 @@ export default function Shell({ onLogout }: Props) {
                   <svg width="18" height="18" viewBox="0 0 14 14" fill="none">
                     <path d="M5 2H2a1 1 0 00-1 1v8a1 1 0 001 1h3M9 10l3-3-3-3M12 7H5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
-                  Вийти
+                  {t('nav.logout')}
                 </button>
               </div>
             </div>
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+/** Перемикач мови інтерфейсу (UK/EN) — стосується лише текстів застосунку,
+ *  не даних, які вносить користувач. */
+function LocaleSwitcher({ locale, setLocale }: { locale: Locale; setLocale: (l: Locale) => void }) {
+  return (
+    <div className="flex items-center gap-0.5 rounded-lg bg-slate-100 p-0.5">
+      {(['uk', 'en'] as const).map(l => (
+        <button key={l} onClick={() => setLocale(l)}
+          className="rounded-md px-2 py-1 text-[11px] font-semibold transition-all"
+          style={locale === l ? { background: '#1e293b', color: '#fff' } : { color: '#64748b' }}>
+          {LOCALE_LABEL[l]}
+        </button>
+      ))}
     </div>
   )
 }

@@ -1,9 +1,12 @@
+import { useLocale } from './LocaleContext'
+
 interface CompanyBlockedProps {
   message: string
   onLogout: () => void
 }
 
 export default function CompanyBlocked({ message, onLogout }: CompanyBlockedProps) {
+  const { t } = useLocale()
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#f8fbff] px-4" style={{ fontFamily: "'DM Sans', sans-serif" }}>
       <div className="w-full max-w-sm text-center">
@@ -18,7 +21,7 @@ export default function CompanyBlocked({ message, onLogout }: CompanyBlockedProp
             onClick={onLogout}
             className="mt-6 text-xs text-slate-400 hover:text-slate-600 transition-colors"
           >
-            Вийти з облікового запису
+            {t('shell.logoutAccount')}
           </button>
         </div>
       </div>

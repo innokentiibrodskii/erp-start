@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useActiveOrgId } from '../OrgContext'
+import { useLocale } from '../LocaleContext'
 
 /* ───────────────────────────────────────────────────────────
    Завдання для виконавців: конкретне доручення співробітнику —
@@ -34,6 +35,7 @@ export interface Assignment {
   productName: string
   operationId: string
   operationName: string
+  operationNameEn: string | null
   taskId: string | null
   name: string
   assigneeId: string
@@ -51,8 +53,8 @@ export interface Assignment {
 
 type PersonRef = { first_name: string; last_name: string } | null
 
-function friendlyError(error: { message: string; code?: string }): string {
-  if (error.code === '23503') return 'Помилка зв\'язку з довідником'
+function friendlyError(error: { message: string; code?: string }, t: (key: 'errors.referenceError') => string): string {
+  if (error.code === '23503') return t('errors.referenceError')
   return error.message
 }
 
@@ -93,7 +95,7 @@ export function useAssignments() {
           id, product_id, operation_id, task_id, name, assignee_id, assigned_by,
           duration_minutes, cost, status, status_changed_at, completed_at, created_at, updated_at,
           products(name),
-          operations(name),
+          operations(name, name_en),
           assignee:users!assignments_assignee_id_fkey(first_name, last_name),
           assigner:users!assignments_assigned_by_fkey(first_name, last_name)
         `)
@@ -103,7 +105,7 @@ export function useAssignments() {
 
       return data.map(a => {
         const product = a.products as unknown as { name: string } | null
-        const operation = a.operations as unknown as { name: string } | null
+        const operation = a.operations as unknown as { name: string; name_en: string | null } | null
         const assignee = a.assignee as unknown as PersonRef
         const assigner = a.assigner as unknown as PersonRef
         return {
@@ -112,6 +114,7 @@ export function useAssignments() {
           productName: product?.name ?? '—',
           operationId: a.operation_id,
           operationName: operation?.name ?? '—',
+          operationNameEn: operation?.name_en ?? null,
           taskId: a.task_id,
           name: a.name,
           assigneeId: a.assignee_id,
@@ -134,8 +137,9 @@ export function useAssignments() {
 export function useAssignmentMutations() {
   const qc = useQueryClient()
   const orgId = useActiveOrgId()
+  const { t } = useLocale()
   const invalidate = () => qc.invalidateQueries({ queryKey: ['assignments', orgId] })
-  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error))
+  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error, t))
 
   const create = useMutation({
     mutationFn: async (args: {

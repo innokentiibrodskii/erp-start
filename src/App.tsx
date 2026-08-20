@@ -6,12 +6,14 @@ import Shell from './Shell'
 import { OrgContext, type OrgMembership } from './OrgContext'
 import CompanyPicker from './CompanyPicker'
 import CompanyBlocked from './CompanyBlocked'
+import { useLocale } from './LocaleContext'
 
 const ACTIVE_ORG_STORAGE_KEY = 'rd_active_org'
 
 type Step = 'email' | 'password' | 'forgot'
 
 export default function App() {
+  const { t } = useLocale()
   const queryClient = useQueryClient()
   const [hovering, setHovering] = useState(false)
   const [cursor, setCursor] = useState({ x: 0, y: 0 })
@@ -136,14 +138,14 @@ export default function App() {
   }
 
   const validateEmail = (val: string) => {
-    if (!val) return 'Введіть адресу електронної пошти'
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) return 'Невірний формат email'
+    if (!val) return t('auth.errEmailRequired')
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) return t('auth.errEmailInvalid')
     return ''
   }
 
   const translateAuthError = (message: string) => {
-    if (message.includes('Invalid login credentials')) return 'Невірний email або пароль'
-    if (message.includes('Email not confirmed')) return 'Email не підтверджено'
+    if (message.includes('Invalid login credentials')) return t('auth.errInvalidCredentials')
+    if (message.includes('Email not confirmed')) return t('auth.errEmailNotConfirmed')
     return message
   }
 
@@ -157,8 +159,8 @@ export default function App() {
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!password) { setPasswordError('Введіть пароль'); return }
-    if (password.length < 6) { setPasswordError('Пароль має містити щонайменше 6 символів'); return }
+    if (!password) { setPasswordError(t('auth.errPasswordRequired')); return }
+    if (password.length < 6) { setPasswordError(t('auth.errPasswordMinLength')); return }
     setPasswordError('')
     setLoading(true)
 
@@ -189,9 +191,9 @@ export default function App() {
 
   const handleSetNewPassword = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newPassword) { setNewPasswordError('Введіть новий пароль'); return }
-    if (newPassword.length < 6) { setNewPasswordError('Пароль має містити щонайменше 6 символів'); return }
-    if (newPassword !== newPasswordConfirm) { setNewPasswordError('Паролі не співпадають'); return }
+    if (!newPassword) { setNewPasswordError(t('auth.errNewPasswordRequired')); return }
+    if (newPassword.length < 6) { setNewPasswordError(t('auth.errPasswordMinLength')); return }
+    if (newPassword !== newPasswordConfirm) { setNewPasswordError(t('auth.errPasswordsMismatch')); return }
     setNewPasswordError('')
     setNewPasswordLoading(true)
 
@@ -236,15 +238,15 @@ export default function App() {
 
           <div className="rounded-2xl bg-white/80 backdrop-blur-md px-8 py-10 shadow-sm" style={{ border: '1px solid rgba(157,200,255,0.35)' }}>
             <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="mb-1 text-[1.65rem] leading-tight text-slate-800">
-              Новий пароль
+              {t('auth.newPasswordTitle')}
             </h1>
             <p className="mb-8 text-sm text-slate-500 font-light">
-              Придумайте новий пароль для входу
+              {t('auth.newPasswordSubtitle')}
             </p>
 
             <form onSubmit={handleSetNewPassword} noValidate>
               <label className="mb-1 block text-xs font-medium uppercase tracking-widest text-slate-400">
-                Новий пароль
+                {t('auth.newPasswordTitle')}
               </label>
               <input
                 type="password"
@@ -258,7 +260,7 @@ export default function App() {
               />
 
               <label className="mb-1 mt-4 block text-xs font-medium uppercase tracking-widest text-slate-400">
-                Підтвердіть пароль
+                {t('auth.confirmPasswordLabel')}
               </label>
               <input
                 type="password"
@@ -280,7 +282,7 @@ export default function App() {
               >
                 {newPasswordLoading ? (
                   <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                ) : 'Зберегти пароль'}
+                ) : t('auth.savePassword')}
               </button>
             </form>
           </div>
@@ -291,7 +293,7 @@ export default function App() {
 
   if (session) {
     if (orgError) {
-      return <CompanyBlocked message={`Помилка завантаження компаній: ${orgError}`} onLogout={handleSignOut} />
+      return <CompanyBlocked message={t('auth.loadCompaniesError', { error: orgError })} onLogout={handleSignOut} />
     }
     if (memberships === null) {
       return (
@@ -303,7 +305,7 @@ export default function App() {
     if (memberships.length === 0) {
       return (
         <CompanyBlocked
-          message="Ваш обліковий запис поки не прив'язаний до жодної компанії. Зверніться до адміністратора."
+          message={t('auth.noCompanyMessage')}
           onLogout={handleSignOut}
         />
       )
@@ -370,10 +372,10 @@ export default function App() {
                   style={{ fontFamily: "'DM Serif Display', serif" }}
                   className="mb-1 text-[1.65rem] leading-tight text-slate-800"
                 >
-                  Вхід
+                  {t('auth.loginTitle')}
                 </h1>
                 <p className="mb-8 text-sm text-slate-500 font-light">
-                  Введіть вашу електронну адресу
+                  {t('auth.enterEmailSubtitle')}
                 </p>
 
                 <label className="mb-1 block text-xs font-medium uppercase tracking-widest text-slate-400">
@@ -401,7 +403,7 @@ export default function App() {
                   {loading ? (
                     <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                   ) : (
-                    <>Продовжити <Arrow /></>
+                    <>{t('auth.continue')} <Arrow /></>
                   )}
                 </button>
               </form>
@@ -415,22 +417,22 @@ export default function App() {
                   onClick={() => { setStep('email'); setPassword(''); setPasswordError('') }}
                   className="mb-5 flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 transition-colors"
                 >
-                  <BackArrow /> Назад
+                  <BackArrow /> {t('auth.back')}
                 </button>
 
                 <h1
                   style={{ fontFamily: "'DM Serif Display', serif" }}
                   className="mb-1 text-[1.65rem] leading-tight text-slate-800"
                 >
-                  Пароль
+                  {t('auth.passwordTitle')}
                 </h1>
                 <p className="mb-1 text-sm text-slate-500 font-light">
-                  Вхід як
+                  {t('auth.loginAs')}
                 </p>
                 <p className="mb-7 text-sm font-medium text-blue-500 truncate">{email}</p>
 
                 <label className="mb-1 block text-xs font-medium uppercase tracking-widest text-slate-400">
-                  Пароль
+                  {t('auth.passwordTitle')}
                 </label>
                 <div className="relative">
                   <input
@@ -462,7 +464,7 @@ export default function App() {
                     onClick={() => { setStep('forgot'); setResetSent(false); setResetError('') }}
                     className="text-xs text-blue-500 hover:underline"
                   >
-                    Забули пароль?
+                    {t('auth.forgotPassword')}
                   </button>
                 </div>
 
@@ -473,7 +475,7 @@ export default function App() {
                 >
                   {loading ? (
                     <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                  ) : 'Увійти'}
+                  ) : t('auth.login')}
                 </button>
               </form>
             )}
@@ -486,20 +488,20 @@ export default function App() {
                   onClick={() => { setStep('password'); setResetSent(false); setResetError('') }}
                   className="mb-5 flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 transition-colors"
                 >
-                  <BackArrow /> Назад
+                  <BackArrow /> {t('auth.back')}
                 </button>
 
                 <h1
                   style={{ fontFamily: "'DM Serif Display', serif" }}
                   className="mb-1 text-[1.65rem] leading-tight text-slate-800"
                 >
-                  Відновлення паролю
+                  {t('auth.forgotPasswordTitle')}
                 </h1>
 
                 {!resetSent ? (
                   <form onSubmit={handleForgotSubmit} noValidate>
                     <p className="mb-8 text-sm text-slate-500 font-light">
-                      Надішлемо на вашу пошту посилання для встановлення нового пароля
+                      {t('auth.resetLinkHint')}
                     </p>
 
                     <label className="mb-1 block text-xs font-medium uppercase tracking-widest text-slate-400">
@@ -526,22 +528,22 @@ export default function App() {
                     >
                       {resetLoading ? (
                         <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                      ) : 'Надіслати посилання'}
+                      ) : t('auth.sendLink')}
                     </button>
                   </form>
                 ) : (
                   <div>
                     <p className="mb-8 text-sm text-slate-500 font-light">
-                      Ми надіслали посилання для відновлення паролю на{' '}
+                      {t('auth.resetSentMessage')}{' '}
                       <span className="font-medium text-blue-500">{email}</span>.
-                      Перейдіть за ним, щоб встановити новий пароль.
+                      {' '}{t('auth.resetSentInstructions')}
                     </p>
                     <button
                       type="button"
                       onClick={() => { setStep('email'); setResetSent(false) }}
                       className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 py-3 text-sm font-medium text-slate-600 transition-all hover:bg-slate-50 active:scale-[0.98]"
                     >
-                      На головну
+                      {t('auth.goHome')}
                     </button>
                   </div>
                 )}
@@ -550,8 +552,8 @@ export default function App() {
           </div>
 
           <p className="mt-6 text-center text-xs text-slate-400">
-            Продовжуючи, ви погоджуєтесь з{' '}
-            <a href="#" className="hover:underline">Умовами використання</a>
+            {t('auth.continueAgree')}{' '}
+            <a href="#" className="hover:underline">{t('auth.termsOfUse')}</a>
           </p>
         </div>
       </div>

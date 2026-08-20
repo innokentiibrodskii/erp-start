@@ -7,6 +7,7 @@ import { useStockMovements } from './hooks/useMaterialStock'
 import { useCustomFieldDefinitions, useCustomFieldValues } from './hooks/useCustomFields'
 import { useMaterialCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
 import { fmt } from './lib/materialFormat'
+import { useLocale } from './LocaleContext'
 
 interface Props {
   productId: string
@@ -40,20 +41,21 @@ function buildVariants(
   return combos
 }
 
-function buildProductCatPath(id: string | null, all: ProductCategory[]): string {
+function buildProductCatPath(id: string | null, all: ProductCategory[], tn: (name: string, nameEn: string | null | undefined) => string): string {
   if (!id) return ''
   const parts: string[] = []
   let cur: string | null = id
   while (cur) {
     const cat = all.find(c => c.id === cur)
     if (!cat) break
-    parts.unshift(cat.name)
+    parts.unshift(tn(cat.name, cat.nameEn))
     cur = cat.parentId
   }
   return parts.join(' / ')
 }
 
 export default function ProductView({ productId, onBack, onEdit }: Props) {
+  const { t, tn } = useLocale()
   const { categories, operations, warehouses, attributes: catalogAttributes } = useCatalog()
   const productsQ = useProducts()
   const materialsQ = useMaterials()
@@ -84,7 +86,7 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
   const completedAssignments = productAssignments.filter(a => a.status === 'done')
   const productWriteoffs = movements.filter(m => m.productId === productId && m.type === 'out')
 
-  const catPath = buildProductCatPath(product.categoryId, categories)
+  const catPath = buildProductCatPath(product.categoryId, categories, tn)
   const status = statuses.find(s => s.id === product.statusId)
   const qrUrl = `${window.location.origin}/?product=${product.id}`
 
@@ -129,7 +131,7 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
           <svg width="12" height="12" viewBox="0 0 13 13" fill="none">
             <path d="M9 2l2 2-7 7H2v-2L9 2z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
-          Редагувати
+          {t('common.edit')}
         </button>
       </div>
 
@@ -148,10 +150,10 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
         {/* Info rows: категорія, собівартість, статус */}
         <div className="rounded-2xl bg-white overflow-hidden" style={{ border: '1px solid rgba(157,200,255,0.2)' }}>
           {[
-            ['Категорія', catPath || '—'],
-            ['Собівартість матеріалів', `${fmt(materialsCost)} ${currencySymbol}`],
-            ['Собівартість операцій', `${fmt(operationsCost)} ₴`],
-            ['Статус продукту', status?.name ?? '—'],
+            [t('filters.category'), catPath || '—'],
+            [t('productView.materialsCost'), `${fmt(materialsCost)} ${currencySymbol}`],
+            [t('productView.operationsCost'), `${fmt(operationsCost)} ₴`],
+            [t('productView.statusLabel'), status ? tn(status.name, status.nameEn) : '—'],
           ].map(([label, value], i, arr) => (
             <div key={label} className="flex items-center justify-between px-4 py-3"
               style={{ borderBottom: i < arr.length - 1 ? '1px solid rgba(157,200,255,0.15)' : 'none' }}>
@@ -164,11 +166,11 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
         {/* Characteristics */}
         {product.attributes.length > 0 && (
           <div>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-400">Характеристики</p>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-400">{t('productEditor.attributes')}</p>
             <div className="flex flex-wrap gap-2 rounded-2xl bg-white px-4 py-3" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>
               {product.attributes.map(a => (
                 <span key={a.valueId} className="rounded-xl px-3 py-1.5 text-xs font-medium" style={{ background: '#f5f3ff', color: '#7c3aed' }}>
-                  {a.attributeName}: {a.value}
+                  {tn(a.attributeName, a.attributeNameEn)}: {tn(a.value, a.valueEn)}
                 </span>
               ))}
             </div>
@@ -181,7 +183,7 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
             <button onClick={() => setVariantsOpen(v => !v)}
               className="flex w-full items-center justify-between px-4 py-3.5 text-left">
               <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-                Варіанти {`(${variants.length})`}
+                {t('productView.variants')} {`(${variants.length})`}
               </p>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
                 className={`shrink-0 text-slate-400 transition-transform ${variantsOpen ? 'rotate-180' : ''}`}>
@@ -206,9 +208,9 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
         )}
 
         {/* Матеріали (специфікація) — BOM */}
-        <CollapsibleSection title="Матеріали (специфікація)" isOpen={openSection === 'bom'} onToggle={() => toggle('bom')}>
+        <CollapsibleSection title={t('productView.bomTitle')} isOpen={openSection === 'bom'} onToggle={() => toggle('bom')}>
           {product.materials.length === 0 ? (
-            <p className="py-3 text-center text-sm text-slate-400">Матеріали не додані</p>
+            <p className="py-3 text-center text-sm text-slate-400">{t('productView.noMaterialsAdded')}</p>
           ) : (
             <div className="space-y-2">
               {product.materials.map(pm => {
@@ -218,10 +220,10 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
                     style={{ border: '1px solid rgba(157,200,255,0.18)' }}>
                     <MaterialIcon />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-800 truncate">{mat?.name ?? '—'}</p>
-                      <p className="text-xs text-slate-400">{mat?.categoryName}</p>
+                      <p className="text-sm font-medium text-slate-800 truncate">{mat ? tn(mat.name, mat.nameEn) : '—'}</p>
+                      <p className="text-xs text-slate-400">{mat ? tn(mat.categoryName, mat.categoryNameEn) : ''}</p>
                     </div>
-                    <span className="text-sm font-mono text-slate-600 shrink-0">{pm.qty} {pm.unitShortName}</span>
+                    <span className="text-sm font-mono text-slate-600 shrink-0">{pm.qty} {tn(pm.unitShortName, pm.unitShortNameEn)}</span>
                   </div>
                 )
               })}
@@ -230,9 +232,9 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
         </CollapsibleSection>
 
         {/* Операції (специфікація) — BOO */}
-        <CollapsibleSection title="Операції (специфікація)" count={product.operations.length} isOpen={openSection === 'boo'} onToggle={() => toggle('boo')}>
+        <CollapsibleSection title={t('productView.booTitle')} count={product.operations.length} isOpen={openSection === 'boo'} onToggle={() => toggle('boo')}>
           {product.operations.length === 0 ? (
-            <p className="py-3 text-center text-sm text-slate-400">Операції не додані</p>
+            <p className="py-3 text-center text-sm text-slate-400">{t('productView.noOperationsAdded')}</p>
           ) : (
             <div className="space-y-2">
               {product.operations.map(po => {
@@ -242,11 +244,11 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
                     style={{ border: '1px solid rgba(157,200,255,0.18)' }}>
                     <OperationIcon />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-800">{op?.name ?? '—'}</p>
-                      <p className="text-xs text-slate-400 truncate">{po.taskName || 'Без завдання'}</p>
+                      <p className="text-sm font-medium text-slate-800">{op ? tn(op.name, op.nameEn) : '—'}</p>
+                      <p className="text-xs text-slate-400 truncate">{po.taskName || t('products.noTask')}</p>
                     </div>
                     <span className="text-xs font-mono text-slate-600 shrink-0 text-right">
-                      {po.durationMinutes ? `${po.durationMinutes} хв` : ''}
+                      {po.durationMinutes ? `${po.durationMinutes} ${t('common.minutesShort')}` : ''}
                       {po.durationMinutes && po.cost ? ' · ' : ''}
                       {po.cost ? `${po.cost} ₴` : ''}
                     </span>
@@ -259,9 +261,9 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
 
         {/* Кастомні поля */}
         {customDefs.length > 0 && (
-          <CollapsibleSection title="Кастомні поля" count={filledCustomFields.length} isOpen={openSection === 'custom'} onToggle={() => toggle('custom')}>
+          <CollapsibleSection title={t('directory.customFieldsTitle')} count={filledCustomFields.length} isOpen={openSection === 'custom'} onToggle={() => toggle('custom')}>
             {filledCustomFields.length === 0 ? (
-              <p className="py-3 text-center text-sm text-slate-400">Значення не заповнені</p>
+              <p className="py-3 text-center text-sm text-slate-400">{t('productView.noValuesFilled')}</p>
             ) : (
               <div className="rounded-2xl bg-white overflow-hidden" style={{ border: '1px solid rgba(157,200,255,0.18)' }}>
                 {filledCustomFields.map((def, i) => {
@@ -269,12 +271,15 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
                   let display = '—'
                   if (def.fieldType === 'text') display = v?.valueText ?? '—'
                   if (def.fieldType === 'number') display = v?.valueNumber !== null && v?.valueNumber !== undefined ? String(v.valueNumber) : '—'
-                  if (def.fieldType === 'boolean') display = v?.valueBoolean ? 'Так' : 'Ні'
-                  if (def.fieldType === 'select') display = def.options.find(o => o.id === v?.valueOptionId)?.value ?? '—'
+                  if (def.fieldType === 'boolean') display = v?.valueBoolean ? t('common.yes') : t('common.no')
+                  if (def.fieldType === 'select') {
+                    const opt = def.options.find(o => o.id === v?.valueOptionId)
+                    display = opt ? tn(opt.value, opt.valueEn) : '—'
+                  }
                   return (
                     <div key={def.id} className="flex items-center justify-between px-4 py-3"
                       style={{ borderBottom: i < filledCustomFields.length - 1 ? '1px solid rgba(157,200,255,0.15)' : 'none' }}>
-                      <span className="text-xs text-slate-400">{def.name}</span>
+                      <span className="text-xs text-slate-400">{tn(def.name, def.nameEn)}</span>
                       {def.fieldType === 'file' ? (
                         <div className="flex flex-col items-end gap-1 max-w-[60%]">
                           {(customValuesQ.files[def.id] ?? []).map(f => (
@@ -293,9 +298,9 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
         )}
 
         {/* Використані матеріали — фактичні списання */}
-        <CollapsibleSection title="Використані матеріали" count={productWriteoffs.length} isOpen={openSection === 'used'} onToggle={() => toggle('used')} uppercase>
+        <CollapsibleSection title={t('productView.usedMaterialsTitle')} count={productWriteoffs.length} isOpen={openSection === 'used'} onToggle={() => toggle('used')} uppercase>
           {productWriteoffs.length === 0 ? (
-            <p className="py-3 text-center text-sm text-slate-400">Списань матеріалів для цього продукту ще немає</p>
+            <p className="py-3 text-center text-sm text-slate-400">{t('productView.noWriteoffsYet')}</p>
           ) : (
             <div className="space-y-2">
               {productWriteoffs.map(m => {
@@ -305,10 +310,10 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
                   <div key={m.id} className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3" style={{ border: '1px solid rgba(157,200,255,0.18)' }}>
                     <MaterialIcon />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-800 truncate">{mat?.name ?? '—'}</p>
-                      <p className="text-xs text-slate-400 truncate">{mat?.unitShortName} · {wh?.name ?? '—'} · {new Date(m.createdAt).toLocaleDateString('uk-UA')}</p>
+                      <p className="text-sm font-medium text-slate-800 truncate">{mat ? tn(mat.name, mat.nameEn) : '—'}</p>
+                      <p className="text-xs text-slate-400 truncate">{mat ? tn(mat.unitShortName, mat.unitShortNameEn) : ''} · {wh ? tn(wh.name, wh.nameEn) : '—'} · {new Date(m.createdAt).toLocaleDateString('uk-UA')}</p>
                     </div>
-                    <span className="text-sm font-mono text-slate-600 shrink-0">{fmt(m.qty)} {mat?.unitShortName}</span>
+                    <span className="text-sm font-mono text-slate-600 shrink-0">{fmt(m.qty)} {mat ? tn(mat.unitShortName, mat.unitShortNameEn) : ''}</span>
                   </div>
                 )
               })}
@@ -317,20 +322,20 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
         </CollapsibleSection>
 
         {/* Виконані операції — завершені завдання по цьому продукту */}
-        <CollapsibleSection title="Виконані операції" count={completedAssignments.length} isOpen={openSection === 'done'} onToggle={() => toggle('done')} uppercase>
+        <CollapsibleSection title={t('productView.completedOperationsTitle')} count={completedAssignments.length} isOpen={openSection === 'done'} onToggle={() => toggle('done')} uppercase>
           {completedAssignments.length === 0 ? (
-            <p className="py-3 text-center text-sm text-slate-400">Виконаних операцій для цього продукту ще немає</p>
+            <p className="py-3 text-center text-sm text-slate-400">{t('productView.noCompletedOperationsYet')}</p>
           ) : (
             <div className="space-y-2">
               {completedAssignments.map(a => (
                 <div key={a.id} className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3" style={{ border: '1px solid rgba(157,200,255,0.18)' }}>
                   <OperationIcon />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-800 truncate">{a.operationName}</p>
-                    <p className="text-xs text-slate-400 truncate">{a.name} · Виконавець: {a.assigneeName}</p>
+                    <p className="text-sm font-medium text-slate-800 truncate">{tn(a.operationName, a.operationNameEn)}</p>
+                    <p className="text-xs text-slate-400 truncate">{a.name} · {t('assignments.assigneePrefix', { name: a.assigneeName })}</p>
                   </div>
                   {a.durationMinutes !== null && (
-                    <span className="text-xs font-mono text-slate-600 shrink-0">{a.durationMinutes} хв</span>
+                    <span className="text-xs font-mono text-slate-600 shrink-0">{a.durationMinutes} {t('common.minutesShort')}</span>
                   )}
                 </div>
               ))}
@@ -340,11 +345,11 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
 
         {/* QR */}
         <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-400">QR-код</p>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-400">{t('productView.qrCodeLabel')}</p>
           <div className="flex items-center gap-4 rounded-2xl bg-white px-5 py-4" style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
             <QRCodeLib value={qrUrl} size={80} />
             <div>
-              <p className="text-sm font-medium text-slate-700">Відкриє картку продукту</p>
+              <p className="text-sm font-medium text-slate-700">{t('productView.qrOpensCard')}</p>
               <p className="text-xs text-slate-400 mt-0.5 break-all">{qrUrl}</p>
             </div>
           </div>
