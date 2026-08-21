@@ -1190,15 +1190,42 @@ export function CustomFieldsPage({ onBack }: { onBack: () => void }) {
   const [newOptionEnInputs, setNewOptionEnInputs] = useState<Record<string, string>>({})
   const [editingOption, setEditingOption] = useState<{ id: string; value: string; valueEn: string } | null>(null)
 
-  const openAdd  = () => setForm({ open: true, editing: null, name: '', nameEn: '', fieldType: 'text', isRequired: false })
-  const openEdit = (d: CustomFieldDefinition) => setForm({ open: true, editing: d, name: d.name, nameEn: d.nameEn ?? '', fieldType: d.fieldType, isRequired: d.isRequired })
+  // Значення списку, які користувач додає прямо у формі "Тип поля: Список" —
+  // ще без field_definition_id (поле щойно створюється), тож зберігаємо чернеткою
+  // й записуємо в базу одразу після появи id нового поля.
+  const [pendingOptions, setPendingOptions] = useState<{ value: string; valueEn: string }[]>([])
+  const [pendingOptionValue, setPendingOptionValue] = useState('')
+  const [pendingOptionValueEn, setPendingOptionValueEn] = useState('')
+
+  const openAdd  = () => { setForm({ open: true, editing: null, name: '', nameEn: '', fieldType: 'text', isRequired: false }); setPendingOptions([]); setPendingOptionValue(''); setPendingOptionValueEn('') }
+  const openEdit = (d: CustomFieldDefinition) => { setForm({ open: true, editing: d, name: d.name, nameEn: d.nameEn ?? '', fieldType: d.fieldType, isRequired: d.isRequired }); setPendingOptions([]); setPendingOptionValue(''); setPendingOptionValueEn('') }
   const close    = () => setForm(f => ({ ...f, open: false }))
 
-  const save = () => {
+  const addPendingOption = () => {
+    const v = pendingOptionValue.trim()
+    if (!v) return
+    setPendingOptions(prev => [...prev, { value: v, valueEn: pendingOptionValueEn.trim() || null as unknown as string }])
+    setPendingOptionValue('')
+    setPendingOptionValueEn('')
+  }
+  const removePendingOption = (idx: number) => setPendingOptions(prev => prev.filter((_, i) => i !== idx))
+
+  // Під час редагування вже існуючого поля-списку значення додаються/видаляються одразу
+  // в базі (той самий шлях, що й у розгорнутому рядку списку нижче).
+  const editingLiveDef = form.editing ? (definitions.find(d => d.id === form.editing!.id) ?? form.editing) : null
+
+  const save = async () => {
     if (!form.name.trim()) return
     const nameEn = form.nameEn.trim() || null
-    if (form.editing) updateDefinition({ id: form.editing.id, name: form.name.trim(), nameEn, isRequired: form.isRequired })
-    else addDefinition({ name: form.name.trim(), nameEn, fieldType: form.fieldType, isRequired: form.isRequired, position: definitions.length })
+    if (form.editing) {
+      updateDefinition({ id: form.editing.id, name: form.name.trim(), nameEn, isRequired: form.isRequired })
+    } else {
+      const newId = await addDefinition({ name: form.name.trim(), nameEn, fieldType: form.fieldType, isRequired: form.isRequired, position: definitions.length })
+      for (let i = 0; i < pendingOptions.length; i++) {
+        const opt = pendingOptions[i]
+        await addOption({ fieldDefinitionId: newId, value: opt.value, valueEn: opt.valueEn || null, position: i })
+      }
+    }
     close()
   }
 
@@ -1333,6 +1360,56 @@ export function CustomFieldsPage({ onBack }: { onBack: () => void }) {
                 </div>
               )}
             </Field>
+            {form.fieldType === 'select' && (
+              <Field label={t('directory.listValuesLabel')}>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {form.editing ? (
+                    <>
+                      {(editingLiveDef?.options ?? []).map(o => (
+                        <span key={o.id} className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs cursor-pointer"
+                          style={{ background: '#eef2ff', color: '#4f46e5', border: '1px solid #c7d2fe' }}
+                          onClick={() => setEditingOption({ id: o.id, value: o.value, valueEn: o.valueEn ?? '' })}>
+                          {tn(o.value, o.valueEn)}
+                          <button onClick={e => { e.stopPropagation(); removeOption(o.id) }} className="opacity-50 hover:opacity-100 transition-opacity">✕</button>
+                        </span>
+                      ))}
+                      {(editingLiveDef?.options.length ?? 0) === 0 && <p className="text-xs text-slate-300">{t('directory.noValues')}</p>}
+                    </>
+                  ) : (
+                    <>
+                      {pendingOptions.map((o, i) => (
+                        <span key={i} className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs"
+                          style={{ background: '#eef2ff', color: '#4f46e5', border: '1px solid #c7d2fe' }}>
+                          {o.value}
+                          <button onClick={() => removePendingOption(i)} className="opacity-50 hover:opacity-100 transition-opacity">✕</button>
+                        </span>
+                      ))}
+                      {pendingOptions.length === 0 && <p className="text-xs text-slate-300">{t('directory.noValues')}</p>}
+                    </>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <input type="text"
+                    value={form.editing ? (newOptionInputs[form.editing.id] || '') : pendingOptionValue}
+                    placeholder={t('directory.newValuePlaceholder')}
+                    onChange={e => form.editing
+                      ? setNewOptionInputs(p => ({ ...p, [form.editing!.id]: e.target.value }))
+                      : setPendingOptionValue(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && (form.editing ? addOptionValue(form.editing.id) : addPendingOption())}
+                    className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-800 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-all" />
+                  <input type="text"
+                    value={form.editing ? (newOptionEnInputs[form.editing.id] || '') : pendingOptionValueEn}
+                    placeholder="English…"
+                    onChange={e => form.editing
+                      ? setNewOptionEnInputs(p => ({ ...p, [form.editing!.id]: e.target.value }))
+                      : setPendingOptionValueEn(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && (form.editing ? addOptionValue(form.editing.id) : addPendingOption())}
+                    className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-800 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-all" />
+                  <button onClick={() => form.editing ? addOptionValue(form.editing.id) : addPendingOption()}
+                    className="rounded-xl bg-slate-800 px-3 py-2 text-xs font-medium text-white active:scale-95 transition-all">+</button>
+                </div>
+              </Field>
+            )}
             <label className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3 cursor-pointer">
               <span className="text-sm text-slate-600">{t('common.requiredField')}</span>
               <input type="checkbox" checked={form.isRequired} onChange={e => setForm(f => ({ ...f, isRequired: e.target.checked }))}
