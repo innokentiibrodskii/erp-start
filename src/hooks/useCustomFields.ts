@@ -121,10 +121,11 @@ export function useCustomFieldDefinitionMutations(entityType: EntityType) {
 
   const add = useMutation({
     mutationFn: async ({ name, nameEn, fieldType, isRequired, position }: { name: string; nameEn: string | null; fieldType: FieldType; isRequired: boolean; position: number }) => {
-      const { error } = await supabase.from('custom_field_definitions').insert({
+      const { data, error } = await supabase.from('custom_field_definitions').insert({
         organization_id: orgId, entity_type: entityType, name, name_en: nameEn, field_type: fieldType, is_required: isRequired, position,
-      })
+      }).select('id').single()
       if (error) throw error
+      return data.id as string
     },
     onSuccess: invalidate,
     onError: onErr,
@@ -187,7 +188,7 @@ export function useCustomFieldDefinitionMutations(entityType: EntityType) {
 
   return {
     addDefinition: (args: { name: string; nameEn?: string | null; fieldType: FieldType; isRequired: boolean; position: number }) =>
-      add.mutateAsync({ ...args, nameEn: args.nameEn ?? null }),
+      add.mutateAsync({ ...args, nameEn: args.nameEn ?? null }) as Promise<string>,
     updateDefinition: (args: { id: string; name: string; nameEn?: string | null; isRequired: boolean }) =>
       update.mutateAsync({ ...args, nameEn: args.nameEn ?? null }),
     removeDefinition: (id: string) => remove.mutate(id),

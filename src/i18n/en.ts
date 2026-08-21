@@ -372,6 +372,7 @@ const en: Record<TranslationKey, string> = {
   'directory.valuesCount': '{{count}} values',
   'directory.noValues': 'No values',
   'directory.newValuePlaceholder': 'New value…',
+  'directory.listValuesLabel': 'List values',
   'directory.editGroup': 'Edit group',
   'directory.newAttribute': 'New attribute',
   'directory.groupNameLabel': 'Group name',

@@ -377,6 +377,7 @@ const uk = {
   'directory.valuesCount': '{{count}} значень',
   'directory.noValues': 'Немає значень',
   'directory.newValuePlaceholder': 'Нове значення…',
+  'directory.listValuesLabel': 'Значення списку',
   'directory.editGroup': 'Редагувати групу',
   'directory.newAttribute': 'Нова характеристика',
   'directory.groupNameLabel': 'Назва групи',
