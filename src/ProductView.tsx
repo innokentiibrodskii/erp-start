@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import QRCodeLib from 'react-qr-code'
 import { useCatalog, type ProductCategory } from './hooks/useCatalog'
-import { useProducts, useMaterials, useProductStatuses, useProductPhotos, type PhotoItem } from './hooks/useProducts'
+import { useProducts, useMaterials, useProductStatuses, useProductPhotos, useProductVideos, type PhotoItem, type VideoItem } from './hooks/useProducts'
 import { useAssignments } from './hooks/useAssignments'
 import { useStockMovements } from './hooks/useMaterialStock'
 import { useCustomFieldDefinitions, useCustomFieldValues } from './hooks/useCustomFields'
@@ -66,6 +66,7 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
   const movementsQ = useStockMovements()
   const customDefsQ = useCustomFieldDefinitions('product')
   const photosQ = useProductPhotos(productId)
+  const videosQ = useProductVideos(productId)
   const products = productsQ.data ?? []
   const materials = materialsQ.data ?? []
   const statuses = statusesQ.data ?? []
@@ -73,6 +74,7 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
   const movements = movementsQ.data ?? []
   const customDefs = customDefsQ.data ?? []
   const photos = photosQ.data ?? []
+  const videos = videosQ.data ?? []
 
   const [variantsOpen, setVariantsOpen] = useState(false)
   const [openSection, setOpenSection] = useState<string | null>(null)
@@ -136,9 +138,20 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
       </div>
 
       <div className="px-4 pb-10 space-y-5 pt-4">
-        {/* Photo */}
-        {photos.length > 0 && (
-          <ProductPhotoGallery photos={photos} productName={product.name} />
+        {/* Photo + Video — окремі блоки в одній лінії */}
+        {(photos.length > 0 || videos.length > 0) && (
+          <div className="flex gap-3">
+            {photos.length > 0 && (
+              <div className="flex-1 min-w-0">
+                <ProductPhotoGallery photos={photos} productName={product.name} />
+              </div>
+            )}
+            {videos.length > 0 && (
+              <div className="flex-1 min-w-0">
+                <ProductVideoGallery videos={videos} />
+              </div>
+            )}
+          </div>
         )}
 
         {/* Name / SKU */}
@@ -362,16 +375,20 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
 /* ═══════════════════════════════════════════════════════════
    Photo gallery — карусель у шапці + full-screen перегляд з гортанням
 ═══════════════════════════════════════════════════════════ */
-function ProductPhotoGallery({ photos, productName }: { photos: PhotoItem[]; productName: string }) {
-  const [activeIndex, setActiveIndex] = useState(0)
-  const [lightboxOpen, setLightboxOpen] = useState(false)
-  const lightboxTrackRef = useRef<HTMLDivElement>(null)
-
-  const trackScrolled = (setIdx: (i: number) => void) => (e: React.UIEvent<HTMLDivElement>) => {
+/** Спільний обробник для каруселей із прокруткою-снепом (фото й відео) —
+ *  визначає активний слайд за позицією скролу. */
+function trackScrolled(setIdx: (i: number) => void) {
+  return (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget
     if (el.clientWidth === 0) return
     setIdx(Math.round(el.scrollLeft / el.clientWidth))
   }
+}
+
+function ProductPhotoGallery({ photos, productName }: { photos: PhotoItem[]; productName: string }) {
+  const [activeIndex, setActiveIndex] = useState(0)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
+  const lightboxTrackRef = useRef<HTMLDivElement>(null)
 
   const openLightboxAt = (idx: number) => {
     setActiveIndex(idx)
@@ -440,6 +457,100 @@ function ProductPhotoGallery({ photos, productName }: { photos: PhotoItem[]; pro
             <div className="flex shrink-0 justify-center gap-1.5 py-4" onClick={e => e.stopPropagation()}>
               {photos.map((p, i) => (
                 <span key={p.key} className="h-1.5 rounded-full transition-all"
+                  style={{ width: i === activeIndex ? 14 : 6, background: i === activeIndex ? '#fff' : 'rgba(255,255,255,0.35)' }} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Video gallery — той самий патерн, що й фотокарусель:
+   прев'ю-карусель у шапці + full-screen перегляд з гортанням
+═══════════════════════════════════════════════════════════ */
+function ProductVideoGallery({ videos }: { videos: VideoItem[] }) {
+  const [activeIndex, setActiveIndex] = useState(0)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
+  const lightboxTrackRef = useRef<HTMLDivElement>(null)
+
+  const openLightboxAt = (idx: number) => {
+    setActiveIndex(idx)
+    setLightboxOpen(true)
+  }
+
+  // При відкритті full-screen перегляду одразу прокрутити до відео, по якому тапнули
+  useEffect(() => {
+    const track = lightboxTrackRef.current
+    if (lightboxOpen && track) track.scrollLeft = activeIndex * track.clientWidth
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lightboxOpen])
+
+  return (
+    <>
+      <div className="relative">
+        <div
+          onScroll={trackScrolled(setActiveIndex)}
+          className="flex overflow-x-auto rounded-2xl bg-slate-900 h-52"
+          style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
+        >
+          {videos.map((v, i) => (
+            <div key={v.key} onClick={() => openLightboxAt(i)}
+              className="relative h-52 w-full shrink-0 cursor-zoom-in" style={{ scrollSnapAlign: 'start' }}>
+              <video src={v.url} muted playsInline preload="metadata" className="h-full w-full object-cover" />
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-black/45">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M4 2.5l9 5.5-9 5.5v-11z" fill="white"/>
+                  </svg>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        {videos.length > 1 && (
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+            {videos.map((v, i) => (
+              <span key={v.key} className="h-1.5 rounded-full transition-all"
+                style={{ width: i === activeIndex ? 14 : 6, background: i === activeIndex ? '#fff' : 'rgba(255,255,255,0.55)', boxShadow: '0 0 4px rgba(0,0,0,0.35)' }} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Full-screen перегляд з гортанням усіх відео */}
+      {lightboxOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: 'rgba(10,12,20,0.97)' }}
+          onClick={() => setLightboxOpen(false)}>
+          <div className="flex shrink-0 items-center justify-between px-4 py-3" onClick={e => e.stopPropagation()}>
+            <span className="text-xs font-medium text-white/70">{activeIndex + 1} / {videos.length}</span>
+            <button onClick={() => setLightboxOpen(false)}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white active:scale-95 transition-all">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+              </svg>
+            </button>
+          </div>
+          <div
+            ref={lightboxTrackRef}
+            onScroll={trackScrolled(setActiveIndex)}
+            onClick={e => e.stopPropagation()}
+            className="flex flex-1 overflow-x-auto"
+            style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
+          >
+            {videos.map(v => (
+              <div key={v.key} className="flex h-full w-full shrink-0 items-center justify-center px-2"
+                style={{ scrollSnapAlign: 'start' }}>
+                <video src={v.url} controls autoPlay playsInline className="max-h-full max-w-full object-contain" />
+              </div>
+            ))}
+          </div>
+          {videos.length > 1 && (
+            <div className="flex shrink-0 justify-center gap-1.5 py-4" onClick={e => e.stopPropagation()}>
+              {videos.map((v, i) => (
+                <span key={v.key} className="h-1.5 rounded-full transition-all"
                   style={{ width: i === activeIndex ? 14 : 6, background: i === activeIndex ? '#fff' : 'rgba(255,255,255,0.35)' }} />
               ))}
             </div>

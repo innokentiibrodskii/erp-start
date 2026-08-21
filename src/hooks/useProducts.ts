@@ -162,6 +162,15 @@ export interface PhotoItem {
   file?: File
 }
 
+export interface VideoItem {
+  /** Стабільний ключ для React list (не id з бази) */
+  key: string
+  /** Прев'ю: object URL для нових файлів або публічний URL з бази */
+  url: string
+  /** Заповнено лише для щойно доданих (ще не завантажених) відео */
+  file?: File
+}
+
 function friendlyError(error: { message: string; code?: string }, t: (key: TranslationKey) => string): string {
   if (error.code === '23503') return t('errors.cannotDeleteInUse')
   if (error.code === '23505') return t('errors.alreadyExists')
@@ -260,6 +269,28 @@ async function persistPhotos(orgId: string, productId: string, photos: PhotoItem
   }
 }
 
+async function persistVideos(orgId: string, productId: string, videos: VideoItem[]) {
+  const resolvedUrls = await Promise.all(
+    videos.map(async (v, i) => {
+      if (!v.file) return v.url
+      const path = `${productId}/${Date.now()}-${i}-${v.file.name}`
+      const { error: uploadError } = await supabase.storage.from('product-videos').upload(path, v.file)
+      if (uploadError) throw uploadError
+      const { data } = supabase.storage.from('product-videos').getPublicUrl(path)
+      return data.publicUrl
+    })
+  )
+
+  const { error: deleteError } = await supabase.from('product_videos').delete().eq('product_id', productId)
+  if (deleteError) throw deleteError
+
+  if (resolvedUrls.length > 0) {
+    const rows = resolvedUrls.map((url, position) => ({ product_id: productId, url, position, organization_id: orgId }))
+    const { error: insertError } = await supabase.from('product_videos').insert(rows)
+    if (insertError) throw insertError
+  }
+}
+
 async function getDefaultStatusId(orgId: string): Promise<string | null> {
   const { data, error } = await supabase.from('product_statuses').select('id').eq('organization_id', orgId).eq('is_default', true).limit(1).maybeSingle()
   if (error) throw error
@@ -274,7 +305,7 @@ export function useProductMutations() {
   const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error, t))
 
   const create = useMutation({
-    mutationFn: async ({ name, description, categoryId, sku, photos }: { name: string; description: string; categoryId: string | null; sku: string; photos: PhotoItem[] }) => {
+    mutationFn: async ({ name, description, categoryId, sku, photos, videos }: { name: string; description: string; categoryId: string | null; sku: string; photos: PhotoItem[]; videos: VideoItem[] }) => {
       // Новий продукт завжди отримує дефолтний статус каталогу (зазвичай "Активний")
       const statusId = await getDefaultStatusId(orgId)
       const { data, error } = await supabase
@@ -284,6 +315,7 @@ export function useProductMutations() {
         .single()
       if (error) throw error
       await persistPhotos(orgId, data.id, photos)
+      await persistVideos(orgId, data.id, videos)
       return data.id as string
     },
     onSuccess: invalidate,
@@ -291,10 +323,11 @@ export function useProductMutations() {
   })
 
   const update = useMutation({
-    mutationFn: async ({ id, name, description, categoryId, statusId, photos }: { id: string; name: string; description: string; categoryId: string | null; statusId: string | null; photos: PhotoItem[] }) => {
+    mutationFn: async ({ id, name, description, categoryId, statusId, photos, videos }: { id: string; name: string; description: string; categoryId: string | null; statusId: string | null; photos: PhotoItem[]; videos: VideoItem[] }) => {
       const { error } = await supabase.from('products').update({ name, description, category_id: categoryId, status_id: statusId }).eq('id', id)
       if (error) throw error
       await persistPhotos(orgId, id, photos)
+      await persistVideos(orgId, id, videos)
     },
     onSuccess: invalidate,
     onError: onErr,
@@ -310,8 +343,8 @@ export function useProductMutations() {
   })
 
   return {
-    createProduct: (args: { name: string; description: string; categoryId: string | null; sku: string; photos: PhotoItem[] }) => create.mutateAsync(args),
-    updateProduct: (args: { id: string; name: string; description: string; categoryId: string | null; statusId: string | null; photos: PhotoItem[] }) => update.mutateAsync(args),
+    createProduct: (args: { name: string; description: string; categoryId: string | null; sku: string; photos: PhotoItem[]; videos: VideoItem[] }) => create.mutateAsync(args),
+    updateProduct: (args: { id: string; name: string; description: string; categoryId: string | null; statusId: string | null; photos: PhotoItem[]; videos: VideoItem[] }) => update.mutateAsync(args),
     removeProduct: (id: string) => remove.mutate(id),
     isSaving: create.isPending || update.isPending,
   }
@@ -333,6 +366,26 @@ export function useProductPhotos(productId: string | null) {
         .order('position')
       if (error) throw error
       return data.map(img => ({ key: img.id, url: img.url }))
+    },
+  })
+}
+
+/* ───────────────────────────────────────────────────────────
+   Повний список відео продукту (для редактора)
+─────────────────────────────────────────────────────────── */
+
+export function useProductVideos(productId: string | null) {
+  return useQuery({
+    queryKey: ['product-videos', productId],
+    enabled: productId !== null,
+    queryFn: async (): Promise<VideoItem[]> => {
+      const { data, error } = await supabase
+        .from('product_videos')
+        .select('id, url, position')
+        .eq('product_id', productId as string)
+        .order('position')
+      if (error) throw error
+      return data.map(v => ({ key: v.id, url: v.url }))
     },
   })
 }

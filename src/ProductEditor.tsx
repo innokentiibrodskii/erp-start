@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useCatalog } from './hooks/useCatalog'
-import { useProducts, useProductPhotos, useProductMutations, useProductStatuses, genProductArticle, type PhotoItem } from './hooks/useProducts'
+import { useProducts, useProductPhotos, useProductVideos, useProductMutations, useProductStatuses, genProductArticle, type PhotoItem, type VideoItem } from './hooks/useProducts'
 import { useProductAttributeMutations } from './hooks/useProductAttributes'
 import { useCustomFieldDefinitions, useCustomFieldValues, useCustomFieldValueMutations } from './hooks/useCustomFields'
 import { CategoryTreeNode } from './CategoryTreeNode'
@@ -17,6 +17,7 @@ export default function ProductEditor({ productId, onBack }: Props) {
   const { categories, attributes } = useCatalog()
   const productsQ = useProducts()
   const photosQ = useProductPhotos(productId)
+  const videosQ = useProductVideos(productId)
   const statusesQ = useProductStatuses()
   const { createProduct, updateProduct, isSaving } = useProductMutations()
   const { addAttributeValue, removeAttributeValue } = useProductAttributeMutations()
@@ -36,10 +37,13 @@ export default function ProductEditor({ productId, onBack }: Props) {
   const [categoryId, setCategoryId] = useState<string | null>(existing?.categoryId ?? null)
   const [statusId, setStatusId] = useState<string | null>(existing?.statusId ?? null)
   const [photos, setPhotos] = useState<PhotoItem[]>([])
+  const [videos, setVideos] = useState<VideoItem[]>([])
   const [saved, setSaved] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [videoDragOver, setVideoDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const videoInputRef = useRef<HTMLInputElement>(null)
 
   // Уся секція "Категорія" згорнута в один рядок (як звичайний select) за замовчуванням —
   // дерево розгортається лише по кліку на шеврон (той самий патерн, що й у фільтрах).
@@ -74,6 +78,11 @@ export default function ProductEditor({ productId, onBack }: Props) {
     if (photosQ.data) setPhotos(photosQ.data)
   }, [photosQ.data])
 
+  // Підвантажити існуючі відео продукту в редактор
+  useEffect(() => {
+    if (videosQ.data) setVideos(videosQ.data)
+  }, [videosQ.data])
+
   // Підтягнути актуальні поля, якщо продукт довантажився вже після монтування
   useEffect(() => {
     if (existing) {
@@ -102,6 +111,17 @@ export default function ProductEditor({ productId, onBack }: Props) {
       return copy
     })
 
+  const handleVideoFiles = (files: FileList | null) => {
+    if (!files) return
+    Array.from(files).forEach(file => {
+      if (!file.type.startsWith('video/')) return
+      setVideos(prev => [...prev, { key: crypto.randomUUID(), url: URL.createObjectURL(file), file }])
+    })
+  }
+
+  const removeVideo = (key: string) =>
+    setVideos(prev => prev.filter(v => v.key !== key))
+
   const saveCustomFieldValues = async (id: string, inputs: Record<string, CustomFieldInput>) => {
     for (const def of customFields) {
       if (def.fieldType === 'file') continue
@@ -122,10 +142,10 @@ export default function ProductEditor({ productId, onBack }: Props) {
     if (!name.trim()) return
     let id: string
     if (existing) {
-      await updateProduct({ id: existing.id, name: name.trim(), description, categoryId, statusId, photos })
+      await updateProduct({ id: existing.id, name: name.trim(), description, categoryId, statusId, photos, videos })
       id = existing.id
     } else {
-      id = await createProduct({ name: name.trim(), description, categoryId, sku, photos })
+      id = await createProduct({ name: name.trim(), description, categoryId, sku, photos, videos })
     }
     await saveCustomFieldValues(id, customInputs)
     setSaved(true)
@@ -237,6 +257,67 @@ export default function ProductEditor({ productId, onBack }: Props) {
                 {photos.length === 0 ? t('productEditor.addPhoto') : t('productEditor.morePhotos')}
               </p>
               <p className="text-xs text-slate-400 mt-0.5">{t('productEditor.photoHint')}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Videos ── */}
+        <div>
+          <label className="mb-3 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('productEditor.video')}</label>
+          {/* Video grid */}
+          {videos.length > 0 && (
+            <div className="flex gap-2 flex-wrap mb-3">
+              {videos.map(v => (
+                <div key={v.key} className="relative h-24 w-24 shrink-0">
+                  <video src={v.url} className="h-full w-full rounded-2xl object-cover bg-slate-100" muted playsInline />
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-black/40">
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path d="M3 2l7 4-7 4V2z" fill="white"/>
+                      </svg>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => removeVideo(v.key)}
+                    className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white text-[10px] shadow-md active:scale-90 transition-all">
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {/* Drop zone / add more */}
+          <input
+            ref={videoInputRef}
+            type="file"
+            accept="video/*"
+            multiple
+            className="hidden"
+            onChange={e => handleVideoFiles(e.target.files)}
+          />
+          <div
+            onClick={() => videoInputRef.current?.click()}
+            onDragOver={e => { e.preventDefault(); setVideoDragOver(true) }}
+            onDragLeave={() => setVideoDragOver(false)}
+            onDrop={e => { e.preventDefault(); setVideoDragOver(false); handleVideoFiles(e.dataTransfer.files) }}
+            className="flex flex-col items-center justify-center gap-2 rounded-2xl py-7 cursor-pointer transition-all active:scale-[0.98]"
+            style={{
+              border: `2px dashed ${videoDragOver ? '#3b82f6' : 'rgba(157,200,255,0.5)'}`,
+              background: videoDragOver ? '#eff6ff' : 'rgba(157,200,255,0.04)',
+            }}
+          >
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-slate-400"
+              style={{ boxShadow: '0 1px 8px rgba(0,0,60,0.06)' }}>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                <path d="M13 8l-3-3-3 3M10 5v8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M4 14v1a2 2 0 002 2h8a2 2 0 002-2v-1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-medium text-slate-600">
+                {videos.length === 0 ? t('productEditor.addVideo') : t('productEditor.moreVideos')}
+              </p>
+              <p className="text-xs text-slate-400 mt-0.5">{t('productEditor.videoHint')}</p>
             </div>
           </div>
         </div>
