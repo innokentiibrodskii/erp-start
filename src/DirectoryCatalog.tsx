@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useCatalog, genCategoryShortCode } from './hooks/useCatalog'
 import { PRESET_COLORS } from './lib/colors'
 import { buildCatPath } from './lib/materialFormat'
@@ -6,6 +6,8 @@ import type { Department, Position, ProductCategory, ProductAttribute, Operation
 import { useProductStatuses, useProductStatusMutations, type ProductStatus } from './hooks/useProducts'
 import { useCustomFieldDefinitions, useCustomFieldDefinitionMutations, type CustomFieldDefinition, type EntityType, type FieldType } from './hooks/useCustomFields'
 import { useMaterialCostCurrency, useSetMaterialCostCurrency, CURRENCIES, CURRENCY_LABEL_KEY } from './hooks/useOrgSettings'
+import { useCurrentUser } from './hooks/useCurrentUser'
+import { usePayrollSettings, useSetPayrollSettings, usePayrollClosures, useClosePayrollPeriod, computeMonthPayrollPhase } from './hooks/usePayroll'
 import { useLocale } from './LocaleContext'
 import type { TranslationKey } from './i18n'
 
@@ -1183,6 +1185,34 @@ export function CustomFieldsPage({ onBack }: { onBack: () => void }) {
   const setCurrency = useSetMaterialCostCurrency()
   const { t, tn } = useLocale()
 
+  // Зарплатний період — визначає й закриває лише адмін (менеджер, який теж
+  // потрапляє на цю сторінку, тут нічого не бачить/не змінює).
+  const { data: currentUser } = useCurrentUser()
+  const isAdmin = currentUser?.role === 'admin'
+  const payrollSettingsQ = usePayrollSettings()
+  const setPayrollSettings = useSetPayrollSettings()
+  const payrollClosuresQ = usePayrollClosures()
+  const closePeriod = useClosePayrollPeriod()
+  const [payrollFrom, setPayrollFrom] = useState('')
+  const [payrollTo, setPayrollTo] = useState('')
+  useEffect(() => {
+    if (payrollSettingsQ.data) {
+      setPayrollFrom(payrollSettingsQ.data.openFromDay !== null ? String(payrollSettingsQ.data.openFromDay) : '')
+      setPayrollTo(payrollSettingsQ.data.openToDay !== null ? String(payrollSettingsQ.data.openToDay) : '')
+    }
+  }, [payrollSettingsQ.data])
+  const savePayrollSettings = () => {
+    const from = Number(payrollFrom), to = Number(payrollTo)
+    if (!from || !to || from < 1 || from > 31 || to < 1 || to > 31 || from > to) return
+    setPayrollSettings({ openFromDay: from, openToDay: to })
+  }
+  // Поточний + два попередні місяці — щоб адмін бачив, що ще треба закрити.
+  const recentMonths = Array.from({ length: 3 }, (_, i) => {
+    const d = new Date()
+    d.setMonth(d.getMonth() - i)
+    return { year: d.getFullYear(), month: d.getMonth() + 1 }
+  })
+
   const [form, setForm] = useState<{ open: boolean; editing: CustomFieldDefinition | null; name: string; nameEn: string; fieldType: FieldType; isRequired: boolean }>
     ({ open: false, editing: null, name: '', nameEn: '', fieldType: 'text', isRequired: false })
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -1263,6 +1293,53 @@ export function CustomFieldsPage({ onBack }: { onBack: () => void }) {
           <p className="mt-1.5 text-[10px] text-slate-300">{t('directory.currencyHint')}</p>
         </div>
       </div>
+
+      {isAdmin && (
+        <div className="px-4 pt-3">
+          <div className="rounded-2xl bg-white p-4" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">{t('payroll.settingsTitle')}</label>
+            <div className="flex items-center gap-2">
+              <input type="number" min="1" max="31" value={payrollFrom} onChange={e => setPayrollFrom(e.target.value)} placeholder={t('payroll.openFromLabel')}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-blue-400 transition-all" />
+              <span className="text-xs text-slate-400 shrink-0">{t('payroll.rangeSeparator')}</span>
+              <input type="number" min="1" max="31" value={payrollTo} onChange={e => setPayrollTo(e.target.value)} placeholder={t('payroll.openToLabel')}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-blue-400 transition-all" />
+              <button onClick={savePayrollSettings} className="shrink-0 rounded-xl bg-slate-800 px-3.5 py-2.5 text-xs font-medium text-white active:scale-95 transition-all">
+                {t('common.save')}
+              </button>
+            </div>
+            <p className="mt-1.5 text-[10px] text-slate-300">{t('payroll.settingsHint')}</p>
+
+            {payrollSettingsQ.data && payrollSettingsQ.data.openToDay !== null && (
+              <div className="mt-3 space-y-1.5">
+                {recentMonths.map(({ year, month }) => {
+                  const phase = computeMonthPayrollPhase(year, month, payrollSettingsQ.data, payrollClosuresQ.data ?? [])
+                  const closure = (payrollClosuresQ.data ?? []).find(c => c.periodYear === year && c.periodMonth === month)
+                  const label = new Date(year, month - 1, 1).toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' })
+                  return (
+                    <div key={`${year}-${month}`} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-slate-700 capitalize">{label}</p>
+                        <p className="text-[10px] text-slate-400 truncate">
+                          {phase === 'closed' && closure
+                            ? t('payroll.closedByHint', { name: closure.closedByName, date: new Date(closure.closedAt).toLocaleDateString('uk-UA', { timeZone: 'Europe/Kyiv' }) })
+                            : t(phase === 'awaiting_closure' ? 'payroll.periodStatusAwaitingClosure' : 'payroll.periodStatusActive')}
+                        </p>
+                      </div>
+                      {phase !== 'closed' && (
+                        <button onClick={() => { if (currentUser && confirm(t('payroll.closeConfirm'))) closePeriod({ periodYear: year, periodMonth: month, closedById: currentUser.id }) }}
+                          className="shrink-0 rounded-lg bg-red-50 px-2.5 py-1.5 text-[10px] font-medium text-red-500 active:scale-95 transition-all">
+                          {t('payroll.closeButton')}
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="px-4 pt-3">
         <div className="flex gap-1.5 rounded-2xl bg-white p-1" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>

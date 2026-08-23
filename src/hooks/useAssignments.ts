@@ -28,12 +28,14 @@ import { useLocale } from '../LocaleContext'
 ─────────────────────────────────────────────────────────── */
 
 export type AssignmentStatus = 'pending' | 'in_progress' | 'paused' | 'done' | 'cancelled'
+export type AssignmentPriority = 'low' | 'medium' | 'high' | 'urgent'
 
 export interface Assignment {
   id: string
-  productId: string
+  /** null — завдання ще не прив'язане до продукту; прив'язку можна додати пізніше (логується) */
+  productId: string | null
   productName: string
-  operationId: string
+  operationId: string | null
   operationName: string
   operationNameEn: string | null
   taskId: string | null
@@ -44,6 +46,8 @@ export interface Assignment {
   assignedByName: string
   durationMinutes: number | null
   cost: number | null
+  priority: AssignmentPriority
+  dueDate: number | null
   status: AssignmentStatus
   statusChangedAt: number
   completedAt: number | null
@@ -93,7 +97,7 @@ export function useAssignments() {
         .from('assignments')
         .select(`
           id, product_id, operation_id, task_id, name, assignee_id, assigned_by,
-          duration_minutes, cost, status, status_changed_at, completed_at, created_at, updated_at,
+          duration_minutes, cost, priority, due_date, status, status_changed_at, completed_at, created_at, updated_at,
           products(name),
           operations(name, name_en),
           assignee:users!assignments_assignee_id_fkey(first_name, last_name),
@@ -123,6 +127,8 @@ export function useAssignments() {
           assignedByName: assigner ? `${assigner.first_name} ${assigner.last_name}`.trim() : '—',
           durationMinutes: a.duration_minutes !== null ? Number(a.duration_minutes) : null,
           cost: a.cost !== null ? Number(a.cost) : null,
+          priority: (a.priority ?? 'medium') as AssignmentPriority,
+          dueDate: a.due_date !== null ? new Date(a.due_date).getTime() : null,
           status: a.status as AssignmentStatus,
           statusChangedAt: new Date(a.status_changed_at).getTime(),
           completedAt: a.completed_at !== null ? new Date(a.completed_at).getTime() : null,
@@ -143,8 +149,9 @@ export function useAssignmentMutations() {
 
   const create = useMutation({
     mutationFn: async (args: {
-      productId: string; operationId: string; taskId: string | null; name: string
+      productId: string | null; operationId: string | null; taskId: string | null; name: string
       assigneeId: string; assignedById: string; durationMinutes: number | null; cost: number | null
+      priority: AssignmentPriority; dueDate: number | null
     }) => {
       const { error } = await supabase.from('assignments').insert({
         product_id: args.productId,
@@ -155,6 +162,8 @@ export function useAssignmentMutations() {
         assigned_by: args.assignedById,
         duration_minutes: args.durationMinutes,
         cost: args.cost,
+        priority: args.priority,
+        due_date: args.dueDate !== null ? new Date(args.dueDate).toISOString().slice(0, 10) : null,
         organization_id: orgId,
       })
       if (error) throw error
@@ -163,12 +172,21 @@ export function useAssignmentMutations() {
     onError: onErr,
   })
 
-  /** Зміна статусу (+ за потреби ручне коригування часу). Якщо завдання виходить
-   *  зі статусу "в роботі", час цього відрізку автоматично додається до
-   *  введеного/наявного значення витраченого часу. */
-  const updateStatus = useMutation({
-    mutationFn: async ({ id, prevStatus, prevStatusChangedAt, newStatus, durationMinutes }: {
+  /** Зміна статусу/часу/вартості/пріоритету/дедлайну завдання. Якщо завдання
+   *  виходить зі статусу "в роботі", час цього відрізку автоматично додається
+   *  до введеного/наявного значення витраченого часу. Дозволеність зміни
+   *  duration_minutes/cost на вже завершеному завданні (день завершення / день
+   *  зарплатного періоду / закритий період) перевіряє тригер у базі — сюди
+   *  прилітає його помилка, якщо щось не дозволено.
+   *  cost/priority/dueDate/productId/operationId/taskId — опційні: undefined
+   *  = не чіпати поле. Зміна productId/operationId (у т.ч. первинна прив'язка
+   *  продукту до завдання, яке було створене без нього) логується тригером
+   *  у базі як подія 'product_changed'. */
+  const updateAssignment = useMutation({
+    mutationFn: async ({ id, prevStatus, prevStatusChangedAt, newStatus, durationMinutes, cost, priority, dueDate, productId, operationId, taskId }: {
       id: string; prevStatus: AssignmentStatus; prevStatusChangedAt: number; newStatus: AssignmentStatus; durationMinutes: number | null
+      cost?: number | null; priority?: AssignmentPriority; dueDate?: number | null
+      productId?: string | null; operationId?: string | null; taskId?: string | null
     }) => {
       let finalDuration = durationMinutes
       if (prevStatus === 'in_progress' && newStatus !== 'in_progress') {
@@ -182,6 +200,12 @@ export function useAssignmentMutations() {
       }
       if (newStatus === 'done') patch.completed_at = new Date().toISOString()
       else if (prevStatus === 'done') patch.completed_at = null
+      if (cost !== undefined) patch.cost = cost
+      if (priority !== undefined) patch.priority = priority
+      if (dueDate !== undefined) patch.due_date = dueDate !== null ? new Date(dueDate).toISOString().slice(0, 10) : null
+      if (productId !== undefined) patch.product_id = productId
+      if (operationId !== undefined) patch.operation_id = operationId
+      if (taskId !== undefined) patch.task_id = taskId
 
       const { error } = await supabase.from('assignments').update(patch).eq('id', id)
       if (error) throw error
@@ -201,11 +225,16 @@ export function useAssignmentMutations() {
 
   return {
     createAssignment: (args: {
-      productId: string; operationId: string; taskId: string | null; name: string
+      productId: string | null; operationId: string | null; taskId: string | null; name: string
       assigneeId: string; assignedById: string; durationMinutes: number | null; cost: number | null
+      priority: AssignmentPriority; dueDate: number | null
     }) => create.mutateAsync(args),
-    updateStatus: (args: { id: string; prevStatus: AssignmentStatus; prevStatusChangedAt: number; newStatus: AssignmentStatus; durationMinutes: number | null }) => updateStatus.mutateAsync(args),
+    updateAssignment: (args: {
+      id: string; prevStatus: AssignmentStatus; prevStatusChangedAt: number; newStatus: AssignmentStatus; durationMinutes: number | null
+      cost?: number | null; priority?: AssignmentPriority; dueDate?: number | null
+      productId?: string | null; operationId?: string | null; taskId?: string | null
+    }) => updateAssignment.mutateAsync(args),
     removeAssignment: (id: string) => remove.mutate(id),
-    isSaving: create.isPending || updateStatus.isPending,
+    isSaving: create.isPending || updateAssignment.isPending,
   }
 }

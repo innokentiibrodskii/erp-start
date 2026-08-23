@@ -6,7 +6,8 @@ import type { Product } from './hooks/useProducts'
 import { useCatalog } from './hooks/useCatalog'
 import type { Operation } from './hooks/useCatalog'
 import { useProductTasks, type ProductTask } from './hooks/useProductOperations'
-import { useAssignments, useAssignmentMutations, isAssignmentLocked, isArchivedCompleted, type Assignment, type AssignmentStatus } from './hooks/useAssignments'
+import { useAssignments, useAssignmentMutations, isAssignmentLocked, isArchivedCompleted, type Assignment, type AssignmentStatus, type AssignmentPriority } from './hooks/useAssignments'
+import { usePayrollSettings, usePayrollClosures, useAssignmentEvents, computePayrollPeriodStatus, kyivDateParts, type AssignmentEventType } from './hooks/usePayroll'
 import { useLocale } from './LocaleContext'
 import type { TranslationKey } from './i18n'
 
@@ -32,50 +33,139 @@ const STATUS_STYLE: Record<AssignmentStatus, { bg: string; text: string }> = {
   cancelled: { bg: '#f1f5f9', text: '#64748b' },
 }
 
+const PRIORITY_LABEL_KEY: Record<AssignmentPriority, TranslationKey> = {
+  low: 'assignmentPriority.low',
+  medium: 'assignmentPriority.medium',
+  high: 'assignmentPriority.high',
+  urgent: 'assignmentPriority.urgent',
+}
+
+const PRIORITY_STYLE: Record<AssignmentPriority, { bg: string; text: string }> = {
+  low: { bg: '#f1f5f9', text: '#64748b' },
+  medium: { bg: '#e0f2fe', text: '#0284c7' },
+  high: { bg: '#fff7ed', text: '#ea580c' },
+  urgent: { bg: '#fee2e2', text: '#dc2626' },
+}
+
+const PRIORITIES: AssignmentPriority[] = ['low', 'medium', 'high', 'urgent']
+
+/** Компактна іконка пріоритету на картці завдання (замість текстової бейджі) —
+ *  колір узгоджений з PRIORITY_STYLE, форма та сама для всіх рівнів. */
+function PriorityIcon({ priority }: { priority: AssignmentPriority }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ color: PRIORITY_STYLE[priority].text }}>
+      <path d="M4 7L8 3l4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M4 9.5h8M4 12.5h5.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+    </svg>
+  )
+}
+
+const EVENT_LABEL_KEY: Record<AssignmentEventType, TranslationKey> = {
+  created: 'assignmentEvent.created',
+  status_changed: 'assignmentEvent.statusChanged',
+  duration_changed: 'assignmentEvent.durationChanged',
+  cost_changed: 'assignmentEvent.costChanged',
+  priority_changed: 'assignmentEvent.priorityChanged',
+  due_date_changed: 'assignmentEvent.dueDateChanged',
+  product_changed: 'assignmentEvent.productChanged',
+}
+
 interface Filters {
   assigneeId: string | null
-  productId: string | null
-  operationId: string | null
   status: AssignmentStatus | null
+  /** "YYYY-MM" завершеного зарплатного місяця — лише реальні періоди, в яких є завдання */
+  periodKey: string | null
   /** Показувати завершені завдання з минулих місяців (за замовчуванням приховані) */
   showArchived: boolean
 }
 
-const EMPTY_FILTERS: Filters = { assigneeId: null, productId: null, operationId: null, status: null, showArchived: false }
+const EMPTY_FILTERS: Filters = { assigneeId: null, status: null, periodKey: null, showArchived: false }
+
+type SortKey = 'name' | 'priority'
+const PRIORITY_RANK: Record<AssignmentPriority, number> = { low: 0, medium: 1, high: 2, urgent: 3 }
+const MONTH_LABEL: string[] = ['січня', 'лютого', 'березня', 'квітня', 'травня', 'червня', 'липня', 'серпня', 'вересня', 'жовтня', 'листопада', 'грудня']
 
 export default function AssignmentsPage() {
   const { t, tn } = useLocale()
   const { data: currentUser } = useCurrentUser()
-  const isManager = currentUser?.role === 'manager'
+  // Адмін успадковує права менеджера скрізь у застосунку (те саме правило, що й у Shell.tsx) —
+  // тож на "Завданнях" теж бачить усі завдання команди й фільтр за виконавцем, а не лише свої.
+  const isManager = currentUser?.role === 'manager' || currentUser?.role === 'admin'
 
   const assignmentsQ = useAssignments()
   const productsQ = useProducts()
   const { operations } = useCatalog()
   const usersQ = useUsers()
+  const payrollSettingsQ = usePayrollSettings()
+  const payrollClosuresQ = usePayrollClosures()
 
   const products = productsQ.data ?? []
   const users = usersQ.data ?? []
   const all = assignmentsQ.data ?? []
+  const payrollSettings = payrollSettingsQ.data ?? { openFromDay: null, openToDay: null }
+  const payrollClosures = payrollClosuresQ.data ?? []
+  const payrollConfigured = payrollSettings.openToDay !== null
 
   const [search, setSearch] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS)
+  const [sortKey, setSortKey] = useState<SortKey>('name')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir('asc') }
+  }
   const [formOpen, setFormOpen] = useState(false)
   const [detail, setDetail] = useState<Assignment | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2200) }
 
+  // Реальні зарплатні періоди, в яких є хоч одне завершене завдання — для фільтра
+  // "Зарплатний період" (лише якщо адмін узагалі налаштував правило в Налаштуваннях).
+  const periodOptions = (() => {
+    if (!payrollConfigured) return []
+    const seen = new Map<string, { year: number; month: number }>()
+    for (const a of all) {
+      if (a.status !== 'done' || a.completedAt === null) continue
+      const { year, month } = kyivDateParts(a.completedAt)
+      seen.set(`${year}-${month}`, { year, month })
+    }
+    return [...seen.entries()].sort((x, y) => y[0].localeCompare(x[0]))
+  })()
+
   let list = all
   const q = search.trim().toLowerCase()
   if (q) list = list.filter(a => a.name.toLowerCase().includes(q) || a.productName.toLowerCase().includes(q) || a.operationName.toLowerCase().includes(q))
   if (filters.assigneeId) list = list.filter(a => a.assigneeId === filters.assigneeId)
-  if (filters.productId) list = list.filter(a => a.productId === filters.productId)
-  if (filters.operationId) list = list.filter(a => a.operationId === filters.operationId)
   if (filters.status) list = list.filter(a => a.status === filters.status)
+  if (filters.periodKey) list = list.filter(a => {
+    if (a.status !== 'done' || a.completedAt === null) return false
+    const { year, month } = kyivDateParts(a.completedAt)
+    return `${year}-${month}` === filters.periodKey
+  })
   // Завершені в минулих місяцях ховаються з листа, поки не увімкнено фільтром.
   if (!filters.showArchived) list = list.filter(a => !isArchivedCompleted(a))
 
-  const activeFilterCount = [filters.assigneeId, filters.productId, filters.operationId, filters.status, filters.showArchived].filter(Boolean).length
+  list = [...list].sort((a, b) => {
+    const cmp = sortKey === 'name' ? a.name.localeCompare(b.name, 'uk') : PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]
+    return sortDir === 'asc' ? cmp : -cmp
+  })
+
+  const activeFilterCount = [filters.assigneeId, filters.status, filters.periodKey, filters.showArchived].filter(Boolean).length
+  const archivedCount = all.filter(isArchivedCompleted).length
+
+  /** Діапазон дат зарплатного періоду, до якого належить завершене завдання —
+   *  лише для показу на картці, не впливає на права редагування (те рахує
+   *  computePayrollPeriodStatus в AssignmentDetailSheet). */
+  const formatPeriodRange = (a: Assignment): string | null => {
+    if (a.status !== 'done' || a.completedAt === null || payrollSettings.openToDay === null) return null
+    const { year, month } = kyivDateParts(a.completedAt)
+    const daysInMonth = new Date(year, month, 0).getDate()
+    const startDay = payrollSettings.openFromDay ?? 1
+    const endDay = Math.min(payrollSettings.openToDay, daysInMonth)
+    const fmt = (d: number) => `${d}.${String(month).padStart(2, '0')}.${year}`
+    return `${fmt(startDay)}–${fmt(endDay)}`
+  }
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -101,9 +191,18 @@ export default function AssignmentsPage() {
             {t('assignments.newTask')}
           </button>
         </div>
-        <p className="text-xs text-slate-400 mb-3">
-          {isManager ? t('assignments.allTeamTasks') : t('assignments.yourTasks')} · {list.length}
-        </p>
+        <div className="flex items-center gap-2 mb-3">
+          <p className="text-xs text-slate-400">
+            {isManager ? t('assignments.allTeamTasks') : t('assignments.yourTasks')} · {list.length}
+          </p>
+          {archivedCount > 0 && (
+            <button onClick={() => setFilters(f => ({ ...f, showArchived: !f.showArchived }))}
+              className="rounded-full px-2 py-0.5 text-[10px] font-semibold transition-all"
+              style={filters.showArchived ? { background: '#1e293b', color: '#fff' } : { background: '#f1f5f9', color: '#64748b' }}>
+              {filters.showArchived ? t('materials.toActive') : t('materials.archiveWithCount', { count: archivedCount })}
+            </button>
+          )}
+        </div>
 
         <div className="flex gap-2 mb-3">
           <div className="relative flex-1">
@@ -114,10 +213,13 @@ export default function AssignmentsPage() {
             <input type="search" placeholder={t('assignments.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)}
               className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm outline-none placeholder:text-slate-300 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
           </div>
-          <button onClick={() => setFilterOpen(true)} className="relative flex items-center justify-center rounded-2xl px-4"
-            style={{ border: '1px solid rgba(157,200,255,0.3)', background: activeFilterCount > 0 ? '#eff6ff' : 'white' }}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M2 4h12M4.5 8h7M7 12h2" stroke={activeFilterCount > 0 ? '#3b82f6' : '#64748b'} strokeWidth="1.5" strokeLinecap="round"/>
+          <button onClick={() => setFilterOpen(v => !v)}
+            className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-all active:scale-90"
+            style={filterOpen || activeFilterCount > 0
+              ? { background: '#1e293b', border: '1px solid #1e293b', color: 'white' }
+              : { background: 'white', border: '1px solid rgba(157,200,255,0.3)', color: '#64748b' }}>
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+              <path d="M1.5 3.5h12M4 7.5h7M6.5 11.5h2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
             </svg>
             {activeFilterCount > 0 && (
               <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-[9px] font-semibold text-white">
@@ -127,6 +229,66 @@ export default function AssignmentsPage() {
           </button>
         </div>
 
+        {filterOpen && (
+          <div className="mb-3 rounded-2xl bg-white p-4 space-y-3" style={{ border: '1px solid rgba(157,200,255,0.3)', boxShadow: '0 2px 12px rgba(157,200,255,0.1)' }}>
+            {isManager && (
+              <div>
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">{t('assignments.workersLabel')}</label>
+                <select value={filters.assigneeId ?? ''} onChange={e => setFilters(f => ({ ...f, assigneeId: e.target.value || null }))}
+                  className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-blue-400 transition-all">
+                  <option value="">{t('filters.all')}</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+                </select>
+              </div>
+            )}
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">{t('assignments.statusLabel')}</label>
+              <select value={filters.status ?? ''} onChange={e => setFilters(f => ({ ...f, status: (e.target.value || null) as AssignmentStatus | null }))}
+                className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-blue-400 transition-all">
+                <option value="">{t('filters.all')}</option>
+                <option value="pending">{t('assignmentStatus.pending')}</option>
+                <option value="in_progress">{t('assignmentStatus.inProgress')}</option>
+                <option value="paused">{t('assignmentStatus.paused')}</option>
+                <option value="done">{t('assignmentStatus.done')}</option>
+                <option value="cancelled">{t('assignmentStatus.cancelled')}</option>
+              </select>
+            </div>
+            {payrollConfigured && (
+              <div>
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">{t('payroll.settingsTitle')}</label>
+                <select value={filters.periodKey ?? ''} onChange={e => setFilters(f => ({ ...f, periodKey: e.target.value || null }))}
+                  className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-blue-400 transition-all">
+                  <option value="">{t('filters.all')}</option>
+                  {periodOptions.map(([key, { year, month }]) => (
+                    <option key={key} value={key}>{MONTH_LABEL[month - 1]} {year}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">{t('filters.sort')}</label>
+              <div className="flex gap-1.5">
+                {([['name', t('assignments.sortByName')], ['priority', t('assignments.priorityLabel')]] as [SortKey, string][]).map(([key, label]) => (
+                  <button key={key} onClick={() => toggleSort(key)}
+                    className="flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all active:scale-95"
+                    style={sortKey === key ? { background: '#1e293b', color: 'white' } : { background: '#f1f5f9', color: '#64748b' }}>
+                    {label}
+                    {sortKey === key && (
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ transform: sortDir === 'asc' ? 'none' : 'rotate(180deg)', transition: 'transform 0.2s' }}>
+                        <path d="M2 6.5l3-3 3 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {activeFilterCount > 0 && (
+              <button onClick={() => setFilters(EMPTY_FILTERS)} className="text-xs text-red-400 font-medium hover:text-red-600 transition-colors">
+                {t('assignments.reset')}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="px-4 space-y-2 pb-8">
@@ -138,34 +300,41 @@ export default function AssignmentsPage() {
           </div>
         ) : list.map(a => {
           const style = STATUS_STYLE[a.status]
+          const period = formatPeriodRange(a)
           return (
             <button key={a.id} onClick={() => setDetail(a)}
               className="flex w-full items-center gap-3 rounded-2xl bg-white px-4 py-3.5 text-left"
               style={{ border: '1px solid rgba(157,200,255,0.22)', boxShadow: '0 1px 6px rgba(157,200,255,0.07)' }}>
+              <div className="shrink-0 mt-0.5"><PriorityIcon priority={a.priority} /></div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-slate-800 truncate">{a.name}</p>
                 <p className="text-xs text-slate-400 truncate mt-0.5">{a.productName} · {tn(a.operationName, a.operationNameEn)}</p>
-                {isManager && <p className="text-xs text-slate-400 mt-0.5">{t('assignments.assigneePrefix', { name: a.assigneeName })}</p>}
+                {period && <p className="text-[10px] text-slate-300 mt-0.5">{t('assignments.payrollPeriodPrefix')} {period}</p>}
+                {a.dueDate !== null && (
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    {t('assignments.dueDatePrefix', { date: new Date(a.dueDate).toLocaleDateString('uk-UA', { timeZone: 'Europe/Kyiv', day: '2-digit', month: '2-digit' }) })}
+                  </p>
+                )}
               </div>
-              <span className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold" style={{ background: style.bg, color: style.text }}>
-                {t(STATUS_LABEL_KEY[a.status])}
-              </span>
+              <div className="flex flex-col items-end gap-1.5 shrink-0">
+                {isManager && (
+                  <span className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold" style={{ background: '#eff6ff', color: '#2563eb' }}>
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                      <circle cx="5" cy="3.2" r="1.8" stroke="currentColor" strokeWidth="1.2"/>
+                      <path d="M1.5 9c0-2 1.6-3.2 3.5-3.2S8.5 7 8.5 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+                    </svg>
+                    {a.assigneeName}
+                  </span>
+                )}
+                <span className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold" style={{ background: style.bg, color: style.text }}>
+                  <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: style.text }} />
+                  {t(STATUS_LABEL_KEY[a.status])}
+                </span>
+              </div>
             </button>
           )
         })}
       </div>
-
-      {filterOpen && (
-        <FilterSheet
-          isManager={isManager}
-          users={users}
-          products={products}
-          operations={operations}
-          filters={filters}
-          onApply={f => { setFilters(f); setFilterOpen(false) }}
-          onClose={() => setFilterOpen(false)}
-        />
-      )}
 
       {formOpen && currentUser && (
         <AssignmentFormSheet
@@ -184,91 +353,13 @@ export default function AssignmentsPage() {
           assignment={detail}
           currentUser={currentUser}
           isManager={!!isManager}
+          products={products}
+          operations={operations}
           onClose={() => setDetail(null)}
           onSaved={() => showToast(t('materials.toastSaved'))}
           onDeleted={() => { setDetail(null); showToast(t('assignments.toastDeleted')) }}
         />
       )}
-    </div>
-  )
-}
-
-/* ───────────────────────────────────────────────────────────
-   Фільтри
-─────────────────────────────────────────────────────────── */
-
-function FilterSheet({ isManager, users, products, operations, filters, onApply, onClose }: {
-  isManager: boolean
-  users: AppUser[]
-  products: Product[]
-  operations: Operation[]
-  filters: Filters
-  onApply: (f: Filters) => void
-  onClose: () => void
-}) {
-  const { t, tn } = useLocale()
-  const [local, setLocal] = useState(filters)
-
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center sm:p-4"
-      style={{ background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)' }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="rounded-t-3xl bg-white pt-2 pb-10 max-h-[92vh] overflow-y-auto sm:rounded-3xl sm:w-full sm:max-w-md">
-        <div className="flex justify-center py-3">
-          <button onClick={onClose} className="h-1 w-10 rounded-full bg-slate-200 sm:hidden" />
-        </div>
-        <h2 style={{ fontFamily: "'DM Serif Display', serif" }} className="px-5 text-2xl text-slate-800 mb-4">{t('assignments.filtersTitle')}</h2>
-
-        <div className="px-5 space-y-4">
-          {isManager && (
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.worker')}</label>
-              <select value={local.assigneeId ?? ''} onChange={e => setLocal(f => ({ ...f, assigneeId: e.target.value || null }))}
-                className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all">
-                <option value="">{t('filters.all')}</option>
-                {users.map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
-              </select>
-            </div>
-          )}
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.product')}</label>
-            <select value={local.productId ?? ''} onChange={e => setLocal(f => ({ ...f, productId: e.target.value || null }))}
-              className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all">
-              <option value="">{t('filters.all')}</option>
-              {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('common.operation')}</label>
-            <select value={local.operationId ?? ''} onChange={e => setLocal(f => ({ ...f, operationId: e.target.value || null }))}
-              className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all">
-              <option value="">{t('filters.all')}</option>
-              {operations.map(o => <option key={o.id} value={o.id}>{tn(o.name, o.nameEn)}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('filters.status')}</label>
-            <select value={local.status ?? ''} onChange={e => setLocal(f => ({ ...f, status: (e.target.value || null) as AssignmentStatus | null }))}
-              className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all">
-              <option value="">{t('filters.all')}</option>
-              <option value="pending">{t('assignmentStatus.pending')}</option>
-              <option value="in_progress">{t('assignmentStatus.inProgress')}</option>
-              <option value="done">{t('assignmentStatus.done')}</option>
-              <option value="cancelled">{t('assignmentStatus.cancelled')}</option>
-            </select>
-          </div>
-          <label className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3 cursor-pointer">
-            <span className="text-sm text-slate-600">{t('assignments.showArchivedCompleted')}</span>
-            <input type="checkbox" checked={local.showArchived} onChange={e => setLocal(f => ({ ...f, showArchived: e.target.checked }))}
-              className="h-4 w-4 rounded accent-slate-800" />
-          </label>
-        </div>
-
-        <div className="flex gap-3 mt-6 px-5">
-          <button onClick={() => onApply(EMPTY_FILTERS)} className="flex-1 rounded-2xl border border-slate-200 py-3.5 text-sm text-slate-600">{t('assignments.reset')}</button>
-          <button onClick={() => onApply(local)} className="flex-1 rounded-2xl bg-slate-800 py-3.5 text-sm font-medium text-white active:scale-[0.98] transition-all">{t('assignments.apply')}</button>
-        </div>
-      </div>
     </div>
   )
 }
@@ -299,6 +390,9 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
 
   const [productSearch, setProductSearch] = useState('')
   const [productId, setProductId] = useState<string | null>(null)
+  // Продукт не обов'язковий — можна створити завдання без нього й прив'язати пізніше
+  // (з деталей завдання). Без продукту немає "рекомендованих завдань" — одразу вручну.
+  const [productSkipped, setProductSkipped] = useState(false)
   const productTasksQ = useProductTasks(productId)
   const recommended = productTasksQ.data ?? []
 
@@ -309,6 +403,8 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
   const [duration, setDuration] = useState('')
   const [cost, setCost] = useState<number | null>(null)
   const [assigneeId, setAssigneeId] = useState<string | null>(isManager ? null : currentUser.id)
+  const [priority, setPriority] = useState<AssignmentPriority>('medium')
+  const [dueDate, setDueDate] = useState('')
 
   const selectedProduct = productId ? activeProducts.find(p => p.id === productId) ?? null : null
   const filteredProducts = activeProducts.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.sku.toLowerCase().includes(productSearch.toLowerCase()))
@@ -332,15 +428,19 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
     setPickedTaskId(null); setOperationId(null); setName(''); setDuration(''); setCost(null); setManualMode(false)
   }
 
-  const canConfirm = productId !== null && operationId !== null && name.trim().length > 0 && assigneeId !== null
+  const skipProduct = () => { setProductSkipped(true); setPickedTaskId(null); setManualMode(true) }
+  const chooseProductAfterAll = () => { setProductSkipped(false); setManualMode(false) }
+
+  const canConfirm = (productId !== null || productSkipped) && operationId !== null && name.trim().length > 0 && assigneeId !== null
 
   const handleConfirm = async () => {
-    if (!canConfirm || !productId || !operationId || !assigneeId) return
+    if (!canConfirm || !operationId || !assigneeId) return
     await createAssignment({
       productId, operationId, taskId: pickedTaskId, name: name.trim(),
       assigneeId, assignedById: currentUser.id,
       durationMinutes: duration.trim() ? Number(duration) : null,
-      cost,
+      cost, priority,
+      dueDate: dueDate ? new Date(dueDate + 'T00:00:00').getTime() : null,
     })
     onCreated()
   }
@@ -370,6 +470,11 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
                 </div>
                 <button onClick={changeProduct} className="text-xs text-blue-500 font-medium shrink-0">{t('common.change')}</button>
               </div>
+            ) : productSkipped ? (
+              <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                <span className="text-sm text-slate-500">{t('assignments.noProductChosen')}</span>
+                <button onClick={chooseProductAfterAll} className="text-xs text-blue-500 font-medium shrink-0">{t('assignments.chooseProductLink')}</button>
+              </div>
             ) : (
               <>
                 <div className="relative mb-2">
@@ -397,15 +502,18 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
                     </button>
                   ))}
                 </div>
+                <button onClick={skipProduct} className="mt-2 text-xs text-blue-500 font-medium hover:underline">
+                  {t('assignments.skipProductLink')}
+                </button>
               </>
             )}
           </div>
 
-          {/* Рекомендовані завдання / вручну */}
-          {selectedProduct && (
+          {/* Рекомендовані завдання / вручну — без продукту рекомендацій немає, одразу вручну */}
+          {(selectedProduct || productSkipped) && (
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('operationPicker.taskLabel')}</label>
-              {!manualMode && recommended.length > 0 && (
+              {selectedProduct && !manualMode && recommended.length > 0 && (
                 <div className="space-y-1.5 mb-2">
                   {recommended.map(pt => {
                     const op = operations.find(o => o.id === pt.operationId)
@@ -424,10 +532,10 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
                   })}
                 </div>
               )}
-              {recommended.length === 0 && !manualMode && (
+              {selectedProduct && recommended.length === 0 && !manualMode && (
                 <p className="text-xs text-slate-400 mb-2">{t('assignments.noReadyTasksHint')}</p>
               )}
-              {!manualMode ? (
+              {selectedProduct && !manualMode ? (
                 <button onClick={startManual} className="text-xs text-blue-500 font-medium hover:underline">
                   {t('assignments.specifyManually')}
                 </button>
@@ -449,7 +557,7 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
                   </div>
                   <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder={t('operationPicker.taskNamePlaceholder')}
                     className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-all" />
-                  {recommended.length > 0 && (
+                  {selectedProduct && recommended.length > 0 && (
                     <button onClick={() => setManualMode(false)} className="text-xs text-slate-500 hover:underline">{t('assignments.selectFromRecommended')}</button>
                   )}
                 </div>
@@ -458,7 +566,7 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
           )}
 
           {/* Виконавець */}
-          {selectedProduct && operationId && (
+          {(selectedProduct || productSkipped) && operationId && (
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.assigneeLabel')}</label>
               {isManager ? (
@@ -474,7 +582,7 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
           )}
 
           {/* Витрачений час */}
-          {selectedProduct && operationId && (
+          {(selectedProduct || productSkipped) && operationId && (
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.spentTimeLabel')}</label>
               <input type="number" min="0" step="any" value={duration} onChange={e => setDuration(e.target.value)} placeholder="0"
@@ -483,6 +591,33 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
                 <p className="mt-1.5 text-xs text-slate-400">{t('assignments.templateCost', { cost })}</p>
               )}
             </div>
+          )}
+
+          {/* Пріоритет і дата виконання */}
+          {(selectedProduct || productSkipped) && operationId && (
+            <>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.priorityLabel')}</label>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {PRIORITIES.map(p => {
+                    const style = PRIORITY_STYLE[p]
+                    const active = priority === p
+                    return (
+                      <button key={p} type="button" onClick={() => setPriority(p)}
+                        className="rounded-xl py-2 text-[11px] font-medium transition-all"
+                        style={active ? { background: style.text, color: '#fff' } : { background: style.bg, color: style.text }}>
+                        {t(PRIORITY_LABEL_KEY[p])}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.dueDateLabel')}</label>
+                <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
+              </div>
+            </>
           )}
         </div>
 
@@ -503,35 +638,72 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
    або менеджером), видалення.
 ─────────────────────────────────────────────────────────── */
 
-function AssignmentDetailSheet({ assignment, currentUser, isManager, onClose, onSaved, onDeleted }: {
+function AssignmentDetailSheet({ assignment, currentUser, isManager, products, operations, onClose, onSaved, onDeleted }: {
   assignment: Assignment
   currentUser: CurrentUser
   isManager: boolean
+  products: Product[]
+  operations: Operation[]
   onClose: () => void
   onSaved: () => void
   onDeleted: () => void
 }) {
   const { t, tn } = useLocale()
-  const { updateStatus, removeAssignment, isSaving } = useAssignmentMutations()
+  const { updateAssignment, removeAssignment, isSaving } = useAssignmentMutations()
+  const payrollSettingsQ = usePayrollSettings()
+  const payrollClosuresQ = usePayrollClosures()
+  const [tab, setTab] = useState<'details' | 'history'>('details')
+  const eventsQ = useAssignmentEvents(tab === 'history' ? assignment.id : null)
+
   const [status, setStatus] = useState<AssignmentStatus>(assignment.status)
   const initialDuration = assignment.durationMinutes !== null ? String(assignment.durationMinutes) : ''
   const [duration, setDuration] = useState(initialDuration)
+  const initialCost = assignment.cost !== null ? String(assignment.cost) : ''
+  const [cost, setCost] = useState(initialCost)
+  const [priority, setPriority] = useState<AssignmentPriority>(assignment.priority)
+  const initialDueDate = assignment.dueDate !== null ? new Date(assignment.dueDate).toISOString().slice(0, 10) : ''
+  const [dueDate, setDueDate] = useState(initialDueDate)
+  const [productId, setProductId] = useState<string | null>(assignment.productId)
+  const [operationId, setOperationId] = useState<string | null>(assignment.operationId)
+  const [productPickerOpen, setProductPickerOpen] = useState(false)
+  const [productSearch, setProductSearch] = useState('')
+  const linkedProduct = productId ? products.find(p => p.id === productId) ?? null : null
+  const filteredPickerProducts = products.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.sku.toLowerCase().includes(productSearch.toLowerCase()))
 
-  // Завершене завдання можна редагувати лише в день завершення — далі поля блокуються
-  // (те саме перевіряє тригер у базі, тут — лише для UI).
+  const hasAccess = isManager || assignment.assigneeId === currentUser.id
+
+  // Статус — стара логіка без змін: завершене завдання можна змінювати статусом
+  // лише в день завершення (те саме перевіряє тригер у базі).
   const locked = isAssignmentLocked(assignment)
-  const canEdit = (isManager || assignment.assigneeId === currentUser.id) && !locked
+  const canEditStatus = hasAccess && !locked
+
+  // Час/вартість завершеного завдання — нове правило зарплатного періоду:
+  // день завершення АБО останній день періоду (поки не налаштовано — лише день
+  // завершення, як і раніше); закритий період — ніколи. Не завершене — без обмежень.
+  const payrollSettings = payrollSettingsQ.data ?? { openFromDay: null, openToDay: null }
+  const payrollClosures = payrollClosuresQ.data ?? []
+  const payrollStatus = assignment.status === 'done' && assignment.completedAt !== null
+    ? computePayrollPeriodStatus(assignment.completedAt, payrollSettings, payrollClosures)
+    : null
+  const canEditTimeCost = hasAccess && (payrollStatus === null || payrollStatus.canEditTimeCost)
+
   // Видалити можна лише поки завдання ще "В очікуванні" (узгоджено з RLS-політикою видалення).
   const canDelete = (isManager || assignment.assignedById === currentUser.id) && assignment.status === 'pending'
-  const dirty = status !== assignment.status || duration !== initialDuration
+  const dirty = status !== assignment.status || duration !== initialDuration || cost !== initialCost
+    || priority !== assignment.priority || dueDate !== initialDueDate
+    || productId !== assignment.productId || operationId !== assignment.operationId
 
   const save = async () => {
-    await updateStatus({
+    await updateAssignment({
       id: assignment.id,
       prevStatus: assignment.status,
       prevStatusChangedAt: assignment.statusChangedAt,
       newStatus: status,
       durationMinutes: duration.trim() ? Number(duration) : null,
+      cost: cost.trim() ? Number(cost) : null,
+      priority,
+      dueDate: dueDate ? new Date(dueDate + 'T00:00:00').getTime() : null,
+      productId, operationId,
     })
     onSaved()
     onClose()
@@ -553,10 +725,52 @@ function AssignmentDetailSheet({ assignment, currentUser, isManager, onClose, on
         <h2 style={{ fontFamily: "'DM Serif Display', serif" }} className="px-5 text-2xl text-slate-800 mb-1">{assignment.name}</h2>
         <p className="px-5 text-sm text-slate-400 mb-4">{assignment.productName} · {tn(assignment.operationName, assignment.operationNameEn)}</p>
 
+        <div className="px-5 mb-4 flex gap-1.5 rounded-2xl bg-slate-50 p-1">
+          <button onClick={() => setTab('details')} className="flex-1 rounded-xl py-2 text-xs font-medium transition-all"
+            style={tab === 'details' ? { background: '#1e293b', color: '#fff' } : { color: '#64748b' }}>
+            {t('assignments.detailsTab')}
+          </button>
+          <button onClick={() => setTab('history')} className="flex-1 rounded-xl py-2 text-xs font-medium transition-all"
+            style={tab === 'history' ? { background: '#1e293b', color: '#fff' } : { color: '#64748b' }}>
+            {t('assignments.historyTab')}
+          </button>
+        </div>
+
+        {tab === 'history' ? (
+          <div className="px-5 pb-2 space-y-2">
+            {eventsQ.isLoading ? (
+              <p className="py-8 text-center text-sm text-slate-400">{t('common.loading')}</p>
+            ) : (eventsQ.data ?? []).length === 0 ? (
+              <p className="py-8 text-center text-sm text-slate-400">{t('assignments.noHistoryYet')}</p>
+            ) : (eventsQ.data ?? []).map(ev => (
+              <div key={ev.id} className="rounded-2xl bg-slate-50 px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-slate-700">{t(EVENT_LABEL_KEY[ev.eventType])}</span>
+                  <span className="text-[10px] text-slate-400">
+                    {new Date(ev.occurredAt).toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">{ev.actorName}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+        <>
         <div className="px-5 space-y-5">
           {locked && (
             <div className="rounded-2xl px-4 py-3 text-xs" style={{ background: '#f1f5f9', color: '#64748b' }}>
               {t('assignments.lockedHint')}
+            </div>
+          )}
+          {payrollStatus && payrollStatus.phase !== 'not_configured' && (
+            <div className="rounded-2xl px-4 py-3 text-xs" style={{
+              background: payrollStatus.phase === 'closed' ? '#fee2e2' : payrollStatus.phase === 'grace_day' ? '#fff7ed' : '#f1f5f9',
+              color: payrollStatus.phase === 'closed' ? '#dc2626' : payrollStatus.phase === 'grace_day' ? '#ea580c' : '#64748b',
+            }}>
+              {t(payrollStatus.phase === 'closed' ? 'payroll.periodStatusClosed'
+                : payrollStatus.phase === 'grace_day' ? 'payroll.periodStatusGraceDay'
+                : payrollStatus.phase === 'awaiting_closure' ? 'payroll.periodStatusAwaitingClosure'
+                : 'payroll.periodStatusActive')}
             </div>
           )}
           {isManager && (
@@ -570,6 +784,57 @@ function AssignmentDetailSheet({ assignment, currentUser, isManager, onClose, on
             <span className="text-sm font-medium text-slate-700">{assignment.assignedByName}</span>
           </div>
 
+          {/* Продукт — необов'язковий, можна прив'язати/змінити пізніше; зміна логується в "Історії" */}
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.product')}</label>
+            {linkedProduct ? (
+              <div className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+                <div className="h-9 w-9 shrink-0 rounded-lg overflow-hidden bg-slate-100 flex items-center justify-center text-slate-400">
+                  {linkedProduct.photo ? <img src={linkedProduct.photo} alt="" className="h-full w-full object-cover" /> : <span className="text-xs">📦</span>}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-800 truncate">{linkedProduct.name}</p>
+                  <p className="text-xs font-mono text-slate-400">{linkedProduct.sku}</p>
+                </div>
+                {canEditStatus && (
+                  <button onClick={() => setProductPickerOpen(true)} className="text-xs text-blue-500 font-medium shrink-0">{t('common.change')}</button>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                <span className="text-sm text-slate-500">{t('assignments.noProductChosen')}</span>
+                {canEditStatus && (
+                  <button onClick={() => setProductPickerOpen(true)} className="text-xs text-blue-500 font-medium shrink-0">{t('assignments.linkProductLink')}</button>
+                )}
+              </div>
+            )}
+            {productPickerOpen && (
+              <div className="mt-2 rounded-2xl border border-slate-200 p-3 space-y-2">
+                <input type="search" value={productSearch} onChange={e => setProductSearch(e.target.value)} placeholder={t('assignments.searchProductPlaceholder')}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 transition-all" />
+                <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                  {filteredPickerProducts.length === 0 ? (
+                    <p className="py-2 text-center text-xs text-slate-400">{t('operationPicker.notFoundShort')}</p>
+                  ) : filteredPickerProducts.map(p => (
+                    <button key={p.id} onClick={() => { setProductId(p.id); setProductPickerOpen(false); setProductSearch('') }}
+                      className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left hover:bg-slate-50 transition-colors" style={{ border: '1px solid rgba(157,200,255,0.2)' }}>
+                      <span className="text-sm text-slate-800 truncate flex-1">{p.name}</span>
+                      <span className="text-xs font-mono text-slate-400 shrink-0">{p.sku}</span>
+                    </button>
+                  ))}
+                </div>
+                <button onClick={() => { setProductPickerOpen(false); setProductSearch('') }} className="text-xs text-slate-400 hover:underline">{t('common.cancel')}</button>
+              </div>
+            )}
+            <div className="mt-2 relative">
+              <select value={operationId ?? ''} onChange={e => setOperationId(e.target.value || null)} disabled={!canEditStatus}
+                className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-blue-400 transition-all disabled:opacity-50">
+                <option value="">{t('assignments.selectOperationPlaceholder')}</option>
+                {operations.map(o => <option key={o.id} value={o.id}>{tn(o.name, o.nameEn)}</option>)}
+              </select>
+            </div>
+          </div>
+
           <div>
             <label className="mb-2 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('filters.status')}</label>
             <div className="grid grid-cols-2 gap-2">
@@ -578,7 +843,7 @@ function AssignmentDetailSheet({ assignment, currentUser, isManager, onClose, on
                 const style = STATUS_STYLE[s]
                 const active = status === s
                 return (
-                <button key={s} onClick={() => canEdit && setStatus(s)} disabled={!canEdit}
+                <button key={s} onClick={() => canEditStatus && setStatus(s)} disabled={!canEditStatus}
                   className="rounded-xl py-2.5 text-xs font-medium transition-all disabled:opacity-50"
                   style={active ? { background: style.text, color: '#fff' } : { background: style.bg, color: style.text }}>
                   {t(STATUS_LABEL_KEY[s])}
@@ -589,8 +854,31 @@ function AssignmentDetailSheet({ assignment, currentUser, isManager, onClose, on
           </div>
 
           <div>
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.priorityLabel')}</label>
+            <div className="grid grid-cols-4 gap-1.5">
+              {PRIORITIES.map(p => {
+                const style = PRIORITY_STYLE[p]
+                const active = priority === p
+                return (
+                  <button key={p} onClick={() => canEditStatus && setPriority(p)} disabled={!canEditStatus}
+                    className="rounded-xl py-2 text-[11px] font-medium transition-all disabled:opacity-50"
+                    style={active ? { background: style.text, color: '#fff' } : { background: style.bg, color: style.text }}>
+                    {t(PRIORITY_LABEL_KEY[p])}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.dueDateLabel')}</label>
+            <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} disabled={!canEditStatus}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all disabled:opacity-50" />
+          </div>
+
+          <div>
             <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.spentTimeLabel')}</label>
-            <input type="number" min="0" step="any" value={duration} onChange={e => setDuration(e.target.value)} disabled={!canEdit} placeholder="0"
+            <input type="number" min="0" step="any" value={duration} onChange={e => setDuration(e.target.value)} disabled={!canEditTimeCost} placeholder="0"
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all disabled:opacity-50" />
             <p className="mt-1.5 text-xs text-slate-400">
               {t('assignments.timeAutoHint')}
@@ -606,10 +894,11 @@ function AssignmentDetailSheet({ assignment, currentUser, isManager, onClose, on
             </div>
           )}
 
-          {isManager && assignment.cost !== null && (
-            <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-              <span className="text-xs text-slate-400">{t('assignments.costLabel')}</span>
-              <span className="text-sm font-medium text-slate-700">{assignment.cost} ₴</span>
+          {isManager && (
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.costLabel')}</label>
+              <input type="number" min="0" step="any" value={cost} onChange={e => setCost(e.target.value)} disabled={!canEditTimeCost} placeholder="0"
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all disabled:opacity-50" />
             </div>
           )}
         </div>
@@ -621,13 +910,15 @@ function AssignmentDetailSheet({ assignment, currentUser, isManager, onClose, on
             </button>
           )}
           <button onClick={onClose} className="flex-1 rounded-2xl border border-slate-200 py-3.5 text-sm text-slate-600">{t('common.close')}</button>
-          {canEdit && (
+          {(canEditStatus || canEditTimeCost) && (
             <button onClick={save} disabled={!dirty || isSaving}
               className="flex-1 rounded-2xl bg-slate-800 py-3.5 text-sm font-medium text-white disabled:opacity-40 active:scale-[0.98] transition-all">
               {isSaving ? t('common.saving') : t('common.save')}
             </button>
           )}
         </div>
+        </>
+        )}
       </div>
     </div>
   )
