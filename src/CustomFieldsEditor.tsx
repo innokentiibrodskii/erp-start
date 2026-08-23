@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react'
-import type { CustomFieldDefinition, CustomFieldFile, FieldType } from './hooks/useCustomFields'
+import { useState, type ReactNode } from 'react'
+import { useCustomFieldDefinitionMutations, type CustomFieldDefinition, type CustomFieldFile, type EntityType, type FieldType } from './hooks/useCustomFields'
 import { useLocale } from './LocaleContext'
 import type { TranslationKey } from './i18n'
 
@@ -34,18 +34,105 @@ export function Field({ label, children, error }: { label: string; children: Rea
   )
 }
 
+/** Поле типу "Список значень" — розгортний спадний список (той самий патерн,
+ *  що й категорія/характеристики продукту): клік по шеврону показує наявні
+ *  значення радіо-рядками, а внизу — пунктирна кнопка додати нове значення
+ *  прямо тут, без переходу в Довідники → Кастомні поля. */
+function SelectCustomField({ def, value, onChange, onAddOption }: {
+  def: CustomFieldDefinition
+  value: string | null
+  onChange: (optionId: string | null) => void
+  onAddOption: (def: CustomFieldDefinition, value: string, valueEn: string | null) => Promise<string>
+}) {
+  const { t, tn } = useLocale()
+  const [isOpen, setIsOpen] = useState(false)
+  const [isAdding, setIsAdding] = useState(false)
+  const [newValue, setNewValue] = useState('')
+  const [newValueEn, setNewValueEn] = useState('')
+  const selected = def.options.find(o => o.id === value) ?? null
+
+  const submit = async () => {
+    const v = newValue.trim()
+    if (!v) return
+    const id = await onAddOption(def, v, newValueEn.trim() || null)
+    onChange(id)
+    setNewValue('')
+    setNewValueEn('')
+    setIsAdding(false)
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <button type="button" onClick={() => setIsOpen(o => !o)}
+        className="w-full flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-left transition-all active:scale-[0.99]">
+        <span className={selected ? 'text-slate-800' : 'text-slate-400'}>
+          {selected ? tn(selected.value, selected.valueEn) : t('productEditor.selectPlaceholder')}
+        </span>
+        <svg className="text-slate-400 shrink-0" width="13" height="13" viewBox="0 0 13 13" fill="none"
+          style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+          <path d="M2.5 4l4 4.5 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </button>
+      {isOpen && (
+        <div className="space-y-1.5">
+          {def.options.map(o => {
+            const active = o.id === value
+            return (
+              <button key={o.id} type="button" onClick={() => onChange(active ? null : o.id)}
+                className="w-full flex items-center gap-3 rounded-xl px-4 py-2.5 text-left transition-all"
+                style={active ? { background: '#eff6ff', border: '1px solid #bfdbfe' } : { background: '#f8fafc', border: '1px solid transparent' }}>
+                <div className="h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0"
+                  style={{ borderColor: active ? '#3b82f6' : '#cbd5e1' }}>
+                  {active && <div className="h-2 w-2 rounded-full bg-blue-500" />}
+                </div>
+                <span className="text-xs font-medium" style={{ color: active ? '#1d4ed8' : '#475569' }}>{tn(o.value, o.valueEn)}</span>
+              </button>
+            )
+          })}
+          {def.options.length === 0 && <p className="px-1 text-xs text-slate-300">{t('directory.noValues')}</p>}
+
+          {isAdding ? (
+            <div className="flex gap-2 pt-1">
+              <input type="text" autoFocus value={newValue} onChange={e => setNewValue(e.target.value)}
+                placeholder={t('directory.newValuePlaceholder')}
+                onKeyDown={e => e.key === 'Enter' && submit()}
+                className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-800 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-all" />
+              <input type="text" value={newValueEn} onChange={e => setNewValueEn(e.target.value)}
+                placeholder="English…"
+                onKeyDown={e => e.key === 'Enter' && submit()}
+                className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-800 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-all" />
+              <button type="button" onClick={submit}
+                className="rounded-xl bg-slate-800 px-3 py-2 text-xs font-medium text-white active:scale-95 transition-all">+</button>
+            </div>
+          ) : (
+            <button type="button" onClick={() => setIsAdding(true)}
+              className="w-full rounded-xl px-4 py-2.5 text-xs font-medium text-blue-600 transition-all active:scale-[0.99]"
+              style={{ border: '1.5px dashed #93c5fd', background: 'rgba(59,130,246,0.04)' }}>
+              + {t('customField.addValue')}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Секція "Додаткові поля" — рендерить редаговані інпути під кастомні поля
  *  сутності (визначення налаштовуються в Довідниках). Спільна для всіх
  *  редакторів, щоб не дублювати логіку рендеру по типу поля. */
-export function CustomFieldsSection({ fields, customInputs, setCustomInput, errors, filesByField, isNew }: {
+export function CustomFieldsSection({ fields, customInputs, setCustomInput, errors, filesByField, isNew, entityType }: {
   fields: CustomFieldDefinition[]
   customInputs: Record<string, CustomFieldInput>
   setCustomInput: (fieldId: string, patch: Partial<CustomFieldInput>) => void
   errors: Record<string, string>
   filesByField: Record<string, CustomFieldFile[]>
   isNew: boolean
+  entityType: EntityType
 }) {
   const { t, tn } = useLocale()
+  const { addOption } = useCustomFieldDefinitionMutations(entityType)
+  const handleAddOption = (def: CustomFieldDefinition, value: string, valueEn: string | null) =>
+    addOption({ fieldDefinitionId: def.id, value, valueEn, position: def.options.length })
   if (fields.length === 0) return null
   return (
     <div>
@@ -58,16 +145,9 @@ export function CustomFieldsSection({ fields, customInputs, setCustomInput, erro
           return (
             <Field key={def.id} label={tn(def.name, def.nameEn) + (def.isRequired ? ' *' : '')} error={error}>
               {def.fieldType === 'select' ? (
-                <div className="relative">
-                  <select value={v.optionId ?? ''} onChange={e => setCustomInput(def.id, { optionId: e.target.value || null })}
-                    className="w-full appearance-none rounded-2xl border border-slate-200 bg-white pl-4 pr-10 py-3.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all">
-                    <option value="">{t('productEditor.selectPlaceholder')}</option>
-                    {def.options.map(o => <option key={o.id} value={o.id}>{tn(o.value, o.valueEn)}</option>)}
-                  </select>
-                  <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" width="13" height="13" viewBox="0 0 13 13" fill="none">
-                    <path d="M2.5 4l4 4.5 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </div>
+                <SelectCustomField def={def} value={v.optionId}
+                  onChange={optionId => setCustomInput(def.id, { optionId })}
+                  onAddOption={handleAddOption} />
               ) : def.fieldType === 'boolean' ? (
                 <button type="button" onClick={() => setCustomInput(def.id, { boolean: !v.boolean })}
                   className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3.5 w-full">

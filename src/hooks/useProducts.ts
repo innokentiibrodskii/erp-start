@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { uploadFileWithProgress } from '../lib/storageUpload'
 import { useActiveOrgId } from '../OrgContext'
 import { useLocale } from '../LocaleContext'
 import type { TranslationKey } from '../i18n'
@@ -7,6 +8,11 @@ import type { TranslationKey } from '../i18n'
 /* ───────────────────────────────────────────────────────────
    Types
 ─────────────────────────────────────────────────────────── */
+
+// Ліміти на клієнті — щоб відхиляти завеликі файли одразу при виборі,
+// а не після тривалого завантаження, яке все одно впаде на боці Storage.
+export const MAX_PHOTO_SIZE = 10 * 1024 * 1024 // 10 МБ
+export const MAX_VIDEO_SIZE = 100 * 1024 * 1024 // 100 МБ
 
 export interface ProductMaterialLink {
   materialId: string
@@ -247,13 +253,12 @@ export function useProducts() {
   })
 }
 
-async function persistPhotos(orgId: string, productId: string, photos: PhotoItem[]) {
+async function persistPhotos(orgId: string, productId: string, photos: PhotoItem[], onProgress?: (key: string, loadedBytes: number) => void) {
   const resolvedUrls = await Promise.all(
     photos.map(async (p, i) => {
       if (!p.file) return p.url
       const path = `${productId}/${Date.now()}-${i}-${p.file.name}`
-      const { error: uploadError } = await supabase.storage.from('product-photos').upload(path, p.file)
-      if (uploadError) throw uploadError
+      await uploadFileWithProgress('product-photos', path, p.file, loaded => onProgress?.(p.key, loaded))
       const { data } = supabase.storage.from('product-photos').getPublicUrl(path)
       return data.publicUrl
     })
@@ -269,13 +274,12 @@ async function persistPhotos(orgId: string, productId: string, photos: PhotoItem
   }
 }
 
-async function persistVideos(orgId: string, productId: string, videos: VideoItem[]) {
+async function persistVideos(orgId: string, productId: string, videos: VideoItem[], onProgress?: (key: string, loadedBytes: number) => void) {
   const resolvedUrls = await Promise.all(
     videos.map(async (v, i) => {
       if (!v.file) return v.url
       const path = `${productId}/${Date.now()}-${i}-${v.file.name}`
-      const { error: uploadError } = await supabase.storage.from('product-videos').upload(path, v.file)
-      if (uploadError) throw uploadError
+      await uploadFileWithProgress('product-videos', path, v.file, loaded => onProgress?.(v.key, loaded))
       const { data } = supabase.storage.from('product-videos').getPublicUrl(path)
       return data.publicUrl
     })
@@ -305,7 +309,7 @@ export function useProductMutations() {
   const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error, t))
 
   const create = useMutation({
-    mutationFn: async ({ name, description, categoryId, sku, photos, videos }: { name: string; description: string; categoryId: string | null; sku: string; photos: PhotoItem[]; videos: VideoItem[] }) => {
+    mutationFn: async ({ name, description, categoryId, sku, photos, videos, onProgress }: { name: string; description: string; categoryId: string | null; sku: string; photos: PhotoItem[]; videos: VideoItem[]; onProgress?: (key: string, loadedBytes: number) => void }) => {
       // Новий продукт завжди отримує дефолтний статус каталогу (зазвичай "Активний")
       const statusId = await getDefaultStatusId(orgId)
       const { data, error } = await supabase
@@ -314,8 +318,12 @@ export function useProductMutations() {
         .select('id')
         .single()
       if (error) throw error
-      await persistPhotos(orgId, data.id, photos)
-      await persistVideos(orgId, data.id, videos)
+      // Фото й відео вантажаться паралельно, а не одне за одним — на повільній мережі
+      // це помітно скорочує загальний час збереження продукту.
+      await Promise.all([
+        persistPhotos(orgId, data.id, photos, onProgress),
+        persistVideos(orgId, data.id, videos, onProgress),
+      ])
       return data.id as string
     },
     onSuccess: invalidate,
@@ -323,11 +331,13 @@ export function useProductMutations() {
   })
 
   const update = useMutation({
-    mutationFn: async ({ id, name, description, categoryId, statusId, photos, videos }: { id: string; name: string; description: string; categoryId: string | null; statusId: string | null; photos: PhotoItem[]; videos: VideoItem[] }) => {
+    mutationFn: async ({ id, name, description, categoryId, statusId, photos, videos, onProgress }: { id: string; name: string; description: string; categoryId: string | null; statusId: string | null; photos: PhotoItem[]; videos: VideoItem[]; onProgress?: (key: string, loadedBytes: number) => void }) => {
       const { error } = await supabase.from('products').update({ name, description, category_id: categoryId, status_id: statusId }).eq('id', id)
       if (error) throw error
-      await persistPhotos(orgId, id, photos)
-      await persistVideos(orgId, id, videos)
+      await Promise.all([
+        persistPhotos(orgId, id, photos, onProgress),
+        persistVideos(orgId, id, videos, onProgress),
+      ])
     },
     onSuccess: invalidate,
     onError: onErr,
@@ -343,8 +353,8 @@ export function useProductMutations() {
   })
 
   return {
-    createProduct: (args: { name: string; description: string; categoryId: string | null; sku: string; photos: PhotoItem[]; videos: VideoItem[] }) => create.mutateAsync(args),
-    updateProduct: (args: { id: string; name: string; description: string; categoryId: string | null; statusId: string | null; photos: PhotoItem[]; videos: VideoItem[] }) => update.mutateAsync(args),
+    createProduct: (args: { name: string; description: string; categoryId: string | null; sku: string; photos: PhotoItem[]; videos: VideoItem[]; onProgress?: (key: string, loadedBytes: number) => void }) => create.mutateAsync(args),
+    updateProduct: (args: { id: string; name: string; description: string; categoryId: string | null; statusId: string | null; photos: PhotoItem[]; videos: VideoItem[]; onProgress?: (key: string, loadedBytes: number) => void }) => update.mutateAsync(args),
     removeProduct: (id: string) => remove.mutate(id),
     isSaving: create.isPending || update.isPending,
   }

@@ -161,8 +161,9 @@ export function useCustomFieldDefinitionMutations(entityType: EntityType) {
 
   const addOption = useMutation({
     mutationFn: async ({ fieldDefinitionId, value, valueEn, position }: { fieldDefinitionId: string; value: string; valueEn: string | null; position: number }) => {
-      const { error } = await supabase.from('custom_field_options').insert({ field_definition_id: fieldDefinitionId, value, value_en: valueEn, position, organization_id: orgId })
+      const { data, error } = await supabase.from('custom_field_options').insert({ field_definition_id: fieldDefinitionId, value, value_en: valueEn, position, organization_id: orgId }).select('id').single()
       if (error) throw error
+      return data.id as string
     },
     onSuccess: invalidate,
     onError: onErr,
@@ -193,7 +194,7 @@ export function useCustomFieldDefinitionMutations(entityType: EntityType) {
       update.mutateAsync({ ...args, nameEn: args.nameEn ?? null }),
     removeDefinition: (id: string) => remove.mutate(id),
     addOption: (args: { fieldDefinitionId: string; value: string; valueEn?: string | null; position: number }) =>
-      addOption.mutateAsync({ ...args, valueEn: args.valueEn ?? null }),
+      addOption.mutateAsync({ ...args, valueEn: args.valueEn ?? null }) as Promise<string>,
     updateOption: (args: { id: string; value: string; valueEn?: string | null }) =>
       updateOption.mutateAsync({ ...args, valueEn: args.valueEn ?? null }),
     removeOption: (id: string) => removeOption.mutate(id),

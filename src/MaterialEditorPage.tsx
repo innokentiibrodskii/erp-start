@@ -354,7 +354,7 @@ export default function MaterialEditorPage({
           </div>
 
           <CustomFieldsSection fields={fields} customInputs={customInputs} setCustomInput={setCustomInput}
-            errors={errors} filesByField={valuesQ.files} isNew={isNew} />
+            errors={errors} filesByField={valuesQ.files} isNew={isNew} entityType="material" />
         </div>
       )}
 

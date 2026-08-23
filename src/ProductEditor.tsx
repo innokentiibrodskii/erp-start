@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useCatalog } from './hooks/useCatalog'
-import { useProducts, useProductPhotos, useProductVideos, useProductMutations, useProductStatuses, genProductArticle, type PhotoItem, type VideoItem } from './hooks/useProducts'
+import { useProducts, useProductPhotos, useProductVideos, useProductMutations, useProductStatuses, genProductArticle, MAX_PHOTO_SIZE, MAX_VIDEO_SIZE, type PhotoItem, type VideoItem } from './hooks/useProducts'
+import { compressImageToLimit } from './lib/imageCompress'
 import { useProductAttributeMutations } from './hooks/useProductAttributes'
 import { useCustomFieldDefinitions, useCustomFieldValues, useCustomFieldValueMutations } from './hooks/useCustomFields'
 import { CategoryTreeNode } from './CategoryTreeNode'
@@ -40,6 +41,7 @@ export default function ProductEditor({ productId, onBack }: Props) {
   const [videos, setVideos] = useState<VideoItem[]>([])
   const [saved, setSaved] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [uploadPct, setUploadPct] = useState<number | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [videoDragOver, setVideoDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -90,12 +92,26 @@ export default function ProductEditor({ productId, onBack }: Props) {
     }
   }, [existing?.statusId])
 
-  const handleFiles = (files: FileList | null) => {
+  const handleFiles = async (files: FileList | null) => {
     if (!files) return
-    Array.from(files).forEach(file => {
-      if (!file.type.startsWith('image/')) return
-      setPhotos(prev => [...prev, { key: crypto.randomUUID(), url: URL.createObjectURL(file), file }])
-    })
+    const tooLarge: string[] = []
+    const compressed: string[] = []
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith('image/')) continue
+      let toAdd = file
+      if (file.size > MAX_PHOTO_SIZE) {
+        const result = await compressImageToLimit(file, MAX_PHOTO_SIZE)
+        if (!result) { tooLarge.push(file.name); continue }
+        compressed.push(file.name)
+        toAdd = result
+      }
+      setPhotos(prev => [...prev, { key: crypto.randomUUID(), url: URL.createObjectURL(toAdd), file: toAdd }])
+    }
+    if (compressed.length > 0) {
+      setToast(t('productEditor.photoCompressed', { names: compressed.join(', '), limit: MAX_PHOTO_SIZE / (1024 * 1024) }))
+      setTimeout(() => setToast(null), 3000)
+    }
+    if (tooLarge.length > 0) alert(t('productEditor.photoTooLarge', { names: tooLarge.join(', '), limit: MAX_PHOTO_SIZE / (1024 * 1024) }))
   }
 
   const removePhoto = (key: string) =>
@@ -113,10 +129,13 @@ export default function ProductEditor({ productId, onBack }: Props) {
 
   const handleVideoFiles = (files: FileList | null) => {
     if (!files) return
+    const tooLarge: string[] = []
     Array.from(files).forEach(file => {
       if (!file.type.startsWith('video/')) return
+      if (file.size > MAX_VIDEO_SIZE) { tooLarge.push(file.name); return }
       setVideos(prev => [...prev, { key: crypto.randomUUID(), url: URL.createObjectURL(file), file }])
     })
+    if (tooLarge.length > 0) alert(t('productEditor.videoTooLarge', { names: tooLarge.join(', '), limit: MAX_VIDEO_SIZE / (1024 * 1024) }))
   }
 
   const removeVideo = (key: string) =>
@@ -140,12 +159,28 @@ export default function ProductEditor({ productId, onBack }: Props) {
 
   const handleSave = async () => {
     if (!name.trim()) return
+    // Прогрес рахуємо лише по нововибраних файлах — уже завантажені фото/відео
+    // (без .file) при збереженні повторно не вантажаться.
+    const newFiles = [...photos, ...videos].filter((f): f is (PhotoItem | VideoItem) & { file: File } => !!f.file)
+    const totalBytes = newFiles.reduce((sum, f) => sum + f.file.size, 0)
+    const loadedByKey = new Map<string, number>()
+    const onProgress = totalBytes > 0 ? (key: string, loadedBytes: number) => {
+      loadedByKey.set(key, loadedBytes)
+      const loaded = [...loadedByKey.values()].reduce((a, b) => a + b, 0)
+      setUploadPct(Math.min(99, Math.round((loaded / totalBytes) * 100)))
+    } : undefined
+    if (totalBytes > 0) setUploadPct(0)
+
     let id: string
-    if (existing) {
-      await updateProduct({ id: existing.id, name: name.trim(), description, categoryId, statusId, photos, videos })
-      id = existing.id
-    } else {
-      id = await createProduct({ name: name.trim(), description, categoryId, sku, photos, videos })
+    try {
+      if (existing) {
+        await updateProduct({ id: existing.id, name: name.trim(), description, categoryId, statusId, photos, videos, onProgress })
+        id = existing.id
+      } else {
+        id = await createProduct({ name: name.trim(), description, categoryId, sku, photos, videos, onProgress })
+      }
+    } finally {
+      setUploadPct(null)
     }
     await saveCustomFieldValues(id, customInputs)
     setSaved(true)
@@ -441,7 +476,7 @@ export default function ProductEditor({ productId, onBack }: Props) {
 
         {/* ── Custom fields ── */}
         <CustomFieldsSection fields={customFields} customInputs={customInputs} setCustomInput={setCustomInput}
-          errors={{}} filesByField={customValuesQ.files} isNew={isNew} />
+          errors={{}} filesByField={customValuesQ.files} isNew={isNew} entityType="product" />
 
         {/* ── Characteristics (edit only) ── */}
         {!isNew && existing && (
@@ -519,8 +554,15 @@ export default function ProductEditor({ productId, onBack }: Props) {
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 pt-3 z-40"
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)', background: 'linear-gradient(to top, rgba(248,251,255,1) 80%, transparent)' }}>
         <button onClick={handleSave} disabled={!canSave}
-          className="flex w-full items-center justify-center rounded-2xl bg-slate-800 py-4 text-sm font-medium text-white disabled:opacity-40 active:scale-[0.98] transition-all">
-          {isSaving ? t('productEditor.saving') : isNew ? t('productEditor.addProduct') : t('productEditor.saveChanges')}
+          className="relative flex w-full items-center justify-center overflow-hidden rounded-2xl bg-slate-800 py-4 text-sm font-medium text-white disabled:opacity-40 active:scale-[0.98] transition-all">
+          {uploadPct !== null && (
+            <span className="absolute inset-y-0 left-0 bg-blue-500/40 transition-all" style={{ width: `${uploadPct}%` }} />
+          )}
+          <span className="relative">
+            {uploadPct !== null ? t('productEditor.uploadingPct', { pct: uploadPct })
+              : isSaving ? t('productEditor.saving')
+              : isNew ? t('productEditor.addProduct') : t('productEditor.saveChanges')}
+          </span>
         </button>
       </div>
     </div>
