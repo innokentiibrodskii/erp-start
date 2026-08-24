@@ -40,7 +40,8 @@ export interface Assignment {
   operationNameEn: string | null
   taskId: string | null
   name: string
-  assigneeId: string
+  /** null — завдання ще без виконавця; можна створити так і призначити пізніше (логується) */
+  assigneeId: string | null
   assigneeName: string
   assignedById: string | null
   assignedByName: string
@@ -153,7 +154,7 @@ export function useAssignmentMutations() {
   const create = useMutation({
     mutationFn: async (args: {
       productId: string | null; operationId: string | null; taskId: string | null; name: string
-      assigneeId: string; assignedById: string; durationMinutes: number | null; plannedDurationMinutes: number | null; cost: number | null
+      assigneeId: string | null; assignedById: string; durationMinutes: number | null; plannedDurationMinutes: number | null; cost: number | null
       priority: AssignmentPriority; dueDate: number | null
     }) => {
       const { error } = await supabase.from('assignments').insert({
@@ -187,10 +188,10 @@ export function useAssignmentMutations() {
    *  продукту до завдання, яке було створене без нього) логується тригером
    *  у базі як подія 'product_changed'. */
   const updateAssignment = useMutation({
-    mutationFn: async ({ id, prevStatus, prevStatusChangedAt, newStatus, durationMinutes, plannedDurationMinutes, cost, priority, dueDate, productId, operationId, taskId }: {
+    mutationFn: async ({ id, prevStatus, prevStatusChangedAt, newStatus, durationMinutes, plannedDurationMinutes, cost, priority, dueDate, productId, operationId, taskId, name, assigneeId }: {
       id: string; prevStatus: AssignmentStatus; prevStatusChangedAt: number; newStatus: AssignmentStatus; durationMinutes: number | null
       plannedDurationMinutes?: number | null; cost?: number | null; priority?: AssignmentPriority; dueDate?: number | null
-      productId?: string | null; operationId?: string | null; taskId?: string | null
+      productId?: string | null; operationId?: string | null; taskId?: string | null; name?: string; assigneeId?: string | null
     }) => {
       let finalDuration = durationMinutes
       if (prevStatus === 'in_progress' && newStatus !== 'in_progress') {
@@ -211,6 +212,8 @@ export function useAssignmentMutations() {
       if (productId !== undefined) patch.product_id = productId
       if (operationId !== undefined) patch.operation_id = operationId
       if (taskId !== undefined) patch.task_id = taskId
+      if (name !== undefined) patch.name = name
+      if (assigneeId !== undefined) patch.assignee_id = assigneeId
 
       const { error } = await supabase.from('assignments').update(patch).eq('id', id)
       if (error) throw error
@@ -231,13 +234,13 @@ export function useAssignmentMutations() {
   return {
     createAssignment: (args: {
       productId: string | null; operationId: string | null; taskId: string | null; name: string
-      assigneeId: string; assignedById: string; durationMinutes: number | null; plannedDurationMinutes: number | null; cost: number | null
+      assigneeId: string | null; assignedById: string; durationMinutes: number | null; plannedDurationMinutes: number | null; cost: number | null
       priority: AssignmentPriority; dueDate: number | null
     }) => create.mutateAsync(args),
     updateAssignment: (args: {
       id: string; prevStatus: AssignmentStatus; prevStatusChangedAt: number; newStatus: AssignmentStatus; durationMinutes: number | null
       plannedDurationMinutes?: number | null; cost?: number | null; priority?: AssignmentPriority; dueDate?: number | null
-      productId?: string | null; operationId?: string | null; taskId?: string | null
+      productId?: string | null; operationId?: string | null; taskId?: string | null; name?: string; assigneeId?: string | null
     }) => updateAssignment.mutateAsync(args),
     removeAssignment: (id: string) => remove.mutate(id),
     isSaving: create.isPending || updateAssignment.isPending,

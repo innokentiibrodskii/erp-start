@@ -85,6 +85,8 @@ const EVENT_LABEL_KEY: Record<AssignmentEventType, TranslationKey> = {
   due_date_changed: 'assignmentEvent.dueDateChanged',
   product_changed: 'assignmentEvent.productChanged',
   planned_duration_changed: 'assignmentEvent.plannedDurationChanged',
+  name_changed: 'assignmentEvent.nameChanged',
+  assignee_changed: 'assignmentEvent.assigneeChanged',
 }
 
 /** 'product_changed' пише тригер у базі і для зміни продукту, і для зміни
@@ -104,15 +106,16 @@ function assignmentEventLabelKey(ev: { eventType: AssignmentEventType; oldValue:
 interface Filters {
   assigneeId: string | null
   status: AssignmentStatus | null
+  productId: string | null
   /** "YYYY-MM" завершеного зарплатного місяця — лише реальні періоди, в яких є завдання */
   periodKey: string | null
   /** Показувати завершені завдання з минулих місяців (за замовчуванням приховані) */
   showArchived: boolean
 }
 
-const EMPTY_FILTERS: Filters = { assigneeId: null, status: null, periodKey: null, showArchived: false }
+const EMPTY_FILTERS: Filters = { assigneeId: null, status: null, productId: null, periodKey: null, showArchived: false }
 
-type SortKey = 'name' | 'priority'
+type SortKey = 'name' | 'priority' | 'createdAt'
 const PRIORITY_RANK: Record<AssignmentPriority, number> = { low: 0, medium: 1, high: 2, urgent: 3 }
 const MONTH_LABEL: string[] = ['січня', 'лютого', 'березня', 'квітня', 'травня', 'червня', 'липня', 'серпня', 'вересня', 'жовтня', 'листопада', 'грудня']
 
@@ -188,6 +191,7 @@ export default function AssignmentsPage() {
   if (q) list = list.filter(a => a.name.toLowerCase().includes(q) || a.productName.toLowerCase().includes(q) || a.operationName.toLowerCase().includes(q))
   if (filters.assigneeId) list = list.filter(a => a.assigneeId === filters.assigneeId)
   if (filters.status) list = list.filter(a => a.status === filters.status)
+  if (filters.productId) list = list.filter(a => a.productId === filters.productId)
   if (filters.periodKey) list = list.filter(a => {
     if (a.status !== 'done' || a.completedAt === null) return false
     const { year, month } = kyivDateParts(a.completedAt)
@@ -197,11 +201,14 @@ export default function AssignmentsPage() {
   if (!filters.showArchived) list = list.filter(a => !isArchivedCompleted(a))
 
   list = [...list].sort((a, b) => {
-    const cmp = sortKey === 'name' ? a.name.localeCompare(b.name, 'uk') : PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]
+    const cmp = sortKey === 'name' ? a.name.localeCompare(b.name, 'uk')
+      : sortKey === 'createdAt' ? a.createdAt - b.createdAt
+      : PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]
     return sortDir === 'asc' ? cmp : -cmp
   })
 
-  const activeFilterCount = [filters.assigneeId, filters.status, filters.periodKey, filters.showArchived].filter(Boolean).length
+  const activeFilterCount = [filters.assigneeId, filters.status, filters.productId, filters.periodKey, filters.showArchived].filter(Boolean).length
+  const productOptions = [...products].sort((a, b) => a.name.localeCompare(b.name, 'uk'))
   const archivedCount = all.filter(isArchivedCompleted).length
 
   /** Діапазон дат зарплатного періоду, до якого належить завершене завдання —
@@ -227,6 +234,7 @@ export default function AssignmentsPage() {
         isManager={!!isManager}
         products={products}
         operations={operations}
+        users={users}
         onBack={() => setDetail(null)}
         onSaved={() => showToast(t('materials.toastSaved'))}
         onDeleted={() => { setDetail(null); showToast(t('assignments.toastDeleted')) }}
@@ -320,6 +328,14 @@ export default function AssignmentsPage() {
                 <option value="cancelled">{t('assignmentStatus.cancelled')}</option>
               </select>
             </div>
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">{t('assignments.product')}</label>
+              <select value={filters.productId ?? ''} onChange={e => setFilters(f => ({ ...f, productId: e.target.value || null }))}
+                className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-blue-400 transition-all">
+                <option value="">{t('filters.all')}</option>
+                {productOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
             {payrollConfigured && (
               <div>
                 <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">{t('payroll.settingsTitle')}</label>
@@ -335,7 +351,7 @@ export default function AssignmentsPage() {
             <div>
               <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">{t('filters.sort')}</label>
               <div className="flex gap-1.5">
-                {([['name', t('assignments.sortByName')], ['priority', t('assignments.priorityLabel')]] as [SortKey, string][]).map(([key, label]) => (
+                {([['name', t('assignments.sortByName')], ['priority', t('assignments.priorityLabel')], ['createdAt', t('assignments.sortByCreatedAt')]] as [SortKey, string][]).map(([key, label]) => (
                   <button key={key} onClick={() => toggleSort(key)}
                     className="flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all active:scale-95"
                     style={sortKey === key ? { background: '#1e293b', color: 'white' } : { background: '#f1f5f9', color: '#64748b' }}>
@@ -392,7 +408,7 @@ export default function AssignmentsPage() {
                         <circle cx="5" cy="3.2" r="1.8" stroke="currentColor" strokeWidth="1.2"/>
                         <path d="M1.5 9c0-2 1.6-3.2 3.5-3.2S8.5 7 8.5 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
                       </svg>
-                      {a.assigneeName}
+                      {a.assigneeId ? a.assigneeName : t('assignments.unassigned')}
                     </span>
                   )}
                   <span className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold" style={{ background: style.bg, color: style.text }}>
@@ -504,10 +520,13 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
   const skipProduct = () => { setProductSkipped(true); setPickedTaskId(null); setManualMode(true) }
   const chooseProductAfterAll = () => { setProductSkipped(false); setManualMode(false) }
 
-  const canConfirm = (productId !== null || productSkipped) && operationId !== null && name.trim().length > 0 && assigneeId !== null
+  // Виконавця не обов'язково вказувати одразу — можна створити завдання без
+  // нього й призначити пізніше з деталей завдання (лише менеджер/адмін бачить
+  // і редагує такі "нічиї" завдання, поки виконавця не додано).
+  const canConfirm = (productId !== null || productSkipped) && operationId !== null && name.trim().length > 0
 
   const handleConfirm = async () => {
-    if (!canConfirm || !operationId || !assigneeId) return
+    if (!canConfirm || !operationId) return
     await createAssignment({
       productId, operationId, taskId: pickedTaskId, name: name.trim(),
       assigneeId, assignedById: currentUser.id,
@@ -644,11 +663,14 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.assigneeLabel')}</label>
               {isManager ? (
-                <select value={assigneeId ?? ''} onChange={e => setAssigneeId(e.target.value || null)}
-                  className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all">
-                  <option value="">{t('assignments.selectAssigneePlaceholder')}</option>
-                  {users.map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
-                </select>
+                <>
+                  <select value={assigneeId ?? ''} onChange={e => setAssigneeId(e.target.value || null)}
+                    className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all">
+                    <option value="">{t('assignments.selectAssigneePlaceholder')}</option>
+                    {users.map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+                  </select>
+                  {assigneeId === null && <p className="mt-1.5 text-xs text-slate-400">{t('assignments.assigneeOptionalHint')}</p>}
+                </>
               ) : (
                 <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">{currentUser.fullName} {t('assignments.youSuffix')}</p>
               )}
@@ -726,12 +748,13 @@ function BackChevron() {
   )
 }
 
-function AssignmentDetailPage({ assignment, currentUser, isManager, products, operations, onBack, onSaved, onDeleted }: {
+function AssignmentDetailPage({ assignment, currentUser, isManager, products, operations, users, onBack, onSaved, onDeleted }: {
   assignment: Assignment
   currentUser: CurrentUser
   isManager: boolean
   products: Product[]
   operations: Operation[]
+  users: AppUser[]
   onBack: () => void
   onSaved: () => void
   onDeleted: () => void
@@ -744,6 +767,7 @@ function AssignmentDetailPage({ assignment, currentUser, isManager, products, op
   const [menuOpen, setMenuOpen] = useState(false)
   const eventsQ = useAssignmentEvents(view === 'history' ? assignment.id : null)
 
+  const [name, setName] = useState(assignment.name)
   const initialDuration = assignment.durationMinutes !== null ? String(assignment.durationMinutes) : ''
   const [duration, setDuration] = useState(initialDuration)
   const initialCost = assignment.cost !== null ? String(assignment.cost) : ''
@@ -755,9 +779,11 @@ function AssignmentDetailPage({ assignment, currentUser, isManager, products, op
   const [plannedDuration, setPlannedDuration] = useState(initialPlannedDuration)
   const [productId, setProductId] = useState<string | null>(assignment.productId)
   const [operationId, setOperationId] = useState<string | null>(assignment.operationId)
+  const [assigneeId, setAssigneeId] = useState<string | null>(assignment.assigneeId)
   const [productPickerOpen, setProductPickerOpen] = useState(false)
   const [productSearch, setProductSearch] = useState('')
   const linkedProduct = productId ? products.find(p => p.id === productId) ?? null : null
+  const linkedAssignee = assigneeId ? users.find(u => u.id === assigneeId) ?? null : null
   const filteredPickerProducts = products.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.sku.toLowerCase().includes(productSearch.toLowerCase()))
 
   const hasAccess = isManager || assignment.assigneeId === currentUser.id
@@ -782,6 +808,7 @@ function AssignmentDetailPage({ assignment, currentUser, isManager, products, op
   const dirty = duration !== initialDuration || cost !== initialCost || plannedDuration !== initialPlannedDuration
     || priority !== assignment.priority || dueDate !== initialDueDate
     || productId !== assignment.productId || operationId !== assignment.operationId
+    || name.trim() !== assignment.name || assigneeId !== assignment.assigneeId
 
   // Швидка дія статусу (Розпочати/Пауза/Завершити/Скасувати) — окремо від
   // форми нижче: одразу зберігає лише статус (і фактичний час, який хук сам
@@ -810,6 +837,8 @@ function AssignmentDetailPage({ assignment, currentUser, isManager, products, op
       priority,
       dueDate: dueDate ? new Date(dueDate + 'T00:00:00').getTime() : null,
       productId, operationId,
+      name: name.trim(),
+      assigneeId,
     })
     onSaved()
     onBack()
@@ -837,7 +866,7 @@ function AssignmentDetailPage({ assignment, currentUser, isManager, products, op
             <div className="flex items-start gap-3 px-4 pt-4 pb-3">
               <div className="shrink-0 mt-1.5"><PriorityIcon priority={assignment.priority} /></div>
               <div className="flex-1 min-w-0">
-                <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800 truncate">{assignment.name}</h1>
+                <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800 truncate">{name || assignment.name}</h1>
                 <p className="text-xs text-slate-400 truncate">{assignment.productName} · {tn(assignment.operationName, assignment.operationNameEn)}</p>
               </div>
               <div className="relative shrink-0">
@@ -938,7 +967,7 @@ function AssignmentDetailPage({ assignment, currentUser, isManager, products, op
               {isManager && (
                 <div className="flex items-center justify-between px-4 py-3">
                   <span className="text-xs text-slate-400">{t('assignments.assigneeLabel')}</span>
-                  <span className="text-sm font-medium text-slate-700">{assignment.assigneeName}</span>
+                  <span className="text-sm font-medium text-slate-700">{linkedAssignee ? linkedAssignee.fullName : t('assignments.unassigned')}</span>
                 </div>
               )}
               <div className="flex items-center justify-between px-4 py-3">
@@ -966,6 +995,22 @@ function AssignmentDetailPage({ assignment, currentUser, isManager, products, op
             {isManager && (
               <>
                 <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('assignments.managerDataSection')}</label>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.nameLabel')}</label>
+                  <input type="text" value={name} onChange={e => setName(e.target.value)} disabled={!canEditStatus}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all disabled:opacity-50" />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.assigneeLabel')}</label>
+                  <select value={assigneeId ?? ''} onChange={e => setAssigneeId(e.target.value || null)} disabled={!canEditStatus}
+                    className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all disabled:opacity-50">
+                    <option value="">{t('assignments.selectAssigneePlaceholder')}</option>
+                    {users.map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+                  </select>
+                  {assigneeId === null && <p className="mt-1.5 text-xs text-slate-400">{t('assignments.assigneeOptionalHint')}</p>}
+                </div>
 
                 <div>
                   <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.product')}</label>
@@ -1084,7 +1129,7 @@ function AssignmentDetailPage({ assignment, currentUser, isManager, products, op
             )}
             <button onClick={onBack} className="flex-1 rounded-2xl border border-slate-200 py-3.5 text-sm text-slate-600">{t('common.close')}</button>
             {(canEditStatus || canEditTimeCost) && (
-              <button onClick={save} disabled={!dirty || isSaving}
+              <button onClick={save} disabled={!dirty || isSaving || !name.trim()}
                 className="flex-1 rounded-2xl bg-slate-800 py-3.5 text-sm font-medium text-white disabled:opacity-40 active:scale-[0.98] transition-all">
                 {isSaving ? t('common.saving') : t('common.save')}
               </button>
