@@ -49,6 +49,22 @@ const PRIORITY_STYLE: Record<AssignmentPriority, { bg: string; text: string }> =
 
 const PRIORITIES: AssignmentPriority[] = ['low', 'medium', 'high', 'urgent']
 
+type QuickActionStatus = 'in_progress' | 'paused' | 'done'
+const QUICK_ACTION_STATUSES: QuickActionStatus[] = ['in_progress', 'paused', 'done']
+const QUICK_ACTION_LABEL_KEY: Record<QuickActionStatus, TranslationKey> = {
+  in_progress: 'assignments.actionStart',
+  paused: 'assignments.actionPause',
+  done: 'assignments.actionComplete',
+}
+/** Які кнопки швидкої дії показувати для поточного статусу: завершене —
+ *  жодної (термінальний стан), інакше — усі, крім тієї, що дублює вже
+ *  активний статус (безглуздо "розпочати" вже розпочате чи "паузити" вже
+ *  призупинене). */
+function visibleQuickActions(status: AssignmentStatus): QuickActionStatus[] {
+  if (status === 'done') return []
+  return QUICK_ACTION_STATUSES.filter(s => s !== status)
+}
+
 /** Компактна іконка пріоритету на картці завдання (замість текстової бейджі) —
  *  колір узгоджений з PRIORITY_STYLE, форма та сама для всіх рівнів. */
 function PriorityIcon({ priority }: { priority: AssignmentPriority }) {
@@ -69,6 +85,20 @@ const EVENT_LABEL_KEY: Record<AssignmentEventType, TranslationKey> = {
   due_date_changed: 'assignmentEvent.dueDateChanged',
   product_changed: 'assignmentEvent.productChanged',
   planned_duration_changed: 'assignmentEvent.plannedDurationChanged',
+}
+
+/** 'product_changed' пише тригер у базі і для зміни продукту, і для зміни
+ *  операції (одним рядком, з обома id в old/new_value) — тут розрізняємо, що
+ *  саме змінилось, щоб напис в "Історії" був точним, без ще однієї міграції. */
+function assignmentEventLabelKey(ev: { eventType: AssignmentEventType; oldValue: unknown; newValue: unknown }): TranslationKey {
+  if (ev.eventType !== 'product_changed') return EVENT_LABEL_KEY[ev.eventType]
+  const old = ev.oldValue as { product_id?: string | null; operation_id?: string | null } | null
+  const next = ev.newValue as { product_id?: string | null; operation_id?: string | null } | null
+  const productChanged = (old?.product_id ?? null) !== (next?.product_id ?? null)
+  const operationChanged = (old?.operation_id ?? null) !== (next?.operation_id ?? null)
+  if (productChanged && operationChanged) return 'assignmentEvent.productAndOperationChanged'
+  if (operationChanged) return 'assignmentEvent.operationChanged'
+  return 'assignmentEvent.productChanged'
 }
 
 interface Filters {
@@ -99,6 +129,7 @@ export default function AssignmentsPage() {
   const usersQ = useUsers()
   const payrollSettingsQ = usePayrollSettings()
   const payrollClosuresQ = usePayrollClosures()
+  const { updateAssignment: quickUpdateAssignment } = useAssignmentMutations()
 
   const products = productsQ.data ?? []
   const users = usersQ.data ?? []
@@ -120,6 +151,24 @@ export default function AssignmentsPage() {
   const [detail, setDetail] = useState<Assignment | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2200) }
+
+  // Той самий доступ, що й у деталях завдання: виконавець своїх, менеджер/адмін — усіх;
+  // завершене й заблоковане (день завершення минув) — статус більше не змінити.
+  const canEditStatusFor = (a: Assignment) => (isManager || a.assigneeId === currentUser?.id) && !isAssignmentLocked(a)
+
+  // Quick-action одразу на картці списку — той самий виклик, що й у деталях
+  // завдання: міняє лише статус (фактичний час хук довраховує сам при виході
+  // зі стану "в роботі"), відкривати картку деталей для цього не потрібно.
+  const quickStatus = async (a: Assignment, newStatus: AssignmentStatus) => {
+    await quickUpdateAssignment({
+      id: a.id,
+      prevStatus: a.status,
+      prevStatusChangedAt: a.statusChangedAt,
+      newStatus,
+      durationMinutes: a.durationMinutes,
+    })
+    showToast(t('materials.toastSaved'))
+  }
 
   // Реальні зарплатні періоди, в яких є хоч одне завершене завдання — для фільтра
   // "Зарплатний період" (лише якщо адмін узагалі налаштував правило в Налаштуваннях).
@@ -276,7 +325,7 @@ export default function AssignmentsPage() {
                 <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">{t('payroll.settingsTitle')}</label>
                 <select value={filters.periodKey ?? ''} onChange={e => setFilters(f => ({ ...f, periodKey: e.target.value || null }))}
                   className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-blue-400 transition-all">
-                  <option value="">{t('filters.all')}</option>
+                  <option value="">{t('payroll.choosePeriodPlaceholder')}</option>
                   {periodOptions.map(([key, { year, month }]) => (
                     <option key={key} value={key}>{MONTH_LABEL[month - 1]} {year}</option>
                   ))}
@@ -319,37 +368,55 @@ export default function AssignmentsPage() {
         ) : list.map(a => {
           const style = STATUS_STYLE[a.status]
           const period = formatPeriodRange(a)
+          const canQuickAct = canEditStatusFor(a)
           return (
-            <button key={a.id} onClick={() => setDetail(a)}
-              className="flex w-full items-center gap-3 rounded-2xl bg-white px-4 py-3.5 text-left"
+            <div key={a.id} className="rounded-2xl bg-white overflow-hidden"
               style={{ border: '1px solid rgba(157,200,255,0.22)', boxShadow: '0 1px 6px rgba(157,200,255,0.07)' }}>
-              <div className="shrink-0 mt-0.5"><PriorityIcon priority={a.priority} /></div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-800 truncate">{a.name}</p>
-                <p className="text-xs text-slate-400 truncate mt-0.5">{a.productName} · {tn(a.operationName, a.operationNameEn)}</p>
-                {period && <p className="text-[10px] text-slate-300 mt-0.5">{t('assignments.payrollPeriodPrefix')} {period}</p>}
-                {a.dueDate !== null && (
-                  <p className="text-[10px] text-slate-400 mt-0.5">
-                    {t('assignments.dueDatePrefix', { date: new Date(a.dueDate).toLocaleDateString('uk-UA', { timeZone: 'Europe/Kyiv', day: '2-digit', month: '2-digit' }) })}
-                  </p>
-                )}
-              </div>
-              <div className="flex flex-col items-end gap-1.5 shrink-0">
-                {isManager && (
-                  <span className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold" style={{ background: '#eff6ff', color: '#2563eb' }}>
-                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                      <circle cx="5" cy="3.2" r="1.8" stroke="currentColor" strokeWidth="1.2"/>
-                      <path d="M1.5 9c0-2 1.6-3.2 3.5-3.2S8.5 7 8.5 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-                    </svg>
-                    {a.assigneeName}
+              <div role="button" tabIndex={0} onClick={() => setDetail(a)} onKeyDown={e => e.key === 'Enter' && setDetail(a)}
+                className="flex w-full items-center gap-3 px-4 pt-3.5 pb-3 text-left cursor-pointer">
+                <div className="shrink-0 mt-0.5"><PriorityIcon priority={a.priority} /></div>
+                <div className="flex-1 min-w-0">
+                  {a.dueDate !== null && (
+                    <p className="text-[10px] font-medium mt-0.5" style={{ color: '#3b82f6' }}>
+                      {t('assignments.dueDateCardLabel')} {new Date(a.dueDate).toLocaleDateString('uk-UA', { timeZone: 'Europe/Kyiv', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                    </p>
+                  )}
+                  <p className="text-sm font-medium text-slate-800 truncate">{a.name}</p>
+                  <p className="text-xs text-slate-400 truncate mt-0.5">{a.productName} · {tn(a.operationName, a.operationNameEn)}</p>
+                  {period && <p className="text-[10px] text-slate-300 mt-0.5">{t('assignments.payrollPeriodPrefix')} {period}</p>}
+                </div>
+                <div className="flex flex-col items-end gap-1.5 shrink-0">
+                  {isManager && (
+                    <span className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold" style={{ background: '#eff6ff', color: '#2563eb' }}>
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                        <circle cx="5" cy="3.2" r="1.8" stroke="currentColor" strokeWidth="1.2"/>
+                        <path d="M1.5 9c0-2 1.6-3.2 3.5-3.2S8.5 7 8.5 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+                      </svg>
+                      {a.assigneeName}
+                    </span>
+                  )}
+                  <span className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold" style={{ background: style.bg, color: style.text }}>
+                    <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: style.text }} />
+                    {t(STATUS_LABEL_KEY[a.status])}
                   </span>
-                )}
-                <span className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold" style={{ background: style.bg, color: style.text }}>
-                  <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: style.text }} />
-                  {t(STATUS_LABEL_KEY[a.status])}
-                </span>
+                </div>
               </div>
-            </button>
+
+              {canQuickAct && visibleQuickActions(a.status).length > 0 && (
+                <div className="flex">
+                  {visibleQuickActions(a.status).map((s, i) => {
+                    const sStyle = STATUS_STYLE[s]
+                    return (
+                      <button key={s} onClick={() => quickStatus(a, s)}
+                        className="flex-1 py-2.5 text-xs font-semibold transition-all active:scale-[0.98]"
+                        style={{ background: sStyle.bg, color: sStyle.text, borderLeft: i > 0 ? '1px solid rgba(255,255,255,0.6)' : undefined }}>
+                        {t(QUICK_ACTION_LABEL_KEY[s])}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           )
         })}
       </div>
@@ -758,13 +825,16 @@ function AssignmentDetailPage({ assignment, currentUser, isManager, products, op
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
       <div className="px-4 pt-5 pb-3">
-        <div className="flex items-start gap-3 mb-1">
-          <button onClick={view === 'history' ? () => setView('detail') : onBack}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 active:scale-95 transition-all">
-            <BackChevron />
-          </button>
-          {view === 'detail' ? (
-            <>
+        <button onClick={view === 'history' ? () => setView('detail') : onBack}
+          className="mb-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 active:scale-95 transition-all">
+          <BackChevron />
+        </button>
+
+        {view === 'detail' ? (
+          /* Шапка + quick-actions статусу — одна картка, як у макеті: назва
+             завдання й керування статусом об'єднані візуально. */
+          <div className="rounded-2xl bg-white" style={{ border: '1px solid rgba(157,200,255,0.22)', boxShadow: '0 1px 6px rgba(157,200,255,0.07)' }}>
+            <div className="flex items-start gap-3 px-4 pt-4 pb-3">
               <div className="shrink-0 mt-1.5"><PriorityIcon priority={assignment.priority} /></div>
               <div className="flex-1 min-w-0">
                 <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800 truncate">{assignment.name}</h1>
@@ -796,14 +866,32 @@ function AssignmentDetailPage({ assignment, currentUser, isManager, products, op
                   </>
                 )}
               </div>
-            </>
-          ) : (
-            <div className="flex-1 min-w-0">
-              <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800 truncate">{t('assignments.historyTab')}</h1>
-              <p className="text-xs text-slate-400 truncate">{assignment.name}</p>
             </div>
-          )}
-        </div>
+
+            {/* Quick-actions статусу — одразу зберігають і повертають на список. Кнопка,
+                що дублює вже активний статус, не показується; завершене завдання — без
+                жодної (термінальний стан). */}
+            {visibleQuickActions(assignment.status).length > 0 && (
+              <div className="flex overflow-hidden rounded-b-2xl">
+                {visibleQuickActions(assignment.status).map((s, i) => {
+                  const style = STATUS_STYLE[s]
+                  return (
+                    <button key={s} onClick={() => quickStatus(s)} disabled={!canEditStatus}
+                      className="flex-1 py-3 text-xs font-semibold transition-all disabled:opacity-50"
+                      style={{ background: style.bg, color: style.text, borderLeft: i > 0 ? '1px solid rgba(255,255,255,0.6)' : undefined }}>
+                      {t(QUICK_ACTION_LABEL_KEY[s])}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800 truncate">{t('assignments.historyTab')}</h1>
+            <p className="text-xs text-slate-400 truncate">{assignment.name}</p>
+          </div>
+        )}
       </div>
 
       {view === 'history' ? (
@@ -815,7 +903,7 @@ function AssignmentDetailPage({ assignment, currentUser, isManager, products, op
           ) : (eventsQ.data ?? []).map(ev => (
             <div key={ev.id} className="rounded-2xl bg-white px-4 py-3" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-slate-700">{t(EVENT_LABEL_KEY[ev.eventType])}</span>
+                <span className="text-sm font-medium text-slate-700">{t(assignmentEventLabelKey(ev))}</span>
                 <span className="text-[10px] text-slate-400">
                   {new Date(ev.occurredAt).toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </span>
@@ -825,27 +913,7 @@ function AssignmentDetailPage({ assignment, currentUser, isManager, products, op
           ))}
         </div>
       ) : (
-        <div className="px-4 pb-8">
-          {/* Quick-actions статусу — одразу зберігають і повертають на список */}
-          <div className="flex rounded-2xl overflow-hidden mb-5" style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
-            {([
-              ['in_progress', t('assignments.actionStart')],
-              ['paused', t('assignments.actionPause')],
-              ['done', t('assignments.actionComplete')],
-            ] as [AssignmentStatus, string][]).map(([s, label], i) => {
-              const style = STATUS_STYLE[s]
-              const active = assignment.status === s
-              return (
-                <button key={s} onClick={() => quickStatus(s)} disabled={!canEditStatus}
-                  className="flex-1 py-3 text-xs font-semibold transition-all disabled:opacity-50"
-                  style={{ ...(active ? { background: style.text, color: '#fff' } : { background: style.bg, color: style.text }), borderLeft: i > 0 ? '1px solid rgba(255,255,255,0.6)' : undefined }}>
-                  {label}
-                </button>
-              )
-            })}
-          </div>
-
-          <div className="space-y-5">
+        <div className="px-4 pb-8 space-y-5">
             {locked && (
               <div className="rounded-2xl px-4 py-3 text-xs" style={{ background: '#f1f5f9', color: '#64748b' }}>
                 {t('assignments.lockedHint')}
@@ -862,96 +930,125 @@ function AssignmentDetailPage({ assignment, currentUser, isManager, products, op
                   : 'payroll.periodStatusActive')}
               </div>
             )}
+
+            {/* Зведення — одна картка з тонкими розділювачами між рядками (як у макеті),
+                замість окремих "пігулок". Продукт тут — лише інформаційний рядок, без
+                можливості змінити (редагування — нижче, у блоці "Дані для менеджера"). */}
+            <div className="rounded-2xl bg-white overflow-hidden divide-y divide-slate-100" style={{ border: '1px solid rgba(157,200,255,0.22)', boxShadow: '0 1px 6px rgba(157,200,255,0.07)' }}>
+              {isManager && (
+                <div className="flex items-center justify-between px-4 py-3">
+                  <span className="text-xs text-slate-400">{t('assignments.assigneeLabel')}</span>
+                  <span className="text-sm font-medium text-slate-700">{assignment.assigneeName}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between px-4 py-3">
+                <span className="text-xs text-slate-400">{t('assignments.assignedBy')}</span>
+                <span className="text-sm font-medium text-slate-700">{assignment.assignedByName}</span>
+              </div>
+              <div className="flex items-center justify-between px-4 py-3">
+                <span className="text-xs text-slate-400">{t('assignments.spentTimeLabel')}</span>
+                <span className="text-sm font-medium text-slate-700">{assignment.durationMinutes ?? 0} {t('common.minutesShort')}</span>
+              </div>
+              {isManager && (
+                <div className="flex items-center justify-between px-4 py-3">
+                  <span className="text-xs text-slate-400">{t('assignments.costLabel')}</span>
+                  <span className="text-sm font-medium text-slate-700">{assignment.cost !== null ? `${assignment.cost} ₴` : '—'}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between px-4 py-3">
+                <span className="text-xs text-slate-400">{t('assignments.product')}</span>
+                <span className="text-sm font-medium text-slate-700 truncate">{linkedProduct ? linkedProduct.name : t('assignments.noProductChosen')}</span>
+              </div>
+            </div>
+
+            {/* "Дані для менеджера" — пріоритет, дедлайн, плановий час і зміна продукту:
+                бачить лише менеджер/адмін, виконавцю цей блок узагалі не показуємо. */}
             {isManager && (
-              <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-                <span className="text-xs text-slate-400">{t('assignments.assigneeLabel')}</span>
-                <span className="text-sm font-medium text-slate-700">{assignment.assigneeName}</span>
-              </div>
+              <>
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('assignments.managerDataSection')}</label>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.product')}</label>
+                  {linkedProduct ? (
+                    <div className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+                      <div className="h-9 w-9 shrink-0 rounded-lg overflow-hidden bg-slate-100 flex items-center justify-center text-slate-400">
+                        {linkedProduct.photo ? <img src={linkedProduct.photo} alt="" className="h-full w-full object-cover" /> : <span className="text-xs">📦</span>}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-800 truncate">{linkedProduct.name}</p>
+                        <p className="text-xs font-mono text-slate-400">{linkedProduct.sku}</p>
+                      </div>
+                      {canEditStatus && (
+                        <button onClick={() => setProductPickerOpen(true)} className="text-xs text-blue-500 font-medium shrink-0">{t('common.change')}</button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                      <span className="text-sm text-slate-500">{t('assignments.noProductChosen')}</span>
+                      {canEditStatus && (
+                        <button onClick={() => setProductPickerOpen(true)} className="text-xs text-blue-500 font-medium shrink-0">{t('assignments.linkProductLink')}</button>
+                      )}
+                    </div>
+                  )}
+                  {productPickerOpen && (
+                    <div className="mt-2 rounded-2xl border border-slate-200 p-3 space-y-2">
+                      <input type="search" value={productSearch} onChange={e => setProductSearch(e.target.value)} placeholder={t('assignments.searchProductPlaceholder')}
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 transition-all" />
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                        {filteredPickerProducts.length === 0 ? (
+                          <p className="py-2 text-center text-xs text-slate-400">{t('operationPicker.notFoundShort')}</p>
+                        ) : filteredPickerProducts.map(p => (
+                          <button key={p.id} onClick={() => { setProductId(p.id); setProductPickerOpen(false); setProductSearch('') }}
+                            className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left hover:bg-slate-50 transition-colors" style={{ border: '1px solid rgba(157,200,255,0.2)' }}>
+                            <span className="text-sm text-slate-800 truncate flex-1">{p.name}</span>
+                            <span className="text-xs font-mono text-slate-400 shrink-0">{p.sku}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <button onClick={() => { setProductPickerOpen(false); setProductSearch('') }} className="text-xs text-slate-400 hover:underline">{t('common.cancel')}</button>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.operationLabel')}</label>
+                  <select value={operationId ?? ''} onChange={e => setOperationId(e.target.value || null)} disabled={!canEditStatus}
+                    className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all disabled:opacity-50">
+                    <option value="">{t('assignments.selectOperationPlaceholder')}</option>
+                    {operations.map(o => <option key={o.id} value={o.id}>{tn(o.name, o.nameEn)}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.priorityLabel')}</label>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {PRIORITIES.map(p => {
+                      const style = PRIORITY_STYLE[p]
+                      const active = priority === p
+                      return (
+                        <button key={p} onClick={() => canEditStatus && setPriority(p)} disabled={!canEditStatus}
+                          className="rounded-xl py-2 text-[11px] font-medium transition-all disabled:opacity-50"
+                          style={active ? { background: style.text, color: '#fff' } : { background: style.bg, color: style.text }}>
+                          {t(PRIORITY_LABEL_KEY[p])}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.dueDateLabel')}</label>
+                  <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} disabled={!canEditStatus}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all disabled:opacity-50" />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.plannedTimeLabel')}</label>
+                  <input type="number" min="0" step="any" value={plannedDuration} onChange={e => setPlannedDuration(e.target.value)} disabled={!canEditStatus} placeholder="0"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all disabled:opacity-50" />
+                </div>
+              </>
             )}
-            <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-              <span className="text-xs text-slate-400">{t('assignments.assignedBy')}</span>
-              <span className="text-sm font-medium text-slate-700">{assignment.assignedByName}</span>
-            </div>
-
-            {/* Продукт — необов'язковий, можна прив'язати/змінити пізніше; зміна логується в "Історії" */}
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.product')}</label>
-              {linkedProduct ? (
-                <div className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3">
-                  <div className="h-9 w-9 shrink-0 rounded-lg overflow-hidden bg-slate-100 flex items-center justify-center text-slate-400">
-                    {linkedProduct.photo ? <img src={linkedProduct.photo} alt="" className="h-full w-full object-cover" /> : <span className="text-xs">📦</span>}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-800 truncate">{linkedProduct.name}</p>
-                    <p className="text-xs font-mono text-slate-400">{linkedProduct.sku}</p>
-                  </div>
-                  {canEditStatus && (
-                    <button onClick={() => setProductPickerOpen(true)} className="text-xs text-blue-500 font-medium shrink-0">{t('common.change')}</button>
-                  )}
-                </div>
-              ) : (
-                <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-                  <span className="text-sm text-slate-500">{t('assignments.noProductChosen')}</span>
-                  {canEditStatus && (
-                    <button onClick={() => setProductPickerOpen(true)} className="text-xs text-blue-500 font-medium shrink-0">{t('assignments.linkProductLink')}</button>
-                  )}
-                </div>
-              )}
-              {productPickerOpen && (
-                <div className="mt-2 rounded-2xl border border-slate-200 p-3 space-y-2">
-                  <input type="search" value={productSearch} onChange={e => setProductSearch(e.target.value)} placeholder={t('assignments.searchProductPlaceholder')}
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 transition-all" />
-                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                    {filteredPickerProducts.length === 0 ? (
-                      <p className="py-2 text-center text-xs text-slate-400">{t('operationPicker.notFoundShort')}</p>
-                    ) : filteredPickerProducts.map(p => (
-                      <button key={p.id} onClick={() => { setProductId(p.id); setProductPickerOpen(false); setProductSearch('') }}
-                        className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left hover:bg-slate-50 transition-colors" style={{ border: '1px solid rgba(157,200,255,0.2)' }}>
-                        <span className="text-sm text-slate-800 truncate flex-1">{p.name}</span>
-                        <span className="text-xs font-mono text-slate-400 shrink-0">{p.sku}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <button onClick={() => { setProductPickerOpen(false); setProductSearch('') }} className="text-xs text-slate-400 hover:underline">{t('common.cancel')}</button>
-                </div>
-              )}
-              <div className="mt-2 relative">
-                <select value={operationId ?? ''} onChange={e => setOperationId(e.target.value || null)} disabled={!canEditStatus}
-                  className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-blue-400 transition-all disabled:opacity-50">
-                  <option value="">{t('assignments.selectOperationPlaceholder')}</option>
-                  {operations.map(o => <option key={o.id} value={o.id}>{tn(o.name, o.nameEn)}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.priorityLabel')}</label>
-              <div className="grid grid-cols-4 gap-1.5">
-                {PRIORITIES.map(p => {
-                  const style = PRIORITY_STYLE[p]
-                  const active = priority === p
-                  return (
-                    <button key={p} onClick={() => canEditStatus && setPriority(p)} disabled={!canEditStatus}
-                      className="rounded-xl py-2 text-[11px] font-medium transition-all disabled:opacity-50"
-                      style={active ? { background: style.text, color: '#fff' } : { background: style.bg, color: style.text }}>
-                      {t(PRIORITY_LABEL_KEY[p])}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.dueDateLabel')}</label>
-              <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} disabled={!canEditStatus}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all disabled:opacity-50" />
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.plannedTimeLabel')}</label>
-              <input type="number" min="0" step="any" value={plannedDuration} onChange={e => setPlannedDuration(e.target.value)} disabled={!canEditStatus} placeholder="0"
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all disabled:opacity-50" />
-            </div>
 
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.spentTimeLabel')}</label>
@@ -978,7 +1075,6 @@ function AssignmentDetailPage({ assignment, currentUser, isManager, products, op
                   className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all disabled:opacity-50" />
               </div>
             )}
-          </div>
 
           <div className="flex gap-3 mt-6">
             {canDelete && (
