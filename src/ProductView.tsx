@@ -412,6 +412,7 @@ function ProductPhotoGallery({ photos, productName }: { photos: PhotoItem[]; pro
         >
           {photos.map((p, i) => (
             <img key={p.key} src={p.url} alt={productName} onClick={() => openLightboxAt(i)}
+              loading={i === 0 ? 'eager' : 'lazy'}
               className="h-52 w-full shrink-0 object-cover cursor-zoom-in"
               style={{ scrollSnapAlign: 'start' }} />
           ))}

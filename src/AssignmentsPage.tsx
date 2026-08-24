@@ -68,6 +68,7 @@ const EVENT_LABEL_KEY: Record<AssignmentEventType, TranslationKey> = {
   priority_changed: 'assignmentEvent.priorityChanged',
   due_date_changed: 'assignmentEvent.dueDateChanged',
   product_changed: 'assignmentEvent.productChanged',
+  planned_duration_changed: 'assignmentEvent.plannedDurationChanged',
 }
 
 interface Filters {
@@ -165,6 +166,23 @@ export default function AssignmentsPage() {
     const endDay = Math.min(payrollSettings.openToDay, daysInMonth)
     const fmt = (d: number) => `${d}.${String(month).padStart(2, '0')}.${year}`
     return `${fmt(startDay)}–${fmt(endDay)}`
+  }
+
+  // Деталі завдання — повноцінна сторінка (той самий патерн, що й
+  // ProductView/DrilldownPage), а не модальне вікно поверх списку.
+  if (detail && currentUser) {
+    return (
+      <AssignmentDetailPage
+        assignment={detail}
+        currentUser={currentUser}
+        isManager={!!isManager}
+        products={products}
+        operations={operations}
+        onBack={() => setDetail(null)}
+        onSaved={() => showToast(t('materials.toastSaved'))}
+        onDeleted={() => { setDetail(null); showToast(t('assignments.toastDeleted')) }}
+      />
+    )
   }
 
   return (
@@ -347,19 +365,6 @@ export default function AssignmentsPage() {
           onCreated={() => { setFormOpen(false); showToast(t('assignments.toastCreated')) }}
         />
       )}
-
-      {detail && currentUser && (
-        <AssignmentDetailSheet
-          assignment={detail}
-          currentUser={currentUser}
-          isManager={!!isManager}
-          products={products}
-          operations={operations}
-          onClose={() => setDetail(null)}
-          onSaved={() => showToast(t('materials.toastSaved'))}
-          onDeleted={() => { setDetail(null); showToast(t('assignments.toastDeleted')) }}
-        />
-      )}
     </div>
   )
 }
@@ -405,6 +410,7 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
   const [assigneeId, setAssigneeId] = useState<string | null>(isManager ? null : currentUser.id)
   const [priority, setPriority] = useState<AssignmentPriority>('medium')
   const [dueDate, setDueDate] = useState('')
+  const [plannedDuration, setPlannedDuration] = useState('')
 
   const selectedProduct = productId ? activeProducts.find(p => p.id === productId) ?? null : null
   const filteredProducts = activeProducts.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.sku.toLowerCase().includes(productSearch.toLowerCase()))
@@ -439,6 +445,7 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
       productId, operationId, taskId: pickedTaskId, name: name.trim(),
       assigneeId, assignedById: currentUser.id,
       durationMinutes: duration.trim() ? Number(duration) : null,
+      plannedDurationMinutes: plannedDuration.trim() ? Number(plannedDuration) : null,
       cost, priority,
       dueDate: dueDate ? new Date(dueDate + 'T00:00:00').getTime() : null,
     })
@@ -493,7 +500,7 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
                       className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left hover:bg-slate-50 transition-colors"
                       style={{ border: '1px solid rgba(157,200,255,0.2)' }}>
                       <div className="h-8 w-8 shrink-0 rounded-lg overflow-hidden bg-slate-100 flex items-center justify-center text-slate-400">
-                        {p.photo ? <img src={p.photo} alt="" className="h-full w-full object-cover" /> : <span className="text-xs">📦</span>}
+                        {p.photo ? <img src={p.photo} alt="" loading="lazy" className="h-full w-full object-cover" /> : <span className="text-xs">📦</span>}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-slate-800 truncate">{p.name}</p>
@@ -617,6 +624,11 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
                 <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
                   className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
               </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.plannedTimeLabel')}</label>
+                <input type="number" min="0" step="any" value={plannedDuration} onChange={e => setPlannedDuration(e.target.value)} placeholder="0"
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
+              </div>
             </>
           )}
         </div>
@@ -634,17 +646,26 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
 }
 
 /* ───────────────────────────────────────────────────────────
-   Деталі завдання: зміна статусу й фактичного часу (виконавцем
-   або менеджером), видалення.
+   Деталі завдання — повноцінна сторінка (не модальне вікно):
+   quick-actions статусу вгорі, ⋮-меню (Історія/Скасувати), нижче —
+   поля пріоритету/дедлайну/планового й фактичного часу/вартості.
 ─────────────────────────────────────────────────────────── */
 
-function AssignmentDetailSheet({ assignment, currentUser, isManager, products, operations, onClose, onSaved, onDeleted }: {
+function BackChevron() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
+function AssignmentDetailPage({ assignment, currentUser, isManager, products, operations, onBack, onSaved, onDeleted }: {
   assignment: Assignment
   currentUser: CurrentUser
   isManager: boolean
   products: Product[]
   operations: Operation[]
-  onClose: () => void
+  onBack: () => void
   onSaved: () => void
   onDeleted: () => void
 }) {
@@ -652,10 +673,10 @@ function AssignmentDetailSheet({ assignment, currentUser, isManager, products, o
   const { updateAssignment, removeAssignment, isSaving } = useAssignmentMutations()
   const payrollSettingsQ = usePayrollSettings()
   const payrollClosuresQ = usePayrollClosures()
-  const [tab, setTab] = useState<'details' | 'history'>('details')
-  const eventsQ = useAssignmentEvents(tab === 'history' ? assignment.id : null)
+  const [view, setView] = useState<'detail' | 'history'>('detail')
+  const [menuOpen, setMenuOpen] = useState(false)
+  const eventsQ = useAssignmentEvents(view === 'history' ? assignment.id : null)
 
-  const [status, setStatus] = useState<AssignmentStatus>(assignment.status)
   const initialDuration = assignment.durationMinutes !== null ? String(assignment.durationMinutes) : ''
   const [duration, setDuration] = useState(initialDuration)
   const initialCost = assignment.cost !== null ? String(assignment.cost) : ''
@@ -663,6 +684,8 @@ function AssignmentDetailSheet({ assignment, currentUser, isManager, products, o
   const [priority, setPriority] = useState<AssignmentPriority>(assignment.priority)
   const initialDueDate = assignment.dueDate !== null ? new Date(assignment.dueDate).toISOString().slice(0, 10) : ''
   const [dueDate, setDueDate] = useState(initialDueDate)
+  const initialPlannedDuration = assignment.plannedDurationMinutes !== null ? String(assignment.plannedDurationMinutes) : ''
+  const [plannedDuration, setPlannedDuration] = useState(initialPlannedDuration)
   const [productId, setProductId] = useState<string | null>(assignment.productId)
   const [operationId, setOperationId] = useState<string | null>(assignment.operationId)
   const [productPickerOpen, setProductPickerOpen] = useState(false)
@@ -689,24 +712,40 @@ function AssignmentDetailSheet({ assignment, currentUser, isManager, products, o
 
   // Видалити можна лише поки завдання ще "В очікуванні" (узгоджено з RLS-політикою видалення).
   const canDelete = (isManager || assignment.assignedById === currentUser.id) && assignment.status === 'pending'
-  const dirty = status !== assignment.status || duration !== initialDuration || cost !== initialCost
+  const dirty = duration !== initialDuration || cost !== initialCost || plannedDuration !== initialPlannedDuration
     || priority !== assignment.priority || dueDate !== initialDueDate
     || productId !== assignment.productId || operationId !== assignment.operationId
+
+  // Швидка дія статусу (Розпочати/Пауза/Завершити/Скасувати) — окремо від
+  // форми нижче: одразу зберігає лише статус (і фактичний час, який хук сам
+  // довраховує при виході зі стану "в роботі") і повертає на список.
+  const quickStatus = async (newStatus: AssignmentStatus) => {
+    await updateAssignment({
+      id: assignment.id,
+      prevStatus: assignment.status,
+      prevStatusChangedAt: assignment.statusChangedAt,
+      newStatus,
+      durationMinutes: assignment.durationMinutes,
+    })
+    onSaved()
+    onBack()
+  }
 
   const save = async () => {
     await updateAssignment({
       id: assignment.id,
       prevStatus: assignment.status,
       prevStatusChangedAt: assignment.statusChangedAt,
-      newStatus: status,
+      newStatus: assignment.status,
       durationMinutes: duration.trim() ? Number(duration) : null,
+      plannedDurationMinutes: plannedDuration.trim() ? Number(plannedDuration) : null,
       cost: cost.trim() ? Number(cost) : null,
       priority,
       dueDate: dueDate ? new Date(dueDate + 'T00:00:00').getTime() : null,
       productId, operationId,
     })
     onSaved()
-    onClose()
+    onBack()
   }
 
   const del = () => {
@@ -714,212 +753,249 @@ function AssignmentDetailSheet({ assignment, currentUser, isManager, products, o
     onDeleted()
   }
 
+  const canCancel = canEditStatus && assignment.status !== 'cancelled' && assignment.status !== 'done'
+
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center sm:p-4"
-      style={{ background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)' }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="rounded-t-3xl bg-white pt-2 pb-10 max-h-[92vh] overflow-y-auto sm:rounded-3xl sm:w-full sm:max-w-md">
-        <div className="flex justify-center py-3">
-          <button onClick={onClose} className="h-1 w-10 rounded-full bg-slate-200 sm:hidden" />
-        </div>
-        <h2 style={{ fontFamily: "'DM Serif Display', serif" }} className="px-5 text-2xl text-slate-800 mb-1">{assignment.name}</h2>
-        <p className="px-5 text-sm text-slate-400 mb-4">{assignment.productName} · {tn(assignment.operationName, assignment.operationNameEn)}</p>
-
-        <div className="px-5 mb-4 flex gap-1.5 rounded-2xl bg-slate-50 p-1">
-          <button onClick={() => setTab('details')} className="flex-1 rounded-xl py-2 text-xs font-medium transition-all"
-            style={tab === 'details' ? { background: '#1e293b', color: '#fff' } : { color: '#64748b' }}>
-            {t('assignments.detailsTab')}
+    <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
+      <div className="px-4 pt-5 pb-3">
+        <div className="flex items-start gap-3 mb-1">
+          <button onClick={view === 'history' ? () => setView('detail') : onBack}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 active:scale-95 transition-all">
+            <BackChevron />
           </button>
-          <button onClick={() => setTab('history')} className="flex-1 rounded-xl py-2 text-xs font-medium transition-all"
-            style={tab === 'history' ? { background: '#1e293b', color: '#fff' } : { color: '#64748b' }}>
-            {t('assignments.historyTab')}
-          </button>
-        </div>
-
-        {tab === 'history' ? (
-          <div className="px-5 pb-2 space-y-2">
-            {eventsQ.isLoading ? (
-              <p className="py-8 text-center text-sm text-slate-400">{t('common.loading')}</p>
-            ) : (eventsQ.data ?? []).length === 0 ? (
-              <p className="py-8 text-center text-sm text-slate-400">{t('assignments.noHistoryYet')}</p>
-            ) : (eventsQ.data ?? []).map(ev => (
-              <div key={ev.id} className="rounded-2xl bg-slate-50 px-4 py-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-slate-700">{t(EVENT_LABEL_KEY[ev.eventType])}</span>
-                  <span className="text-[10px] text-slate-400">
-                    {new Date(ev.occurredAt).toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-400 mt-0.5">{ev.actorName}</p>
+          {view === 'detail' ? (
+            <>
+              <div className="shrink-0 mt-1.5"><PriorityIcon priority={assignment.priority} /></div>
+              <div className="flex-1 min-w-0">
+                <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800 truncate">{assignment.name}</h1>
+                <p className="text-xs text-slate-400 truncate">{assignment.productName} · {tn(assignment.operationName, assignment.operationNameEn)}</p>
               </div>
-            ))}
-          </div>
-        ) : (
-        <>
-        <div className="px-5 space-y-5">
-          {locked && (
-            <div className="rounded-2xl px-4 py-3 text-xs" style={{ background: '#f1f5f9', color: '#64748b' }}>
-              {t('assignments.lockedHint')}
-            </div>
-          )}
-          {payrollStatus && payrollStatus.phase !== 'not_configured' && (
-            <div className="rounded-2xl px-4 py-3 text-xs" style={{
-              background: payrollStatus.phase === 'closed' ? '#fee2e2' : payrollStatus.phase === 'grace_day' ? '#fff7ed' : '#f1f5f9',
-              color: payrollStatus.phase === 'closed' ? '#dc2626' : payrollStatus.phase === 'grace_day' ? '#ea580c' : '#64748b',
-            }}>
-              {t(payrollStatus.phase === 'closed' ? 'payroll.periodStatusClosed'
-                : payrollStatus.phase === 'grace_day' ? 'payroll.periodStatusGraceDay'
-                : payrollStatus.phase === 'awaiting_closure' ? 'payroll.periodStatusAwaitingClosure'
-                : 'payroll.periodStatusActive')}
-            </div>
-          )}
-          {isManager && (
-            <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-              <span className="text-xs text-slate-400">{t('assignments.assigneeLabel')}</span>
-              <span className="text-sm font-medium text-slate-700">{assignment.assigneeName}</span>
-            </div>
-          )}
-          <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-            <span className="text-xs text-slate-400">{t('assignments.assignedBy')}</span>
-            <span className="text-sm font-medium text-slate-700">{assignment.assignedByName}</span>
-          </div>
-
-          {/* Продукт — необов'язковий, можна прив'язати/змінити пізніше; зміна логується в "Історії" */}
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.product')}</label>
-            {linkedProduct ? (
-              <div className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3">
-                <div className="h-9 w-9 shrink-0 rounded-lg overflow-hidden bg-slate-100 flex items-center justify-center text-slate-400">
-                  {linkedProduct.photo ? <img src={linkedProduct.photo} alt="" className="h-full w-full object-cover" /> : <span className="text-xs">📦</span>}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-800 truncate">{linkedProduct.name}</p>
-                  <p className="text-xs font-mono text-slate-400">{linkedProduct.sku}</p>
-                </div>
-                {canEditStatus && (
-                  <button onClick={() => setProductPickerOpen(true)} className="text-xs text-blue-500 font-medium shrink-0">{t('common.change')}</button>
-                )}
-              </div>
-            ) : (
-              <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-                <span className="text-sm text-slate-500">{t('assignments.noProductChosen')}</span>
-                {canEditStatus && (
-                  <button onClick={() => setProductPickerOpen(true)} className="text-xs text-blue-500 font-medium shrink-0">{t('assignments.linkProductLink')}</button>
-                )}
-              </div>
-            )}
-            {productPickerOpen && (
-              <div className="mt-2 rounded-2xl border border-slate-200 p-3 space-y-2">
-                <input type="search" value={productSearch} onChange={e => setProductSearch(e.target.value)} placeholder={t('assignments.searchProductPlaceholder')}
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 transition-all" />
-                <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                  {filteredPickerProducts.length === 0 ? (
-                    <p className="py-2 text-center text-xs text-slate-400">{t('operationPicker.notFoundShort')}</p>
-                  ) : filteredPickerProducts.map(p => (
-                    <button key={p.id} onClick={() => { setProductId(p.id); setProductPickerOpen(false); setProductSearch('') }}
-                      className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left hover:bg-slate-50 transition-colors" style={{ border: '1px solid rgba(157,200,255,0.2)' }}>
-                      <span className="text-sm text-slate-800 truncate flex-1">{p.name}</span>
-                      <span className="text-xs font-mono text-slate-400 shrink-0">{p.sku}</span>
-                    </button>
-                  ))}
-                </div>
-                <button onClick={() => { setProductPickerOpen(false); setProductSearch('') }} className="text-xs text-slate-400 hover:underline">{t('common.cancel')}</button>
-              </div>
-            )}
-            <div className="mt-2 relative">
-              <select value={operationId ?? ''} onChange={e => setOperationId(e.target.value || null)} disabled={!canEditStatus}
-                className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-blue-400 transition-all disabled:opacity-50">
-                <option value="">{t('assignments.selectOperationPlaceholder')}</option>
-                {operations.map(o => <option key={o.id} value={o.id}>{tn(o.name, o.nameEn)}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-2 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('filters.status')}</label>
-            <div className="grid grid-cols-2 gap-2">
-              {/* "В очікуванні" — лише стартовий стан, вручну повертати завдання в нього сенсу немає */}
-              {(['in_progress', 'paused', 'done', 'cancelled'] as AssignmentStatus[]).map(s => {
-                const style = STATUS_STYLE[s]
-                const active = status === s
-                return (
-                <button key={s} onClick={() => canEditStatus && setStatus(s)} disabled={!canEditStatus}
-                  className="rounded-xl py-2.5 text-xs font-medium transition-all disabled:opacity-50"
-                  style={active ? { background: style.text, color: '#fff' } : { background: style.bg, color: style.text }}>
-                  {t(STATUS_LABEL_KEY[s])}
+              <div className="relative shrink-0">
+                <button onClick={() => setMenuOpen(v => !v)}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 active:scale-95 transition-all">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+                    <circle cx="7" cy="2.3" r="1.3"/><circle cx="7" cy="7" r="1.3"/><circle cx="7" cy="11.7" r="1.3"/>
+                  </svg>
                 </button>
-                )
-              })}
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.priorityLabel')}</label>
-            <div className="grid grid-cols-4 gap-1.5">
-              {PRIORITIES.map(p => {
-                const style = PRIORITY_STYLE[p]
-                const active = priority === p
-                return (
-                  <button key={p} onClick={() => canEditStatus && setPriority(p)} disabled={!canEditStatus}
-                    className="rounded-xl py-2 text-[11px] font-medium transition-all disabled:opacity-50"
-                    style={active ? { background: style.text, color: '#fff' } : { background: style.bg, color: style.text }}>
-                    {t(PRIORITY_LABEL_KEY[p])}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.dueDateLabel')}</label>
-            <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} disabled={!canEditStatus}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all disabled:opacity-50" />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.spentTimeLabel')}</label>
-            <input type="number" min="0" step="any" value={duration} onChange={e => setDuration(e.target.value)} disabled={!canEditTimeCost} placeholder="0"
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all disabled:opacity-50" />
-            <p className="mt-1.5 text-xs text-slate-400">
-              {t('assignments.timeAutoHint')}
-            </p>
-          </div>
-
-          {assignment.completedAt !== null && (
-            <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-              <span className="text-xs text-slate-400">{t('assignmentStatus.done')}</span>
-              <span className="text-sm font-medium text-slate-700">
-                {new Date(assignment.completedAt).toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-              </span>
+                {menuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                    <div className="absolute right-0 top-11 z-20 w-44 rounded-2xl bg-white p-1.5"
+                      style={{ border: '1px solid rgba(157,200,255,0.25)', boxShadow: '0 8px 24px rgba(15,23,42,0.12)' }}>
+                      <button onClick={() => { setView('history'); setMenuOpen(false) }}
+                        className="w-full rounded-xl px-3 py-2.5 text-left text-sm text-slate-600 hover:bg-slate-50 transition-colors">
+                        {t('assignments.menuHistory')}
+                      </button>
+                      {canCancel && (
+                        <button onClick={() => { setMenuOpen(false); quickStatus('cancelled') }}
+                          className="w-full rounded-xl px-3 py-2.5 text-left text-sm text-red-500 hover:bg-red-50 transition-colors">
+                          {t('assignments.menuCancel')}
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 min-w-0">
+              <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800 truncate">{t('assignments.historyTab')}</h1>
+              <p className="text-xs text-slate-400 truncate">{assignment.name}</p>
             </div>
           )}
+        </div>
+      </div>
 
-          {isManager && (
+      {view === 'history' ? (
+        <div className="px-4 pb-8 space-y-2">
+          {eventsQ.isLoading ? (
+            <p className="py-8 text-center text-sm text-slate-400">{t('common.loading')}</p>
+          ) : (eventsQ.data ?? []).length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-400">{t('assignments.noHistoryYet')}</p>
+          ) : (eventsQ.data ?? []).map(ev => (
+            <div key={ev.id} className="rounded-2xl bg-white px-4 py-3" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-slate-700">{t(EVENT_LABEL_KEY[ev.eventType])}</span>
+                <span className="text-[10px] text-slate-400">
+                  {new Date(ev.occurredAt).toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">{ev.actorName}</p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="px-4 pb-8">
+          {/* Quick-actions статусу — одразу зберігають і повертають на список */}
+          <div className="flex rounded-2xl overflow-hidden mb-5" style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
+            {([
+              ['in_progress', t('assignments.actionStart')],
+              ['paused', t('assignments.actionPause')],
+              ['done', t('assignments.actionComplete')],
+            ] as [AssignmentStatus, string][]).map(([s, label], i) => {
+              const style = STATUS_STYLE[s]
+              const active = assignment.status === s
+              return (
+                <button key={s} onClick={() => quickStatus(s)} disabled={!canEditStatus}
+                  className="flex-1 py-3 text-xs font-semibold transition-all disabled:opacity-50"
+                  style={{ ...(active ? { background: style.text, color: '#fff' } : { background: style.bg, color: style.text }), borderLeft: i > 0 ? '1px solid rgba(255,255,255,0.6)' : undefined }}>
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="space-y-5">
+            {locked && (
+              <div className="rounded-2xl px-4 py-3 text-xs" style={{ background: '#f1f5f9', color: '#64748b' }}>
+                {t('assignments.lockedHint')}
+              </div>
+            )}
+            {payrollStatus && payrollStatus.phase !== 'not_configured' && (
+              <div className="rounded-2xl px-4 py-3 text-xs" style={{
+                background: payrollStatus.phase === 'closed' ? '#fee2e2' : payrollStatus.phase === 'grace_day' ? '#fff7ed' : '#f1f5f9',
+                color: payrollStatus.phase === 'closed' ? '#dc2626' : payrollStatus.phase === 'grace_day' ? '#ea580c' : '#64748b',
+              }}>
+                {t(payrollStatus.phase === 'closed' ? 'payroll.periodStatusClosed'
+                  : payrollStatus.phase === 'grace_day' ? 'payroll.periodStatusGraceDay'
+                  : payrollStatus.phase === 'awaiting_closure' ? 'payroll.periodStatusAwaitingClosure'
+                  : 'payroll.periodStatusActive')}
+              </div>
+            )}
+            {isManager && (
+              <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                <span className="text-xs text-slate-400">{t('assignments.assigneeLabel')}</span>
+                <span className="text-sm font-medium text-slate-700">{assignment.assigneeName}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+              <span className="text-xs text-slate-400">{t('assignments.assignedBy')}</span>
+              <span className="text-sm font-medium text-slate-700">{assignment.assignedByName}</span>
+            </div>
+
+            {/* Продукт — необов'язковий, можна прив'язати/змінити пізніше; зміна логується в "Історії" */}
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.costLabel')}</label>
-              <input type="number" min="0" step="any" value={cost} onChange={e => setCost(e.target.value)} disabled={!canEditTimeCost} placeholder="0"
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.product')}</label>
+              {linkedProduct ? (
+                <div className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+                  <div className="h-9 w-9 shrink-0 rounded-lg overflow-hidden bg-slate-100 flex items-center justify-center text-slate-400">
+                    {linkedProduct.photo ? <img src={linkedProduct.photo} alt="" className="h-full w-full object-cover" /> : <span className="text-xs">📦</span>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">{linkedProduct.name}</p>
+                    <p className="text-xs font-mono text-slate-400">{linkedProduct.sku}</p>
+                  </div>
+                  {canEditStatus && (
+                    <button onClick={() => setProductPickerOpen(true)} className="text-xs text-blue-500 font-medium shrink-0">{t('common.change')}</button>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                  <span className="text-sm text-slate-500">{t('assignments.noProductChosen')}</span>
+                  {canEditStatus && (
+                    <button onClick={() => setProductPickerOpen(true)} className="text-xs text-blue-500 font-medium shrink-0">{t('assignments.linkProductLink')}</button>
+                  )}
+                </div>
+              )}
+              {productPickerOpen && (
+                <div className="mt-2 rounded-2xl border border-slate-200 p-3 space-y-2">
+                  <input type="search" value={productSearch} onChange={e => setProductSearch(e.target.value)} placeholder={t('assignments.searchProductPlaceholder')}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 transition-all" />
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                    {filteredPickerProducts.length === 0 ? (
+                      <p className="py-2 text-center text-xs text-slate-400">{t('operationPicker.notFoundShort')}</p>
+                    ) : filteredPickerProducts.map(p => (
+                      <button key={p.id} onClick={() => { setProductId(p.id); setProductPickerOpen(false); setProductSearch('') }}
+                        className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left hover:bg-slate-50 transition-colors" style={{ border: '1px solid rgba(157,200,255,0.2)' }}>
+                        <span className="text-sm text-slate-800 truncate flex-1">{p.name}</span>
+                        <span className="text-xs font-mono text-slate-400 shrink-0">{p.sku}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={() => { setProductPickerOpen(false); setProductSearch('') }} className="text-xs text-slate-400 hover:underline">{t('common.cancel')}</button>
+                </div>
+              )}
+              <div className="mt-2 relative">
+                <select value={operationId ?? ''} onChange={e => setOperationId(e.target.value || null)} disabled={!canEditStatus}
+                  className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-blue-400 transition-all disabled:opacity-50">
+                  <option value="">{t('assignments.selectOperationPlaceholder')}</option>
+                  {operations.map(o => <option key={o.id} value={o.id}>{tn(o.name, o.nameEn)}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.priorityLabel')}</label>
+              <div className="grid grid-cols-4 gap-1.5">
+                {PRIORITIES.map(p => {
+                  const style = PRIORITY_STYLE[p]
+                  const active = priority === p
+                  return (
+                    <button key={p} onClick={() => canEditStatus && setPriority(p)} disabled={!canEditStatus}
+                      className="rounded-xl py-2 text-[11px] font-medium transition-all disabled:opacity-50"
+                      style={active ? { background: style.text, color: '#fff' } : { background: style.bg, color: style.text }}>
+                      {t(PRIORITY_LABEL_KEY[p])}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.dueDateLabel')}</label>
+              <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} disabled={!canEditStatus}
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all disabled:opacity-50" />
             </div>
-          )}
-        </div>
 
-        <div className="flex gap-3 mt-6 px-5">
-          {canDelete && (
-            <button onClick={del} className="flex items-center justify-center rounded-2xl border border-red-200 px-4 py-3.5 text-sm text-red-500">
-              {t('common.delete')}
-            </button>
-          )}
-          <button onClick={onClose} className="flex-1 rounded-2xl border border-slate-200 py-3.5 text-sm text-slate-600">{t('common.close')}</button>
-          {(canEditStatus || canEditTimeCost) && (
-            <button onClick={save} disabled={!dirty || isSaving}
-              className="flex-1 rounded-2xl bg-slate-800 py-3.5 text-sm font-medium text-white disabled:opacity-40 active:scale-[0.98] transition-all">
-              {isSaving ? t('common.saving') : t('common.save')}
-            </button>
-          )}
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.plannedTimeLabel')}</label>
+              <input type="number" min="0" step="any" value={plannedDuration} onChange={e => setPlannedDuration(e.target.value)} disabled={!canEditStatus} placeholder="0"
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all disabled:opacity-50" />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.spentTimeLabel')}</label>
+              <input type="number" min="0" step="any" value={duration} onChange={e => setDuration(e.target.value)} disabled={!canEditTimeCost} placeholder="0"
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all disabled:opacity-50" />
+              <p className="mt-1.5 text-xs text-slate-400">
+                {t('assignments.timeAutoHint')}
+              </p>
+            </div>
+
+            {assignment.completedAt !== null && (
+              <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                <span className="text-xs text-slate-400">{t('assignmentStatus.done')}</span>
+                <span className="text-sm font-medium text-slate-700">
+                  {new Date(assignment.completedAt).toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            )}
+
+            {isManager && (
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.costLabel')}</label>
+                <input type="number" min="0" step="any" value={cost} onChange={e => setCost(e.target.value)} disabled={!canEditTimeCost} placeholder="0"
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all disabled:opacity-50" />
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-3 mt-6">
+            {canDelete && (
+              <button onClick={del} className="flex items-center justify-center rounded-2xl border border-red-200 px-4 py-3.5 text-sm text-red-500">
+                {t('common.delete')}
+              </button>
+            )}
+            <button onClick={onBack} className="flex-1 rounded-2xl border border-slate-200 py-3.5 text-sm text-slate-600">{t('common.close')}</button>
+            {(canEditStatus || canEditTimeCost) && (
+              <button onClick={save} disabled={!dirty || isSaving}
+                className="flex-1 rounded-2xl bg-slate-800 py-3.5 text-sm font-medium text-white disabled:opacity-40 active:scale-[0.98] transition-all">
+                {isSaving ? t('common.saving') : t('common.save')}
+              </button>
+            )}
+          </div>
         </div>
-        </>
-        )}
-      </div>
+      )}
     </div>
   )
 }

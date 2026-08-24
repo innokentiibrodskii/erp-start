@@ -24,7 +24,7 @@ import type { TranslationKey } from '../i18n'
 export type EntityType = 'material' | 'supplier' | 'product'
 export type FieldType = 'text' | 'number' | 'boolean' | 'file' | 'select'
 
-const VALUE_TABLE: Record<EntityType, string> = {
+export const VALUE_TABLE: Record<EntityType, string> = {
   material: 'material_custom_field_values',
   supplier: 'supplier_custom_field_values',
   product: 'product_custom_field_values',
@@ -34,7 +34,7 @@ const FILE_TABLE: Record<EntityType, string> = {
   supplier: 'supplier_custom_field_files',
   product: 'product_custom_field_files',
 }
-const ID_COLUMN: Record<EntityType, string> = {
+export const ID_COLUMN: Record<EntityType, string> = {
   material: 'material_id',
   supplier: 'supplier_id',
   product: 'product_id',

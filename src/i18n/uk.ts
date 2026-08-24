@@ -15,6 +15,7 @@ const uk = {
   'nav.directory': 'Довідники',
   'nav.settings': 'Налаштування',
   'nav.employees': 'Працівники',
+  'nav.dashboards': 'Дашборди',
   'nav.profile': 'Профіль',
   'nav.logout': 'Вийти',
 
@@ -338,6 +339,12 @@ const uk = {
   'assignments.chooseProductLink': 'Обрати продукт',
   'assignments.skipProductLink': 'Продовжити без продукту',
   'assignments.linkProductLink': '+ Прив’язати продукт',
+  'assignments.plannedTimeLabel': 'Запланований час на виконання, хв',
+  'assignments.actionStart': 'Розпочати',
+  'assignments.actionPause': 'Пауза',
+  'assignments.actionComplete': 'Завершити',
+  'assignments.menuCancel': 'Скасувати',
+  'assignments.menuHistory': 'Історія',
 
   'assignmentPriority.low': 'Низький',
   'assignmentPriority.medium': 'Середній',
@@ -351,6 +358,7 @@ const uk = {
   'assignmentEvent.priorityChanged': 'Змінено пріоритет',
   'assignmentEvent.dueDateChanged': 'Змінено дату виконання',
   'assignmentEvent.productChanged': 'Змінено прив’язку до продукту',
+  'assignmentEvent.plannedDurationChanged': 'Скориговано запланований час',
 
   'payroll.settingsTitle': 'Зарплатний період',
   'payroll.openFromLabel': 'З числа',
@@ -390,6 +398,13 @@ const uk = {
   'directory.tiles.materialCategories.desc': 'Окремий каталог категорій для матеріалів',
   'directory.tiles.warehouses.label': 'Склади',
   'directory.tiles.warehouses.desc': 'Адреси та відповідальні особи',
+  'dashboards.searchPlaceholder': 'Пошук по дашбордах...',
+  'dashboards.totalProducts': 'Усього продуктів:',
+  'dashboards.totalMaterials': 'Усього матеріалів:',
+  'dashboards.totalSuppliers': 'Усього постачальників:',
+  'dashboards.noSelectFields': 'Немає кастомних полів типу "Список значень"',
+  'dashboards.viewRecordsHint': 'Показати записи',
+
   'directory.tiles.suppliers.label': 'Постачальники',
   'directory.tiles.suppliers.desc': 'Контакти та реквізити постачальників',
   'directory.tiles.units.label': 'Одиниці виміру',

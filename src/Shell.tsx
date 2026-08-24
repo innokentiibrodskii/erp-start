@@ -1,19 +1,25 @@
-import { useEffect, useState } from 'react'
-import DirectoryCatalog, { CustomFieldsPage } from './DirectoryCatalog'
-import ProductCatalog from './ProductCatalog'
-import MaterialStock from './MaterialStock'
-import AssignmentsPage from './AssignmentsPage'
-import EmployeesPage from './EmployeesPage'
-import ProfilePage from './ProfilePage'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import type { DrilldownTarget } from './DashboardsPage'
 import { useCurrentUser } from './hooks/useCurrentUser'
 import { useOrg } from './OrgContext'
 import { useLocale } from './LocaleContext'
 import { LOCALE_LABEL, type Locale } from './i18n'
 
-type Page = 'products' | 'materials' | 'tasks' | 'directory' | 'settings' | 'employees' | 'profile'
+// Кожна сторінка — окремий lazy-чанк: одночасно видно лише одну, тож немає сенсу
+// тягнути всі одразу в головний бандл (до цього — 923 kB / 230 kB gzip одним шматком).
+const DirectoryCatalog = lazy(() => import('./DirectoryCatalog'))
+const CustomFieldsPage = lazy(() => import('./DirectoryCatalog').then(m => ({ default: m.CustomFieldsPage })))
+const ProductCatalog = lazy(() => import('./ProductCatalog'))
+const MaterialStock = lazy(() => import('./MaterialStock'))
+const AssignmentsPage = lazy(() => import('./AssignmentsPage'))
+const EmployeesPage = lazy(() => import('./EmployeesPage'))
+const DashboardsPage = lazy(() => import('./DashboardsPage'))
+const ProfilePage = lazy(() => import('./ProfilePage'))
+
+type Page = 'products' | 'materials' | 'tasks' | 'directory' | 'settings' | 'employees' | 'dashboards' | 'profile'
 
 /** Сторінки, доступні лише менеджеру (і адміну, який успадковує права менеджера) */
-const MANAGER_ONLY_PAGES: Page[] = ['products', 'materials', 'directory', 'settings']
+const MANAGER_ONLY_PAGES: Page[] = ['products', 'materials', 'directory', 'settings', 'dashboards']
 /** Сторінки, доступні лише адміну */
 const ADMIN_ONLY_PAGES: Page[] = ['employees']
 
@@ -33,9 +39,21 @@ export default function Shell({ onLogout }: Props) {
   const { locale, setLocale, t } = useLocale()
 
   // Діп-лінк із QR-коду (?material=... чи ?product=...) — відкриває картку одразу при вході.
+  // ?from=... (напр. з деталізації дашборду) — куди веде "назад" у цій картці замість
+  // звичайного списку; порожньо для QR-сканування, де "назад" і має вести в список.
+  // ?field=...&value=... — з якої саме деталізації дашборду зайшли (definitionId/optionId),
+  // щоб "назад" відновило точно той самий список значень, а не верхній рівень дашбордів.
   const [deepLink] = useState(() => {
     const params = new URLSearchParams(window.location.search)
-    return { materialId: params.get('material'), productId: params.get('product') }
+    const materialId = params.get('material')
+    const productId = params.get('product')
+    const returnTo = params.get('from')
+    const field = params.get('field')
+    const value = params.get('value')
+    const dashboardsDrilldown: DrilldownTarget | null = returnTo === 'dashboards' && field && value && (productId || materialId)
+      ? { entityType: productId ? 'product' : 'material', definitionId: field, optionId: value }
+      : null
+    return { materialId, productId, returnTo, dashboardsDrilldown }
   })
 
   const [page, setPage] = useState<Page>(() => {
@@ -114,6 +132,17 @@ export default function Shell({ onLogout }: Props) {
           <path d="M2 19c0-3.31 2.69-6 6-6s6 2.69 6 6" stroke="currentColor" strokeWidth={a ? 2 : 1.5} strokeLinecap="round"/>
           <circle cx="16" cy="8" r="2.5" stroke="currentColor" strokeWidth={a ? 2 : 1.5}/>
           <path d="M14 13.2c2.5.4 4.5 2.5 4.5 5.1" stroke="currentColor" strokeWidth={a ? 2 : 1.5} strokeLinecap="round"/>
+        </svg>
+      ),
+    },
+    {
+      id: 'dashboards',
+      label: t('nav.dashboards'),
+      icon: a => (
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+          <rect x="2" y="12" width="4.5" height="8" rx="1.2" stroke="currentColor" strokeWidth={a ? 2 : 1.5} fill={a ? 'currentColor' : 'none'} fillOpacity="0.15"/>
+          <rect x="8.75" y="7" width="4.5" height="13" rx="1.2" stroke="currentColor" strokeWidth={a ? 2 : 1.5} fill={a ? 'currentColor' : 'none'} fillOpacity="0.15"/>
+          <rect x="15.5" y="2.5" width="4.5" height="17.5" rx="1.2" stroke="currentColor" strokeWidth={a ? 2 : 1.5} fill={a ? 'currentColor' : 'none'} fillOpacity="0.15"/>
         </svg>
       ),
     },
@@ -226,13 +255,16 @@ export default function Shell({ onLogout }: Props) {
         {/* Page content */}
         <main className="flex-1 overflow-y-auto pb-24 md:pb-8">
           <div className="max-w-lg mx-auto md:max-w-3xl md:mx-auto">
-            {page === 'products'  && isManager && <ProductCatalog onNavigate={p => setPage(p as Page)} initialViewId={deepLink.productId} />}
-            {page === 'materials' && isManager && <MaterialStock onNavigate={p => setPage(p as Page)} initialMaterialId={deepLink.materialId} />}
-            {page === 'tasks'     && <AssignmentsPage />}
-            {page === 'directory' && isManager && <DirectoryCatalog onNavigate={p => setPage(p as Page)} />}
-            {page === 'settings'  && isManager && <CustomFieldsPage onBack={() => setPage('products')} />}
-            {page === 'employees' && isAdmin && <EmployeesPage />}
-            {page === 'profile' && currentUser && <ProfilePage employeeId={currentUser.id} onBack={() => setPage(prevPage)} />}
+            <Suspense fallback={<div className="px-4 pt-8 text-center text-sm text-slate-400">{t('common.loading')}</div>}>
+              {page === 'products'  && isManager && <ProductCatalog onNavigate={p => setPage(p as Page)} initialViewId={deepLink.productId} initialViewReturnTo={deepLink.returnTo} />}
+              {page === 'materials' && isManager && <MaterialStock onNavigate={p => setPage(p as Page)} initialMaterialId={deepLink.materialId} initialMaterialReturnTo={deepLink.returnTo} />}
+              {page === 'tasks'     && <AssignmentsPage />}
+              {page === 'directory' && isManager && <DirectoryCatalog onNavigate={p => setPage(p as Page)} />}
+              {page === 'settings'  && isManager && <CustomFieldsPage onBack={() => setPage('products')} />}
+              {page === 'employees' && isAdmin && <EmployeesPage />}
+              {page === 'dashboards' && isManager && <DashboardsPage initialDrilldown={deepLink.dashboardsDrilldown} />}
+              {page === 'profile' && currentUser && <ProfilePage employeeId={currentUser.id} onBack={() => setPage(prevPage)} />}
+            </Suspense>
           </div>
         </main>
 
@@ -312,6 +344,13 @@ export default function Shell({ onLogout }: Props) {
                     icon={<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="6.5" cy="5.5" r="2.5" stroke="currentColor" strokeWidth="1.4"/><path d="M1.5 15c0-2.49 2.24-4.5 5-4.5s5 2.01 5 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><circle cx="13" cy="6" r="2" stroke="currentColor" strokeWidth="1.4"/><path d="M11.5 10.7c1.98.3 3.5 1.86 3.5 3.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>}
                     label={t('nav.employees')}
                     onClick={() => { setPage('employees'); setMenuOpen(false) }}
+                  />
+                )}
+                {isManager && (
+                  <DrawerItem
+                    icon={<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="1.5" y="9.5" width="3.5" height="6.5" rx="1" stroke="currentColor" strokeWidth="1.4"/><rect x="7.25" y="5.5" width="3.5" height="10.5" rx="1" stroke="currentColor" strokeWidth="1.4"/><rect x="13" y="2" width="3.5" height="14" rx="1" stroke="currentColor" strokeWidth="1.4"/></svg>}
+                    label={t('nav.dashboards')}
+                    onClick={() => { setPage('dashboards'); setMenuOpen(false) }}
                   />
                 )}
                 <DrawerItem

@@ -17,7 +17,7 @@ import MaterialEditorPage, { type PendingDelivery, type CustomFieldInput } from 
 import { CategoryTreeNode } from './CategoryTreeNode'
 import { useLocale } from './LocaleContext'
 
-interface Props { onNavigate: (page: string) => void; initialMaterialId?: string | null }
+interface Props { onNavigate: (page: string) => void; initialMaterialId?: string | null; initialMaterialReturnTo?: string | null }
 
 type View =
   | { type: 'list' }
@@ -26,7 +26,7 @@ type View =
   | { type: 'qr'; materialId: string }
   | { type: 'edit'; materialId: string | null }
 
-export default function MaterialStock({ onNavigate: _onNavigate, initialMaterialId }: Props) {
+export default function MaterialStock({ onNavigate, initialMaterialId, initialMaterialReturnTo }: Props) {
   const [view, setView] = useState<View>(initialMaterialId ? { type: 'detail', materialId: initialMaterialId } : { type: 'list' })
   const { t, tn } = useLocale()
 
@@ -221,6 +221,11 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
       if (!materialsQ.isLoading) setView({ type: 'list' })
       return null
     }
+    // Якщо сюди прийшли по deep-link'у з іншої сторінки (напр. деталізації дашборду) —
+    // "назад" повертає туди, а не в загальний список матеріалів.
+    const backToOrigin = view.materialId === initialMaterialId && initialMaterialReturnTo
+      ? () => onNavigate(initialMaterialReturnTo)
+      : () => setView({ type: 'list' })
     return (
       <>
         {toastNode}
@@ -232,7 +237,7 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
           movements={movements.filter(mv => mv.materialId === mat.id)}
           stock={totalFor(balances, mat.id)}
           fields={materialFields}
-          onBack={() => setView({ type: 'list' })}
+          onBack={backToOrigin}
         />
       </>
     )
@@ -394,7 +399,7 @@ export default function MaterialStock({ onNavigate: _onNavigate, initialMaterial
                 onClick={() => setView({ type: 'detail', materialId: m.id })}>
                 <div className="h-12 w-12 shrink-0 rounded-xl overflow-hidden bg-amber-50 flex items-center justify-center text-amber-400">
                   {m.photo
-                    ? <img src={m.photo} alt={tn(m.name, m.nameEn)} className="h-full w-full object-cover" />
+                    ? <img src={m.photo} alt={tn(m.name, m.nameEn)} loading="lazy" className="h-full w-full object-cover" />
                     : <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                         <path d="M8 1L14 4.5V11.5L8 15L2 11.5V4.5L8 1Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
                         <path d="M2 4.5L8 8L14 4.5M8 15V8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
@@ -921,7 +926,7 @@ function MaterialDetail({ material, categoryPath, suppliers, warehouses, movemen
                   <div key={p.id} className="flex items-center gap-3 px-4 py-3"
                     style={{ borderBottom: i < usedIn.length - 1 ? '1px solid rgba(157,200,255,0.12)' : 'none' }}>
                     {p.photo ? (
-                      <img src={p.photo} alt="" className="h-9 w-9 rounded-xl object-cover shrink-0" />
+                      <img src={p.photo} alt="" loading="lazy" className="h-9 w-9 rounded-xl object-cover shrink-0" />
                     ) : (
                       <div className="h-9 w-9 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
                         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="text-slate-400">

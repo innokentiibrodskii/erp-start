@@ -10,6 +10,7 @@ const en: Record<TranslationKey, string> = {
   'nav.directory': 'Directories',
   'nav.settings': 'Settings',
   'nav.employees': 'Employees',
+  'nav.dashboards': 'Dashboards',
   'nav.profile': 'Profile',
   'nav.logout': 'Log out',
 
@@ -333,6 +334,12 @@ const en: Record<TranslationKey, string> = {
   'assignments.chooseProductLink': 'Choose product',
   'assignments.skipProductLink': 'Continue without a product',
   'assignments.linkProductLink': '+ Link a product',
+  'assignments.plannedTimeLabel': 'Planned time to complete, min',
+  'assignments.actionStart': 'Start',
+  'assignments.actionPause': 'Pause',
+  'assignments.actionComplete': 'Complete',
+  'assignments.menuCancel': 'Cancel',
+  'assignments.menuHistory': 'History',
 
   'assignmentPriority.low': 'Low',
   'assignmentPriority.medium': 'Medium',
@@ -346,6 +353,7 @@ const en: Record<TranslationKey, string> = {
   'assignmentEvent.priorityChanged': 'Priority changed',
   'assignmentEvent.dueDateChanged': 'Due date changed',
   'assignmentEvent.productChanged': 'Product link changed',
+  'assignmentEvent.plannedDurationChanged': 'Planned time adjusted',
 
   'payroll.settingsTitle': 'Payroll period',
   'payroll.openFromLabel': 'From day',
@@ -385,6 +393,13 @@ const en: Record<TranslationKey, string> = {
   'directory.tiles.materialCategories.desc': 'Separate category catalog for materials',
   'directory.tiles.warehouses.label': 'Warehouses',
   'directory.tiles.warehouses.desc': 'Addresses and responsible persons',
+  'dashboards.searchPlaceholder': 'Search dashboards...',
+  'dashboards.totalProducts': 'Total products:',
+  'dashboards.totalMaterials': 'Total materials:',
+  'dashboards.totalSuppliers': 'Total suppliers:',
+  'dashboards.noSelectFields': 'No "List of values" custom fields',
+  'dashboards.viewRecordsHint': 'View records',
+
   'directory.tiles.suppliers.label': 'Suppliers',
   'directory.tiles.suppliers.desc': 'Supplier contacts and details',
   'directory.tiles.units.label': 'Units',

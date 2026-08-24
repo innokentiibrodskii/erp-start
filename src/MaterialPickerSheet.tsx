@@ -82,7 +82,7 @@ export default function MaterialPickerSheet({ productId, allMaterials, alreadyAd
                   className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left hover:bg-slate-50 transition-colors"
                   style={{ border: '1px solid rgba(157,200,255,0.2)' }}>
                   <div className="h-8 w-8 shrink-0 rounded-lg overflow-hidden bg-amber-50 flex items-center justify-center text-amber-400">
-                    {m.photo ? <img src={m.photo} alt="" className="h-full w-full object-cover" /> : <span className="text-xs">📦</span>}
+                    {m.photo ? <img src={m.photo} alt="" loading="lazy" className="h-full w-full object-cover" /> : <span className="text-xs">📦</span>}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-800 truncate">{tn(m.name, m.nameEn)}</p>

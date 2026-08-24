@@ -45,6 +45,8 @@ export interface Assignment {
   assignedById: string | null
   assignedByName: string
   durationMinutes: number | null
+  /** Оцінка часу на виконання, окремо від фактично витраченого (durationMinutes) */
+  plannedDurationMinutes: number | null
   cost: number | null
   priority: AssignmentPriority
   dueDate: number | null
@@ -97,7 +99,7 @@ export function useAssignments() {
         .from('assignments')
         .select(`
           id, product_id, operation_id, task_id, name, assignee_id, assigned_by,
-          duration_minutes, cost, priority, due_date, status, status_changed_at, completed_at, created_at, updated_at,
+          duration_minutes, planned_duration_minutes, cost, priority, due_date, status, status_changed_at, completed_at, created_at, updated_at,
           products(name),
           operations(name, name_en),
           assignee:users!assignments_assignee_id_fkey(first_name, last_name),
@@ -126,6 +128,7 @@ export function useAssignments() {
           assignedById: a.assigned_by,
           assignedByName: assigner ? `${assigner.first_name} ${assigner.last_name}`.trim() : '—',
           durationMinutes: a.duration_minutes !== null ? Number(a.duration_minutes) : null,
+          plannedDurationMinutes: a.planned_duration_minutes !== null ? Number(a.planned_duration_minutes) : null,
           cost: a.cost !== null ? Number(a.cost) : null,
           priority: (a.priority ?? 'medium') as AssignmentPriority,
           dueDate: a.due_date !== null ? new Date(a.due_date).getTime() : null,
@@ -150,7 +153,7 @@ export function useAssignmentMutations() {
   const create = useMutation({
     mutationFn: async (args: {
       productId: string | null; operationId: string | null; taskId: string | null; name: string
-      assigneeId: string; assignedById: string; durationMinutes: number | null; cost: number | null
+      assigneeId: string; assignedById: string; durationMinutes: number | null; plannedDurationMinutes: number | null; cost: number | null
       priority: AssignmentPriority; dueDate: number | null
     }) => {
       const { error } = await supabase.from('assignments').insert({
@@ -161,6 +164,7 @@ export function useAssignmentMutations() {
         assignee_id: args.assigneeId,
         assigned_by: args.assignedById,
         duration_minutes: args.durationMinutes,
+        planned_duration_minutes: args.plannedDurationMinutes,
         cost: args.cost,
         priority: args.priority,
         due_date: args.dueDate !== null ? new Date(args.dueDate).toISOString().slice(0, 10) : null,
@@ -183,9 +187,9 @@ export function useAssignmentMutations() {
    *  продукту до завдання, яке було створене без нього) логується тригером
    *  у базі як подія 'product_changed'. */
   const updateAssignment = useMutation({
-    mutationFn: async ({ id, prevStatus, prevStatusChangedAt, newStatus, durationMinutes, cost, priority, dueDate, productId, operationId, taskId }: {
+    mutationFn: async ({ id, prevStatus, prevStatusChangedAt, newStatus, durationMinutes, plannedDurationMinutes, cost, priority, dueDate, productId, operationId, taskId }: {
       id: string; prevStatus: AssignmentStatus; prevStatusChangedAt: number; newStatus: AssignmentStatus; durationMinutes: number | null
-      cost?: number | null; priority?: AssignmentPriority; dueDate?: number | null
+      plannedDurationMinutes?: number | null; cost?: number | null; priority?: AssignmentPriority; dueDate?: number | null
       productId?: string | null; operationId?: string | null; taskId?: string | null
     }) => {
       let finalDuration = durationMinutes
@@ -200,6 +204,7 @@ export function useAssignmentMutations() {
       }
       if (newStatus === 'done') patch.completed_at = new Date().toISOString()
       else if (prevStatus === 'done') patch.completed_at = null
+      if (plannedDurationMinutes !== undefined) patch.planned_duration_minutes = plannedDurationMinutes
       if (cost !== undefined) patch.cost = cost
       if (priority !== undefined) patch.priority = priority
       if (dueDate !== undefined) patch.due_date = dueDate !== null ? new Date(dueDate).toISOString().slice(0, 10) : null
@@ -226,12 +231,12 @@ export function useAssignmentMutations() {
   return {
     createAssignment: (args: {
       productId: string | null; operationId: string | null; taskId: string | null; name: string
-      assigneeId: string; assignedById: string; durationMinutes: number | null; cost: number | null
+      assigneeId: string; assignedById: string; durationMinutes: number | null; plannedDurationMinutes: number | null; cost: number | null
       priority: AssignmentPriority; dueDate: number | null
     }) => create.mutateAsync(args),
     updateAssignment: (args: {
       id: string; prevStatus: AssignmentStatus; prevStatusChangedAt: number; newStatus: AssignmentStatus; durationMinutes: number | null
-      cost?: number | null; priority?: AssignmentPriority; dueDate?: number | null
+      plannedDurationMinutes?: number | null; cost?: number | null; priority?: AssignmentPriority; dueDate?: number | null
       productId?: string | null; operationId?: string | null; taskId?: string | null
     }) => updateAssignment.mutateAsync(args),
     removeAssignment: (id: string) => remove.mutate(id),

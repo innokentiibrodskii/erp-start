@@ -26,9 +26,9 @@ function lsSet(key: string, val: unknown) {
   try { localStorage.setItem(key, JSON.stringify(val)) } catch { /* ignore */ }
 }
 
-interface Props { onNavigate: (page: string) => void; initialViewId?: string | null }
+interface Props { onNavigate: (page: string) => void; initialViewId?: string | null; initialViewReturnTo?: string | null }
 
-export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId }: Props) {
+export default function ProductCatalog({ onNavigate, initialViewId, initialViewReturnTo }: Props) {
   const { categories, operations } = useCatalog()
   const productsQ = useProducts()
   const materialsQ = useMaterials()
@@ -193,7 +193,13 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
     return <ProductEditor productId={editId === 'new' ? null : editId} onBack={() => setEditId(null)} />
   }
   if (viewId !== null) {
-    return <ProductView productId={viewId} onBack={() => setViewId(null)} onEdit={() => { setEditId(viewId); setViewId(null) }} />
+    // Якщо сюди прийшли по deep-link'у з іншої сторінки (напр. деталізації дашборду) —
+    // "назад" повертає туди, а не в загальний список продуктів. Це стосується лише
+    // першого показу (сам deep-link), поки користувач ще не переключився на щось інше.
+    const backToOrigin = viewId === initialViewId && initialViewReturnTo
+      ? () => onNavigate(initialViewReturnTo)
+      : () => setViewId(null)
+    return <ProductView productId={viewId} onBack={backToOrigin} onEdit={() => { setEditId(viewId); setViewId(null) }} />
   }
 
   return (
@@ -365,7 +371,7 @@ export default function ProductCatalog({ onNavigate: _onNavigate, initialViewId 
                 <div role="button" tabIndex={0} onClick={() => setViewId(product.id)} onKeyDown={e => e.key === 'Enter' && setViewId(product.id)} className="flex w-full items-center gap-3 px-4 pt-4 pb-3 cursor-pointer">
                   <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-slate-100">
                     {product.photo
-                      ? <img src={product.photo} alt={product.name} className="h-full w-full object-cover" />
+                      ? <img src={product.photo} alt={product.name} loading="lazy" className="h-full w-full object-cover" />
                       : <div className="h-full w-full flex items-center justify-center text-slate-300">
                           <svg width="22" height="22" viewBox="0 0 20 20" fill="none"><rect x="2" y="2" width="16" height="16" rx="3" stroke="currentColor" strokeWidth="1.4"/><path d="M2 13l4-4 3 3 3-3 4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
                         </div>

@@ -237,7 +237,7 @@ export default function ProductEditor({ productId, onBack }: Props) {
                   <div key={p.key} className="relative h-24 w-24 shrink-0 cursor-pointer"
                     onClick={() => makeMainPhoto(p.key)}
                     style={isMain ? { outline: '2.5px solid #3b82f6', borderRadius: '1rem' } : {}}>
-                    <img src={p.url} alt="" className="h-full w-full rounded-2xl object-cover bg-slate-100" />
+                    <img src={p.url} alt="" loading="lazy" className="h-full w-full rounded-2xl object-cover bg-slate-100" />
                     {isMain ? (
                       <span className="absolute bottom-1.5 left-1.5 flex items-center gap-1 rounded-lg bg-blue-500 px-1.5 py-0.5 text-[9px] text-white font-medium">
                         <svg width="8" height="8" viewBox="0 0 8 8" fill="none">

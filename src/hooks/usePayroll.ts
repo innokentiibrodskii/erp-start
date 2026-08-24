@@ -189,7 +189,7 @@ export function useClosePayrollPeriod() {
    Аудит-лог завдання ("Історія")
 ─────────────────────────────────────────────────────────── */
 
-export type AssignmentEventType = 'created' | 'status_changed' | 'duration_changed' | 'cost_changed' | 'priority_changed' | 'due_date_changed' | 'product_changed'
+export type AssignmentEventType = 'created' | 'status_changed' | 'duration_changed' | 'cost_changed' | 'priority_changed' | 'due_date_changed' | 'product_changed' | 'planned_duration_changed'
 
 export interface AssignmentEvent {
   id: string
