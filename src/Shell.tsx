@@ -15,8 +15,9 @@ const AssignmentsPage = lazy(() => import('./AssignmentsPage'))
 const EmployeesPage = lazy(() => import('./EmployeesPage'))
 const DashboardsPage = lazy(() => import('./DashboardsPage'))
 const ProfilePage = lazy(() => import('./ProfilePage'))
+const AboutPage = lazy(() => import('./AboutPage'))
 
-type Page = 'products' | 'materials' | 'tasks' | 'directory' | 'settings' | 'employees' | 'dashboards' | 'profile'
+type Page = 'products' | 'materials' | 'tasks' | 'directory' | 'settings' | 'employees' | 'dashboards' | 'profile' | 'about'
 
 /** Сторінки, доступні лише менеджеру (і адміну, який успадковує права менеджера) */
 const MANAGER_ONLY_PAGES: Page[] = ['products', 'materials', 'directory', 'settings', 'dashboards']
@@ -166,6 +167,17 @@ export default function Shell({ onLogout }: Props) {
         </svg>
       ),
     },
+    {
+      id: 'about',
+      label: t('nav.about'),
+      icon: a => (
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+          <circle cx="11" cy="11" r="8.5" stroke="currentColor" strokeWidth={a ? 2 : 1.5} fill={a ? 'currentColor' : 'none'} fillOpacity="0.1"/>
+          <path d="M11 10v5.5" stroke="currentColor" strokeWidth={a ? 2 : 1.5} strokeLinecap="round"/>
+          <circle cx="11" cy="7" r="1" fill="currentColor"/>
+        </svg>
+      ),
+    },
   ]
 
   const navItems = allNavItems.filter(item =>
@@ -264,6 +276,7 @@ export default function Shell({ onLogout }: Props) {
               {page === 'employees' && isAdmin && <EmployeesPage />}
               {page === 'dashboards' && isManager && <DashboardsPage initialDrilldown={deepLink.dashboardsDrilldown} />}
               {page === 'profile' && currentUser && <ProfilePage employeeId={currentUser.id} onBack={() => setPage(prevPage)} />}
+              {page === 'about' && <AboutPage />}
             </Suspense>
           </div>
         </main>
@@ -362,6 +375,11 @@ export default function Shell({ onLogout }: Props) {
                   icon={<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.4"/><path d="M9 1.5v2M9 14.5v2M1.5 9h2M14.5 9h2M3.6 3.6l1.4 1.4M13 13l1.4 1.4M3.6 14.4L5 13M13 5l1.4-1.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>}
                   label={t('nav.settings')}
                   onClick={() => { if (isManager) setPage('settings'); setMenuOpen(false) }}
+                />
+                <DrawerItem
+                  icon={<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.4"/><path d="M9 8v4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><circle cx="9" cy="5.7" r="0.9" fill="currentColor"/></svg>}
+                  label={t('nav.about')}
+                  onClick={() => { setPage('about'); setMenuOpen(false) }}
                 />
               </div>
 
