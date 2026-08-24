@@ -26,14 +26,23 @@ function lsSet(key: string, val: unknown) {
   try { localStorage.setItem(key, JSON.stringify(val)) } catch { /* ignore */ }
 }
 
-interface Props { onNavigate: (page: string) => void; initialViewId?: string | null; initialViewReturnTo?: string | null }
+interface Props {
+  onNavigate: (page: string) => void
+  initialViewId?: string | null
+  initialViewReturnTo?: string | null
+  /** Deep-link "одразу відкрити специфікацію матеріалів цього продукту" —
+   *  з таблиці деталізації "Специфікація" на дашбордах. На відміну від
+   *  initialViewId, це не повна картка продукту, а той самий bottom sheet,
+   *  що й кнопка "Матеріали/Специфікація" в списку. */
+  initialQuickActionProductId?: string | null
+}
 
-export default function ProductCatalog({ onNavigate, initialViewId, initialViewReturnTo }: Props) {
+export default function ProductCatalog({ onNavigate, initialViewId, initialViewReturnTo, initialQuickActionProductId }: Props) {
   const { categories, operations } = useCatalog()
   const productsQ = useProducts()
   const materialsQ = useMaterials()
   const statusesQ = useProductStatuses()
-  const { addMaterial, removeMaterial } = useProductMaterialMutations()
+  const { addMaterial, updateMaterial, removeMaterial } = useProductMaterialMutations()
   const { removeOperation } = useProductOperationMutations()
   const products = productsQ.data ?? []
   const materials = materialsQ.data ?? []
@@ -49,9 +58,15 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
   const [viewId, setViewId]           = useState<string | null>(initialViewId ?? null)
   const [qrProductId, setQrProductId] = useState<string | null>(null)
   const [openMenu, setOpenMenu] = useState<string | null>(null)
-  const [quickAction, setQuickAction] = useState<{ productId: string; type: QuickActionType } | null>(null)
+  const [quickAction, setQuickAction] = useState<{ productId: string; type: QuickActionType } | null>(
+    () => initialQuickActionProductId ? { productId: initialQuickActionProductId, type: 'materials' } : null
+  )
   const [materialPickerOpen, setMaterialPickerOpen] = useState(false)
   const [operationPickerOpen, setOperationPickerOpen] = useState(false)
+  // Інлайн-редагування кількості матеріалу в специфікації продукту —
+  // materialId рядка, що зараз редагується, і чернетка введеного значення.
+  const [editingQtyMaterialId, setEditingQtyMaterialId] = useState<string | null>(null)
+  const [qtyDraft, setQtyDraft] = useState('')
 
   const [sortBy, setSortBy]   = useState<'name' | 'createdAt' | 'updatedAt'>(() => ls(LS_SORT_BY, 'createdAt'))
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => ls(LS_SORT_DIR, 'desc'))
@@ -464,7 +479,7 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
         const product = products.find(p => p.id === quickAction.productId)
         if (!product) return null
         const isMat = quickAction.type === 'materials'
-        const closeAll = () => { setQuickAction(null); setMaterialPickerOpen(false); setOperationPickerOpen(false) }
+        const closeAll = () => { setQuickAction(null); setMaterialPickerOpen(false); setOperationPickerOpen(false); setEditingQtyMaterialId(null) }
         return (
           <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center sm:p-4"
             style={{ background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(4px)' }}
@@ -509,7 +524,37 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
                             <p className="text-sm font-medium text-slate-800 truncate">{m ? tn(m.name, m.nameEn) : '—'}</p>
                             <p className="text-xs text-slate-400 truncate">{op ? t('products.operationPrefix', { name: tn(op.name, op.nameEn) }) : (m?.categoryName ? tn(m.categoryName, m.categoryNameEn) : t('products.noOperation'))}</p>
                           </div>
-                          <span className="text-sm font-mono text-slate-600 shrink-0">{pm.qty} {tn(pm.unitShortName, pm.unitShortNameEn)}</span>
+                          {editingQtyMaterialId === pm.materialId ? (
+                            <div className="flex items-center gap-1 shrink-0">
+                              <input type="number" min="0" step="any" autoFocus value={qtyDraft} onChange={e => setQtyDraft(e.target.value)}
+                                className="w-16 rounded-lg border border-amber-300 bg-white px-2 py-1 text-sm font-mono text-slate-800 outline-none focus:border-amber-500" />
+                              <span className="text-xs text-slate-400">{tn(pm.unitShortName, pm.unitShortNameEn)}</span>
+                              <button onClick={async () => {
+                                  const qty = Number(qtyDraft)
+                                  if (qty > 0) await updateMaterial({ productId: product.id, materialId: pm.materialId, qty, operationId: pm.operationId })
+                                  setEditingQtyMaterialId(null)
+                                }}
+                                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-emerald-600 hover:bg-emerald-50 transition-all">
+                                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                                  <path d="M2 6.5l2.5 2.5L10 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </button>
+                              <button onClick={() => setEditingQtyMaterialId(null)}
+                                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 transition-all">
+                                <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                                  <path d="M1 1l9 9M10 1L1 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                                </svg>
+                              </button>
+                            </div>
+                          ) : (
+                            <button onClick={() => { setEditingQtyMaterialId(pm.materialId); setQtyDraft(String(pm.qty)) }}
+                              className="flex items-center gap-1 shrink-0 rounded-lg px-1.5 py-1 text-sm font-mono text-slate-600 hover:bg-amber-100/60 hover:text-amber-700 transition-colors">
+                              {pm.qty} {tn(pm.unitShortName, pm.unitShortNameEn)}
+                              <svg width="10" height="10" viewBox="0 0 14 14" fill="none" className="text-slate-300">
+                                <path d="M9.5 2.5l2 2L4 12l-2.5.5L2 10l7.5-7.5z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            </button>
+                          )}
                           <button onClick={() => removeMaterial({ productId: product.id, materialId: pm.materialId })}
                             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:text-red-500 transition-all">
                             <svg width="12" height="12" viewBox="0 0 13 13" fill="none">

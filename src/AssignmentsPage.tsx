@@ -61,7 +61,7 @@ const QUICK_ACTION_LABEL_KEY: Record<QuickActionStatus, TranslationKey> = {
  *  активний статус (безглуздо "розпочати" вже розпочате чи "паузити" вже
  *  призупинене). */
 function visibleQuickActions(status: AssignmentStatus): QuickActionStatus[] {
-  if (status === 'done') return []
+  if (status === 'done' || status === 'cancelled') return []
   return QUICK_ACTION_STATUSES.filter(s => s !== status)
 }
 

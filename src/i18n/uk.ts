@@ -466,6 +466,10 @@ const uk = {
   'dashboards.totalSuppliers': 'Усього постачальників:',
   'dashboards.noSelectFields': 'Немає кастомних полів типу "Список значень"',
   'dashboards.viewRecordsHint': 'Показати записи',
+  'dashboards.specTable.product': 'Продукт',
+  'dashboards.specTable.materials': 'Матеріали',
+  'dashboards.specTable.operations': 'Операції',
+  'dashboards.specTable.itemsShort': 'поз.',
 
   'directory.tiles.suppliers.label': 'Постачальники',
   'directory.tiles.suppliers.desc': 'Контакти та реквізити постачальників',

@@ -51,10 +51,11 @@ export default function Shell({ onLogout }: Props) {
     const returnTo = params.get('from')
     const field = params.get('field')
     const value = params.get('value')
+    const view = params.get('view')
     const dashboardsDrilldown: DrilldownTarget | null = returnTo === 'dashboards' && field && value && (productId || materialId)
       ? { entityType: productId ? 'product' : 'material', definitionId: field, optionId: value }
       : null
-    return { materialId, productId, returnTo, dashboardsDrilldown }
+    return { materialId, productId, returnTo, dashboardsDrilldown, view }
   })
 
   const [page, setPage] = useState<Page>(() => {
@@ -65,6 +66,19 @@ export default function Shell({ onLogout }: Props) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [prevPage, setPrevPage] = useState<Page>('tasks')
   const openProfile = () => { setPrevPage(page); setPage('profile'); setMenuOpen(false) }
+
+  // Продукти/Матеріали можуть застрягти на картці конкретного запису (deep-link
+  // з дашборду чи QR) — клік на "Продукти"/"Матеріали" в навігації, коли ця
+  // сторінка вже активна, лише міняє page на те саме значення, тож компонент
+  // не перемонтовується й internal viewId не скидається. resetKey форсує
+  // перемонтування саме в цьому випадку — свіжий список замість "застряглої" картки.
+  const [productsResetKey, setProductsResetKey] = useState(0)
+  const [materialsResetKey, setMaterialsResetKey] = useState(0)
+  const goToPage = (id: Page) => {
+    if (id === 'products' && page === 'products') setProductsResetKey(k => k + 1)
+    if (id === 'materials' && page === 'materials') setMaterialsResetKey(k => k + 1)
+    setPage(id)
+  }
 
   // Прибираємо параметр з адресного рядка, щоб не залишався в історії/при оновленні.
   useEffect(() => {
@@ -218,7 +232,7 @@ export default function Shell({ onLogout }: Props) {
           {navItems.map(item => {
             const active = page === item.id
             return (
-              <button key={item.id} onClick={() => setPage(item.id)}
+              <button key={item.id} onClick={() => goToPage(item.id)}
                 className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all"
                 style={active ? { background: '#eff6ff', color: '#3b82f6' } : { color: '#64748b' }}>
                 {item.icon(active)}
@@ -268,8 +282,13 @@ export default function Shell({ onLogout }: Props) {
         <main className="flex-1 overflow-y-auto pb-24 md:pb-8">
           <div className="max-w-lg mx-auto md:max-w-3xl md:mx-auto">
             <Suspense fallback={<div className="px-4 pt-8 text-center text-sm text-slate-400">{t('common.loading')}</div>}>
-              {page === 'products'  && isManager && <ProductCatalog onNavigate={p => setPage(p as Page)} initialViewId={deepLink.productId} initialViewReturnTo={deepLink.returnTo} />}
-              {page === 'materials' && isManager && <MaterialStock onNavigate={p => setPage(p as Page)} initialMaterialId={deepLink.materialId} initialMaterialReturnTo={deepLink.returnTo} />}
+              {page === 'products'  && isManager && (
+                <ProductCatalog key={productsResetKey} onNavigate={p => setPage(p as Page)}
+                  initialViewId={productsResetKey === 0 && deepLink.view !== 'materials' ? deepLink.productId : null}
+                  initialViewReturnTo={deepLink.returnTo}
+                  initialQuickActionProductId={productsResetKey === 0 && deepLink.view === 'materials' ? deepLink.productId : null} />
+              )}
+              {page === 'materials' && isManager && <MaterialStock key={materialsResetKey} onNavigate={p => setPage(p as Page)} initialMaterialId={materialsResetKey === 0 ? deepLink.materialId : null} initialMaterialReturnTo={deepLink.returnTo} />}
               {page === 'tasks'     && <AssignmentsPage />}
               {page === 'directory' && isManager && <DirectoryCatalog onNavigate={p => setPage(p as Page)} />}
               {page === 'settings'  && isManager && <CustomFieldsPage onBack={() => setPage('products')} />}
@@ -288,7 +307,7 @@ export default function Shell({ onLogout }: Props) {
             {mobileTabItems.map(item => {
               const active = page === item.id
               return (
-                <button key={item.id} onClick={() => setPage(item.id)}
+                <button key={item.id} onClick={() => goToPage(item.id)}
                   className="relative flex flex-1 flex-col items-center gap-1 py-3 transition-colors active:scale-95"
                   style={{ color: active ? '#3b82f6' : '#94a3b8' }}>
                   {item.icon(active)}

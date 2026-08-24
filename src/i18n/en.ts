@@ -461,6 +461,10 @@ const en: Record<TranslationKey, string> = {
   'dashboards.totalSuppliers': 'Total suppliers:',
   'dashboards.noSelectFields': 'No "List of values" custom fields',
   'dashboards.viewRecordsHint': 'View records',
+  'dashboards.specTable.product': 'Product',
+  'dashboards.specTable.materials': 'Materials',
+  'dashboards.specTable.operations': 'Operations',
+  'dashboards.specTable.itemsShort': 'items',
 
   'directory.tiles.suppliers.label': 'Suppliers',
   'directory.tiles.suppliers.desc': 'Supplier contacts and details',

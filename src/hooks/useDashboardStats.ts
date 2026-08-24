@@ -18,6 +18,16 @@ const MAIN_TABLE: Record<EntityType, string> = {
   supplier: 'suppliers',
 }
 
+/** Синтетичне "поле" — чи має продукт уже додані і матеріали, і операції
+ *  (специфікацію). Це не кастомне поле з бази, а обчислений на клієнті
+ *  показник, але оформлений у тій самій формі DashboardFieldStat, щоб
+ *  безкоштовно отримати той самий рендер, клік-у-деталізацію й
+ *  відновлення "назад" — уся ця машинерія вже працює по definitionId/
+ *  optionId, не знаючи, звідки вони взялись. */
+export const SPECIFICATION_FIELD_ID = '__specification__'
+const SPEC_HAS = 'has'
+const SPEC_MISSING = 'missing'
+
 export interface DashboardFieldValueStat {
   optionId: string
   label: string
@@ -66,6 +76,24 @@ export function useDashboardStats(entityType: EntityType): EntityDashboardStats 
     },
   })
 
+  // Скільки продуктів мають додані і матеріали, і операції (специфікацію) —
+  // лише для продуктів, окремим легким запитом (тільки id зв'язаних рядків,
+  // не повний useProducts() з усіма вкладеними полями).
+  const specQ = useQuery({
+    queryKey: ['dashboard-specification', orgId],
+    enabled: entityType === 'product',
+    queryFn: async (): Promise<{ hasCount: number; missingCount: number }> => {
+      const { data, error } = await supabase
+        .from('products')
+        .select('id, product_materials(material_id), product_operations(id)')
+        .eq('organization_id', orgId)
+      if (error) throw error
+      const rows = data as unknown as { product_materials: { material_id: string }[]; product_operations: { id: string }[] }[]
+      const hasCount = rows.filter(p => p.product_materials.length > 0 && p.product_operations.length > 0).length
+      return { hasCount, missingCount: rows.length - hasCount }
+    },
+  })
+
   const definitions = definitionsQ.data ?? []
   const rows = valuesQ.data ?? []
 
@@ -79,7 +107,7 @@ export function useDashboardStats(entityType: EntityType): EntityDashboardStats 
       if (!counts) { counts = new Map(); countsByDefinition.set(r.fieldDefinitionId, counts) }
       counts.set(r.optionId, (counts.get(r.optionId) ?? 0) + 1)
     }
-    return definitions
+    const result = definitions
       .filter(d => d.fieldType === 'select')
       .map(d => {
         const counts = countsByDefinition.get(d.id) ?? new Map<string, number>()
@@ -90,13 +118,25 @@ export function useDashboardStats(entityType: EntityType): EntityDashboardStats 
           .map(v => ({ ...v, fraction: v.count / max }))
         return { definitionId: d.id, name: d.name, nameEn: d.nameEn, values }
       })
+    if (entityType === 'product' && specQ.data) {
+      const { hasCount, missingCount } = specQ.data
+      const max = Math.max(1, hasCount, missingCount)
+      const values = [
+        { optionId: SPEC_HAS, label: 'Є специфікація', labelEn: 'Has specification', count: hasCount },
+        { optionId: SPEC_MISSING, label: 'Немає специфікації', labelEn: 'No specification', count: missingCount },
+      ]
+        .sort((a, b) => b.count - a.count)
+        .map(v => ({ ...v, fraction: v.count / max }))
+      result.unshift({ definitionId: SPECIFICATION_FIELD_ID, name: 'Специфікація', nameEn: 'Specification', values })
+    }
+    return result
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [definitions, rows])
+  }, [definitions, rows, entityType, specQ.data])
 
   return {
     totalCount: countQ.data ?? 0,
     fields,
-    isLoading: definitionsQ.isLoading || countQ.isLoading || valuesQ.isLoading,
+    isLoading: definitionsQ.isLoading || countQ.isLoading || valuesQ.isLoading || (entityType === 'product' && specQ.isLoading),
   }
 }
 
@@ -111,6 +151,13 @@ export interface DrilldownRecord {
   /** SKU для продукту, код для матеріалу — null для постачальника */
   code: string | null
   photo: string | null
+  /** Лише для деталізації "Специфікація" — скільки матеріалів/операцій уже додано
+   *  і на яку суму (материали — за довідниковою вартістю з qty, операції — за
+   *  вартістю з product_operations, той самий розрахунок, що й на картці продукту). */
+  materialsCount?: number
+  operationsCount?: number
+  materialsCost?: number
+  operationsCost?: number
 }
 
 export function useDrilldownRecords(entityType: EntityType, definitionId: string | null, optionId: string | null) {
@@ -119,6 +166,31 @@ export function useDrilldownRecords(entityType: EntityType, definitionId: string
     queryKey: ['dashboard-drilldown', entityType, definitionId, optionId, orgId],
     enabled: definitionId !== null && optionId !== null,
     queryFn: async (): Promise<DrilldownRecord[]> => {
+      if (definitionId === SPECIFICATION_FIELD_ID) {
+        const { data, error } = await supabase
+          .from('products')
+          .select('id, name, sku, product_images(url, position), product_materials(qty, materials(cost)), product_operations(id, tasks!product_operations_task_id_fkey(cost))')
+          .eq('organization_id', orgId)
+        if (error) throw error
+        const rows = data as unknown as {
+          id: string; name: string; sku: string
+          product_images: { url: string; position: number }[]
+          product_materials: { qty: number; materials: { cost: number | null } | null }[]
+          product_operations: { id: string; tasks: { cost: number | null } | null }[]
+        }[]
+        return rows
+          .filter(p => (optionId === SPEC_HAS) === (p.product_materials.length > 0 && p.product_operations.length > 0))
+          .map(p => {
+            const images = (p.product_images ?? []).slice().sort((a, b) => a.position - b.position)
+            const materialsCost = p.product_materials.reduce((sum, pm) => sum + (pm.materials?.cost ?? 0) * pm.qty, 0)
+            const operationsCost = p.product_operations.reduce((sum, po) => sum + (po.tasks?.cost ?? 0), 0)
+            return {
+              id: p.id, name: p.name, code: p.sku, photo: images[0]?.url ?? null,
+              materialsCount: p.product_materials.length, operationsCount: p.product_operations.length,
+              materialsCost, operationsCost,
+            }
+          })
+      }
       if (entityType === 'product') {
         const { data, error } = await supabase
           .from('product_custom_field_values')

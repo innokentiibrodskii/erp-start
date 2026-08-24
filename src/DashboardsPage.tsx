@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { useDashboardStats, useDrilldownRecords, type DashboardFieldStat } from './hooks/useDashboardStats'
+import { useDashboardStats, useDrilldownRecords, SPECIFICATION_FIELD_ID, type DashboardFieldStat } from './hooks/useDashboardStats'
 import type { EntityType } from './hooks/useCustomFields'
+import { useMaterialCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
+import { fmt } from './lib/materialFormat'
 import { useLocale } from './LocaleContext'
 import type { TranslationKey } from './i18n'
 
@@ -158,7 +160,10 @@ function FieldStatGroup({ entityType, field, onSelectValue }: { entityType: Enti
 function goToRecord(target: DrilldownTarget, id: string) {
   const param = target.entityType === 'product' ? 'product' : target.entityType === 'material' ? 'material' : null
   if (!param) return
-  window.location.href = `${window.location.pathname}?${param}=${id}&from=dashboards&field=${target.definitionId}&value=${target.optionId}`
+  // "Специфікація" — одразу відкриваємо шторку матеріалів/операцій продукту
+  // (view=materials), а не повну картку, бо саме за цим сюди й прийшли.
+  const viewParam = target.definitionId === SPECIFICATION_FIELD_ID ? '&view=materials' : ''
+  window.location.href = `${window.location.pathname}?${param}=${id}&from=dashboards&field=${target.definitionId}&value=${target.optionId}${viewParam}`
 }
 
 function DrilldownPage({ target, onBack }: { target: DrilldownTarget; onBack: () => void }) {
@@ -166,6 +171,8 @@ function DrilldownPage({ target, onBack }: { target: DrilldownTarget; onBack: ()
   const { fields, isLoading: statsLoading } = useDashboardStats(target.entityType)
   const recordsQ = useDrilldownRecords(target.entityType, target.definitionId, target.optionId)
   const navigable = target.entityType !== 'supplier'
+  const currencyQ = useMaterialCostCurrency()
+  const currencySymbol = CURRENCY_SYMBOL[currencyQ.data ?? 'UAH']
 
   // Підписи деталізації — не з URL, а свіжо підтягнуті зі статистики (та сама
   // логіка, що й на верхньому рівні), щоб точно збігались і не застарівали.
@@ -174,6 +181,7 @@ function DrilldownPage({ target, onBack }: { target: DrilldownTarget; onBack: ()
   const fieldLabel = field ? tn(field.name, field.nameEn) : ''
   const valueLabel = value ? tn(value.label, value.labelEn) : ''
   const count = value?.count ?? 0
+  const isSpecTable = target.definitionId === SPECIFICATION_FIELD_ID
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -190,32 +198,82 @@ function DrilldownPage({ target, onBack }: { target: DrilldownTarget; onBack: ()
         </div>
       </div>
 
-      <div className="px-4 space-y-2 pb-8">
+      <div className="px-4 pb-8">
         {recordsQ.isLoading ? (
           <div className="py-10 text-center text-sm text-slate-400">{t('common.loading')}</div>
         ) : (recordsQ.data ?? []).length === 0 ? (
           <div className="rounded-2xl bg-white py-12 text-center text-sm text-slate-400" style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
             {t('common.notFound')}
           </div>
-        ) : (recordsQ.data ?? []).map(r => {
-          const Row = navigable ? 'button' : 'div'
-          return (
-            <Row key={r.id} onClick={navigable ? () => goToRecord(target, r.id) : undefined}
-              className="flex w-full items-center gap-3 rounded-2xl bg-white px-4 py-3.5 text-left active:scale-[0.98] transition-all"
-              style={{ border: '1px solid rgba(157,200,255,0.22)', boxShadow: '0 1px 6px rgba(157,200,255,0.07)' }}>
-              <div className="h-11 w-11 shrink-0 rounded-xl overflow-hidden bg-slate-100 flex items-center justify-center text-slate-400">
-                {r.photo ? <img src={r.photo} alt="" loading="lazy" className="h-full w-full object-cover" /> : <span className="text-sm">📦</span>}
-              </div>
-              <span className="flex-1 min-w-0 text-sm font-medium text-slate-800 truncate">{r.name}</span>
-              {r.code && <span className="text-xs font-mono text-slate-400 shrink-0">{r.code}</span>}
-              {navigable && (
-                <svg className="text-slate-300 shrink-0" width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M5 3l5 4-5 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              )}
-            </Row>
-          )
-        })}
+        ) : isSpecTable ? (
+          /* "Специфікація" — не проста картка, а таблиця з даними самої
+             специфікації (к-сть матеріалів/операцій), а не лише назва. */
+          <div className="overflow-x-auto rounded-2xl bg-white" style={{ border: '1px solid rgba(157,200,255,0.22)', boxShadow: '0 1px 6px rgba(157,200,255,0.07)' }}>
+            <table className="w-full text-sm" style={{ borderCollapse: 'collapse', minWidth: '420px' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(157,200,255,0.2)' }}>
+                  <th className="px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('dashboards.specTable.product')}</th>
+                  <th className="px-3 py-3 text-right text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('dashboards.specTable.materials')}</th>
+                  <th className="px-3 py-3 text-right text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('dashboards.specTable.operations')}</th>
+                  <th className="w-8" />
+                </tr>
+              </thead>
+              <tbody>
+                {(recordsQ.data ?? []).map(r => (
+                  <tr key={r.id} onClick={() => goToRecord(target, r.id)}
+                    className="cursor-pointer hover:bg-slate-50 transition-colors" style={{ borderBottom: '1px solid rgba(157,200,255,0.12)' }}>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="h-8 w-8 shrink-0 rounded-lg overflow-hidden bg-slate-100 flex items-center justify-center text-slate-400">
+                          {r.photo ? <img src={r.photo} alt="" loading="lazy" className="h-full w-full object-cover" /> : <span className="text-xs">📦</span>}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-slate-800 truncate">{r.name}</p>
+                          {r.code && <p className="text-[11px] font-mono text-slate-400 truncate">{r.code}</p>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <p className="font-medium text-slate-700">{fmt(r.materialsCost ?? 0)} {currencySymbol}</p>
+                      <p className="text-[10px] text-slate-400">{r.materialsCount ?? 0} {t('dashboards.specTable.itemsShort')}</p>
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <p className="font-medium text-slate-700">{fmt(r.operationsCost ?? 0)} ₴</p>
+                      <p className="text-[10px] text-slate-400">{r.operationsCount ?? 0} {t('dashboards.specTable.itemsShort')}</p>
+                    </td>
+                    <td className="pr-3">
+                      <svg className="text-slate-300" width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path d="M5 3l5 4-5 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {(recordsQ.data ?? []).map(r => {
+              const Row = navigable ? 'button' : 'div'
+              return (
+                <Row key={r.id} onClick={navigable ? () => goToRecord(target, r.id) : undefined}
+                  className="flex w-full items-center gap-3 rounded-2xl bg-white px-4 py-3.5 text-left active:scale-[0.98] transition-all"
+                  style={{ border: '1px solid rgba(157,200,255,0.22)', boxShadow: '0 1px 6px rgba(157,200,255,0.07)' }}>
+                  <div className="h-11 w-11 shrink-0 rounded-xl overflow-hidden bg-slate-100 flex items-center justify-center text-slate-400">
+                    {r.photo ? <img src={r.photo} alt="" loading="lazy" className="h-full w-full object-cover" /> : <span className="text-sm">📦</span>}
+                  </div>
+                  <span className="flex-1 min-w-0 text-sm font-medium text-slate-800 truncate">{r.name}</span>
+                  {r.code && <span className="text-xs font-mono text-slate-400 shrink-0">{r.code}</span>}
+                  {navigable && (
+                    <svg className="text-slate-300 shrink-0" width="14" height="14" viewBox="0 0 14 14" fill="none">
+                      <path d="M5 3l5 4-5 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  )}
+                </Row>
+              )
+            })}
+          </div>
+        )}
       </div>
     </div>
   )
