@@ -1,5 +1,48 @@
 import { useLocale } from './LocaleContext'
+import { useStorageUsage } from './hooks/useStorageUsage'
+import { useEmployees } from './hooks/useEmployees'
 import type { TranslationKey } from './i18n'
+
+const GB = 1024 * 1024 * 1024
+const STORAGE_LIMIT_BYTES = 1 * GB
+const EMPLOYEE_LIMIT = 10
+
+/** "512 МБ" / "1.25 ГБ" — без прив'язки до локалі, короткий підпис під смужкою. */
+function formatBytes(bytes: number): string {
+  const mb = bytes / (1024 * 1024)
+  if (mb >= 1024) return `${(mb / 1024).toFixed(2)} ГБ`
+  return `${mb < 1 ? mb.toFixed(2) : Math.round(mb)} МБ`
+}
+
+/** Смужка "скільки з ліміту вже використано" — спільна верстка для
+ *  індикаторів працівників і пам'яті, лише дані різні. */
+function UsageBar({ label, valueLabel, fraction, loading, overLimit, overHint, note }: {
+  label: string
+  valueLabel: string
+  fraction: number
+  loading: boolean
+  overLimit: boolean
+  overHint?: string
+  note?: string
+}) {
+  const color = overLimit ? '#ef4444' : fraction > 0.8 ? '#f59e0b' : '#3b82f6'
+  return (
+    <div className="rounded-2xl bg-white p-4"
+      style={{ border: '1px solid rgba(157,200,255,0.25)', boxShadow: '0 1px 8px rgba(157,200,255,0.08)' }}>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">{label}</p>
+        <p className="text-xs font-medium text-slate-500">{valueLabel}</p>
+      </div>
+      <div className="h-2 w-full overflow-hidden rounded-full" style={{ background: '#f1f5f9' }}>
+        <div className="h-full rounded-full transition-all" style={{ width: `${loading ? 0 : fraction * 100}%`, background: color }} />
+      </div>
+      {overLimit && !loading && overHint && (
+        <p className="mt-2 text-xs" style={{ color: '#ef4444' }}>{overHint}</p>
+      )}
+      {note && <p className="mt-2 text-[11px] text-slate-400 leading-relaxed">{note}</p>}
+    </div>
+  )
+}
 
 /* ───────────────────────────────────────────────────────────
    "Про застосунок" — сторінка-візитка: короткий огляд можливостей
@@ -20,6 +63,25 @@ interface WorkflowStep {
   descKey: TranslationKey
   exampleKey: TranslationKey
 }
+
+interface PricingPlan {
+  nameKey: TranslationKey
+  priceKey: TranslationKey
+  featureKeys: TranslationKey[]
+}
+
+const PRICING_PLANS: PricingPlan[] = [
+  {
+    nameKey: 'about.pricing.plan1.name',
+    priceKey: 'about.pricing.plan1.price',
+    featureKeys: ['about.pricing.plan1.feature1', 'about.pricing.plan1.feature2'],
+  },
+  {
+    nameKey: 'about.pricing.plan2.name',
+    priceKey: 'about.pricing.plan2.price',
+    featureKeys: ['about.pricing.plan2.feature1', 'about.pricing.plan2.feature2'],
+  },
+]
 
 /** Рекомендований порядок заповнення даних — довідники йдуть першими,
  *  бо продукти/матеріали/завдання посилаються саме на них. */
@@ -102,6 +164,17 @@ const FEATURES: Feature[] = [
 
 export default function AboutPage() {
   const { t } = useLocale()
+  const { usedBytes, isLoading: storageLoading } = useStorageUsage()
+  const storageFraction = Math.min(1, usedBytes / STORAGE_LIMIT_BYTES)
+  const storageOverLimit = usedBytes > STORAGE_LIMIT_BYTES
+
+  // Кількість працівників — доступ до списку користувачів організації
+  // мають не всі ролі (те саме RLS-обмеження, що й на сторінці "Працівники"),
+  // тож при відмові просто ховаємо цей індикатор, а не показуємо помилку.
+  const employeesQ = useEmployees()
+  const employeeCount = employeesQ.data?.length ?? 0
+  const employeesFraction = Math.min(1, employeeCount / EMPLOYEE_LIMIT)
+  const employeesOverLimit = employeeCount > EMPLOYEE_LIMIT
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -148,6 +221,57 @@ export default function AboutPage() {
               </div>
             ))}
           </div>
+        </div>
+
+        <div className="pt-4">
+          <h2 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800 mb-1">{t('about.pricing.title')}</h2>
+          <p className="text-xs text-slate-500 mb-3 leading-relaxed">{t('about.pricing.subtitle')}</p>
+
+          <div className="space-y-3">
+            {PRICING_PLANS.map(p => (
+              <div key={p.nameKey} className="rounded-2xl bg-white p-4"
+                style={{ border: '1px solid rgba(157,200,255,0.25)', boxShadow: '0 1px 8px rgba(157,200,255,0.08)' }}>
+                <div className="flex items-baseline justify-between gap-3 mb-2">
+                  <p className="text-sm font-semibold text-slate-800">{t(p.nameKey)}</p>
+                  <p className="text-sm font-bold shrink-0" style={{ color: '#3b82f6' }}>{t(p.priceKey)}</p>
+                </div>
+                <ul className="space-y-1">
+                  {p.featureKeys.map(k => (
+                    <li key={k} className="flex items-start gap-1.5 text-xs text-slate-500 leading-relaxed">
+                      <svg className="mt-0.5 shrink-0" width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path d="M2 6.5l2.5 2.5L10 3" stroke="#3b82f6" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                      {t(k)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3 space-y-3">
+            {!employeesQ.isError && (
+              <UsageBar
+                label={t('about.pricing.employeesLabel')}
+                valueLabel={employeesQ.isLoading ? t('common.loading') : `${employeeCount} / ${EMPLOYEE_LIMIT}`}
+                fraction={employeesFraction}
+                loading={employeesQ.isLoading}
+                overLimit={employeesOverLimit}
+                overHint={t('about.pricing.employeesOverLimitHint')}
+              />
+            )}
+            <UsageBar
+              label={t('about.pricing.usageLabel')}
+              valueLabel={storageLoading ? t('common.loading') : `${formatBytes(usedBytes)} / 1 ГБ`}
+              fraction={storageFraction}
+              loading={storageLoading}
+              overLimit={storageOverLimit}
+              overHint={t('about.pricing.overLimitHint')}
+              note={t('about.pricing.usageNote')}
+            />
+          </div>
+
+          <p className="mt-3 text-xs text-slate-400 leading-relaxed">{t('about.pricing.customNote')}</p>
         </div>
 
         <div className="rounded-2xl p-4 text-center" style={{ background: '#f1f5f9' }}>
