@@ -2,18 +2,15 @@ import { useState } from 'react'
 import QRCodeLib from 'react-qr-code'
 import { useCatalog } from './hooks/useCatalog'
 import { useProducts, useMaterials, useProductStatuses, type Product } from './hooks/useProducts'
-import { useProductMaterialMutations } from './hooks/useProductMaterials'
-import { useProductOperationMutations } from './hooks/useProductOperations'
 import ProductEditor from './ProductEditor'
 import ProductView from './ProductView'
-import MaterialPickerSheet from './MaterialPickerSheet'
-import OperationPickerSheet from './OperationPickerSheet'
+import SpecificationPage from './SpecificationPage'
 import { CategoryTreeNode } from './CategoryTreeNode'
 import { useMaterialCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
 import { useLocale } from './LocaleContext'
 import { fmt } from './lib/materialFormat'
 
-type QuickActionType = 'materials' | 'operations' | 'attributes'
+type QuickActionType = 'materials' | 'operations'
 
 const LS_SORT_BY  = 'products_sortBy'
 const LS_SORT_DIR = 'products_sortDir'
@@ -42,8 +39,6 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
   const productsQ = useProducts()
   const materialsQ = useMaterials()
   const statusesQ = useProductStatuses()
-  const { addMaterial, updateMaterial, removeMaterial } = useProductMaterialMutations()
-  const { removeOperation } = useProductOperationMutations()
   const products = productsQ.data ?? []
   const materials = materialsQ.data ?? []
   const productStatuses = statusesQ.data ?? []
@@ -61,13 +56,6 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
   const [quickAction, setQuickAction] = useState<{ productId: string; type: QuickActionType } | null>(
     () => initialQuickActionProductId ? { productId: initialQuickActionProductId, type: 'materials' } : null
   )
-  const [materialPickerOpen, setMaterialPickerOpen] = useState(false)
-  const [operationPickerOpen, setOperationPickerOpen] = useState(false)
-  // Інлайн-редагування кількості матеріалу в специфікації продукту —
-  // materialId рядка, що зараз редагується, і чернетка введеного значення.
-  const [editingQtyMaterialId, setEditingQtyMaterialId] = useState<string | null>(null)
-  const [qtyDraft, setQtyDraft] = useState('')
-
   const [sortBy, setSortBy]   = useState<'name' | 'createdAt' | 'updatedAt'>(() => ls(LS_SORT_BY, 'createdAt'))
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => ls(LS_SORT_DIR, 'desc'))
   const [filterStatusId, setFilterStatusId] = useState<string | null>(() => ls(LS_FILTER, null))
@@ -215,6 +203,9 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
       ? () => onNavigate(initialViewReturnTo)
       : () => setViewId(null)
     return <ProductView productId={viewId} onBack={backToOrigin} onEdit={() => { setEditId(viewId); setViewId(null) }} />
+  }
+  if (quickAction !== null) {
+    return <SpecificationPage productId={quickAction.productId} type={quickAction.type} onBack={() => setQuickAction(null)} />
   }
 
   return (
@@ -473,155 +464,6 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
       {qrProductId !== null && (
         <QRModal productId={qrProductId} products={products} onClose={() => setQrProductId(null)} />
       )}
-
-      {/* Quick-view bottom sheet */}
-      {quickAction !== null && (() => {
-        const product = products.find(p => p.id === quickAction.productId)
-        if (!product) return null
-        const isMat = quickAction.type === 'materials'
-        const closeAll = () => { setQuickAction(null); setMaterialPickerOpen(false); setOperationPickerOpen(false); setEditingQtyMaterialId(null) }
-        return (
-          <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center sm:p-4"
-            style={{ background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(4px)' }}
-            onClick={e => e.target === e.currentTarget && closeAll()}>
-            <div className="rounded-t-3xl bg-white pb-10 max-h-[75vh] overflow-y-auto sm:rounded-3xl sm:w-full sm:max-w-md">
-              <div className="flex justify-center pt-3 pb-2">
-                <button onClick={closeAll} className="h-1 w-10 rounded-full bg-slate-200 sm:hidden" />
-              </div>
-              <div className="flex items-center justify-between gap-3 px-5 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className={`rounded-xl p-2 ${isMat ? 'bg-amber-50 text-amber-500' : 'bg-orange-50 text-orange-500'}`}>
-                    {isMat ? <LayersIcon size={18} /> : <GearIcon size={18} />}
-                  </div>
-                  <div>
-                    <p style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800">
-                      {isMat ? t('nav.materials') : t('products.operationsLabel')}
-                    </p>
-                    <p className="text-xs text-slate-400">{product.name}</p>
-                  </div>
-                </div>
-                <button onClick={() => isMat ? setMaterialPickerOpen(true) : setOperationPickerOpen(true)}
-                  className={`flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium active:scale-95 transition-all shrink-0 ${isMat ? 'bg-amber-50 text-amber-600' : 'bg-orange-50 text-orange-600'}`}>
-                  <svg width="10" height="10" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v11M1 6.5h11" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>
-                  {t('common.add')}
-                </button>
-              </div>
-
-              {isMat ? (
-                product.materials.length === 0 ? (
-                  <div className="px-5 py-6 text-center">
-                    <p className="text-sm text-slate-400">{t('products.noMaterials')}</p>
-                  </div>
-                ) : (
-                  <div className="px-5 space-y-2">
-                    {product.materials.map(pm => {
-                      const m = materials.find(x => x.id === pm.materialId)
-                      const op = pm.operationId ? operations.find(x => x.id === pm.operationId) : null
-                      return (
-                        <div key={pm.materialId} className="flex items-center gap-3 rounded-2xl px-4 py-3"
-                          style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-slate-800 truncate">{m ? tn(m.name, m.nameEn) : '—'}</p>
-                            <p className="text-xs text-slate-400 truncate">{op ? t('products.operationPrefix', { name: tn(op.name, op.nameEn) }) : (m?.categoryName ? tn(m.categoryName, m.categoryNameEn) : t('products.noOperation'))}</p>
-                          </div>
-                          {editingQtyMaterialId === pm.materialId ? (
-                            <div className="flex items-center gap-1 shrink-0">
-                              <input type="number" min="0" step="any" autoFocus value={qtyDraft} onChange={e => setQtyDraft(e.target.value)}
-                                className="w-16 rounded-lg border border-amber-300 bg-white px-2 py-1 text-sm font-mono text-slate-800 outline-none focus:border-amber-500" />
-                              <span className="text-xs text-slate-400">{tn(pm.unitShortName, pm.unitShortNameEn)}</span>
-                              <button onClick={async () => {
-                                  const qty = Number(qtyDraft)
-                                  if (qty > 0) await updateMaterial({ productId: product.id, materialId: pm.materialId, qty, operationId: pm.operationId })
-                                  setEditingQtyMaterialId(null)
-                                }}
-                                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-emerald-600 hover:bg-emerald-50 transition-all">
-                                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                                  <path d="M2 6.5l2.5 2.5L10 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                                </svg>
-                              </button>
-                              <button onClick={() => setEditingQtyMaterialId(null)}
-                                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 transition-all">
-                                <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
-                                  <path d="M1 1l9 9M10 1L1 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-                                </svg>
-                              </button>
-                            </div>
-                          ) : (
-                            <button onClick={() => { setEditingQtyMaterialId(pm.materialId); setQtyDraft(String(pm.qty)) }}
-                              className="flex items-center gap-1 shrink-0 rounded-lg px-1.5 py-1 text-sm font-mono text-slate-600 hover:bg-amber-100/60 hover:text-amber-700 transition-colors">
-                              {pm.qty} {tn(pm.unitShortName, pm.unitShortNameEn)}
-                              <svg width="10" height="10" viewBox="0 0 14 14" fill="none" className="text-slate-300">
-                                <path d="M9.5 2.5l2 2L4 12l-2.5.5L2 10l7.5-7.5z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                              </svg>
-                            </button>
-                          )}
-                          <button onClick={() => removeMaterial({ productId: product.id, materialId: pm.materialId })}
-                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:text-red-500 transition-all">
-                            <svg width="12" height="12" viewBox="0 0 13 13" fill="none">
-                              <path d="M2 3h9M4 3V2h5v1M5 6v4M8 6v4M3 3l.5 8h6l.5-8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                            </svg>
-                          </button>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )
-              ) : product.operations.length === 0 ? (
-                <div className="px-5 py-6 text-center">
-                  <p className="text-sm text-slate-400">{t('products.noOperations')}</p>
-                </div>
-              ) : (
-                <div className="px-5 space-y-2">
-                  {product.operations.map(po => {
-                    const o = operations.find(x => x.id === po.operationId)
-                    return (
-                      <div key={po.id} className="flex items-center gap-3 rounded-2xl px-4 py-3"
-                        style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-800 truncate">{o ? tn(o.name, o.nameEn) : '—'}</p>
-                          <p className="text-xs text-slate-400 truncate">{po.taskName || t('products.noTask')}</p>
-                        </div>
-                        <span className="text-xs font-mono text-slate-600 shrink-0 text-right">
-                          {po.durationMinutes ? `${po.durationMinutes} ${t('common.minutesShort')}` : ''}
-                          {po.durationMinutes && po.cost ? ' · ' : ''}
-                          {po.cost ? `${po.cost} ₴` : ''}
-                        </span>
-                        <button onClick={() => removeOperation({ id: po.id, productId: product.id, taskId: po.taskId })}
-                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:text-red-500 transition-all">
-                          <svg width="12" height="12" viewBox="0 0 13 13" fill="none">
-                            <path d="M2 3h9M4 3V2h5v1M5 6v4M8 6v4M3 3l.5 8h6l.5-8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                        </button>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-
-              {isMat && materialPickerOpen && (
-                <MaterialPickerSheet
-                  productId={product.id}
-                  allMaterials={materials}
-                  alreadyAddedIds={product.materials.map(m => m.materialId)}
-                  operations={operations}
-                  onClose={() => setMaterialPickerOpen(false)}
-                  onAdd={async args => { await addMaterial(args); setMaterialPickerOpen(false) }}
-                />
-              )}
-
-              {!isMat && operationPickerOpen && (
-                <OperationPickerSheet
-                  productId={product.id}
-                  allOperations={operations}
-                  alreadyAddedIds={product.operations.map(o => o.operationId)}
-                  onClose={() => setOperationPickerOpen(false)}
-                  onAdded={() => setOperationPickerOpen(false)}
-                />
-              )}
-            </div>
-          </div>
-        )
-      })()}
     </div>
   )
 }

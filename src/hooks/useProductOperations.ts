@@ -90,6 +90,30 @@ export function useProductOperationMutations() {
     onSuccess: invalidateProducts,
   })
 
+  /** Редагувати вже додану до продукту операцію: до якої категорії "Операція"
+   *  вона належить (product_operations.operation_id) і — якщо за нею стоїть
+   *  завдання (task_id не null) — саме завдання (назва/час/вартість). "Мітка"
+   *  без завдання (додана лише через матеріал, ensureProductOperation) має
+   *  тільки операцію для редагування, полів завдання в неї немає. */
+  const updateTask = useMutation({
+    mutationFn: async ({ productOperationId, taskId, productId, operationId, name, durationMinutes, cost }: {
+      productOperationId: string; taskId: string | null; productId: string; operationId: string
+      name: string; durationMinutes: number | null; cost: number | null
+    }) => {
+      if (taskId) {
+        const { error: taskError } = await supabase
+          .from('tasks')
+          .update({ name, operation_id: operationId, duration_minutes: durationMinutes, cost })
+          .eq('id', taskId)
+        if (taskError) throw taskError
+      }
+      const { error: linkError } = await supabase.from('product_operations').update({ operation_id: operationId }).eq('id', productOperationId)
+      if (linkError) throw linkError
+    },
+    onSuccess: (_data, vars) => { invalidateProducts(); invalidateTasks(vars.productId) },
+    onError: onErr,
+  })
+
   /** Видалити прив'язку операції до продукту. Якщо завдання, яке вона несла,
    *  більше ніде в продукті не використовується — видаляємо і його. */
   const remove = useMutation({
@@ -126,8 +150,10 @@ export function useProductOperationMutations() {
   return {
     addWithNewTask: (args: { productId: string; operationId: string; taskName: string; durationMinutes: number | null; cost: number | null }) => addWithNewTask.mutateAsync(args),
     addWithExistingTask: (args: { productId: string; operationId: string; taskId: string }) => addWithExistingTask.mutateAsync(args),
+    updateOperationTask: (args: { productOperationId: string; taskId: string | null; productId: string; operationId: string; name: string; durationMinutes: number | null; cost: number | null }) => updateTask.mutateAsync(args),
     removeOperation: (args: { id: string; productId: string; taskId: string | null }) => remove.mutate(args),
     isSaving: addWithNewTask.isPending || addWithExistingTask.isPending,
+    isUpdating: updateTask.isPending,
     addTaskError,
     resetAddErrors,
   }

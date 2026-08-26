@@ -97,6 +97,26 @@ interface CreateEmployeeArgs {
   positionId: string | null
 }
 
+/** Редагування вже наявного працівника: ім'я/прізвище/телефон — прямий
+ *  update рядка users (RLS дозволяє менеджеру/адміну редагувати працівників
+ *  своєї організації); посада — не поле users, а окремий зв'язок у
+ *  user_positions, тож оновлюємо його delete+insert (простіше й безпечніше
+ *  за upsert, коли невідомо, чи вже є рядок для цього користувача/організації).
+ *  Департамент у профілі — похідний від посади (positions.department_id),
+ *  окремого запису для нього немає.
+ *  Email і пароль — НЕ тут: email є логіном у Supabase Auth (auth.users),
+ *  змінити його для СЕБЕ можна через supabase.auth.updateUser (ProfilePage.tsx,
+ *  лише для власного профілю), а для чужого — потрібен service-role, якого в
+ *  цього клієнта немає. Пароль іншого працівника скидається листом
+ *  (supabase.auth.resetPasswordForEmail) — так само без потреби в service-role. */
+interface UpdateEmployeeArgs {
+  id: string
+  firstName: string
+  lastName: string
+  phone: string | null
+  positionId: string | null
+}
+
 export function useEmployeeMutations() {
   const qc = useQueryClient()
   const orgId = useActiveOrgId()
@@ -126,8 +146,27 @@ export function useEmployeeMutations() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['employees', orgId] }),
   })
 
+  const update = useMutation({
+    mutationFn: async (args: UpdateEmployeeArgs) => {
+      const { error: userErr } = await supabase.from('users')
+        .update({ first_name: args.firstName, last_name: args.lastName, phone: args.phone })
+        .eq('id', args.id)
+      if (userErr) throw userErr
+
+      const { error: delErr } = await supabase.from('user_positions').delete().eq('user_id', args.id).eq('organization_id', orgId)
+      if (delErr) throw delErr
+      if (args.positionId) {
+        const { error: insErr } = await supabase.from('user_positions').insert({ user_id: args.id, position_id: args.positionId, organization_id: orgId })
+        if (insErr) throw insErr
+      }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['employees', orgId] }),
+  })
+
   return {
     createEmployee: (args: CreateEmployeeArgs) => create.mutateAsync(args),
+    updateEmployee: (args: UpdateEmployeeArgs) => update.mutateAsync(args),
     isSaving: create.isPending,
+    isUpdating: update.isPending,
   }
 }

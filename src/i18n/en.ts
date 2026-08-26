@@ -89,6 +89,13 @@ const en: Record<TranslationKey, string> = {
   'products.operationPrefix': 'Operation: {{name}}',
   'products.noOperation': 'No operation',
   'products.noTask': 'No task',
+  'products.materialsSpecTitle': 'Materials specification',
+  'products.operationsSpecTitle': 'Operations specification',
+  'products.specTable.number': '№',
+  'products.specTable.qty': 'Qty',
+  'products.specTable.details': 'Details',
+  'products.editOperationTitle': 'Edit operation',
+  'products.durationMinutesLabel': 'Duration, min',
   'products.qrHint': 'Scan to view the product card · 40×58mm label',
   'products.filteredOfTotal': '{{filtered}} of {{total}}',
 
@@ -107,6 +114,7 @@ const en: Record<TranslationKey, string> = {
 
   'common.edit': 'Edit',
   'common.cancel': 'Cancel',
+  'common.moreActions': 'More actions',
   'common.add': 'Add',
   'common.close': 'Close',
   'common.save': 'Save',
@@ -308,6 +316,10 @@ const en: Record<TranslationKey, string> = {
   'profile.phone': 'Phone',
   'profile.department': 'Department',
   'profile.position': 'Position',
+  'profile.emailEditHint': 'You can only change another employee\'s email from their own profile',
+  'profile.resetPasswordAction': 'Reset password',
+  'profile.toastResetSent': 'Password reset email sent',
+  'profile.toastEmailConfirmSent': 'A confirmation email was sent for the new address',
 
   'employees.title': 'Employees',
   'employees.empty': 'No employees yet — add the first one above',
@@ -471,6 +483,9 @@ const en: Record<TranslationKey, string> = {
   'dashboards.specTable.materials': 'Materials',
   'dashboards.specTable.operations': 'Operations',
   'dashboards.specTable.itemsShort': 'items',
+  'dashboards.people.tasksByPosition': 'Tasks by position',
+  'dashboards.people.noPositions': 'No positions with tasks',
+  'dashboards.people.tasksWord': 'tasks',
 
   'directory.tiles.suppliers.label': 'Suppliers',
   'directory.tiles.suppliers.desc': 'Supplier contacts and details',

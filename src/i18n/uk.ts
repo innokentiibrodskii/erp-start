@@ -94,6 +94,13 @@ const uk = {
   'products.operationPrefix': 'Операція: {{name}}',
   'products.noOperation': 'Без операції',
   'products.noTask': 'Без завдання',
+  'products.materialsSpecTitle': 'Специфікація Матеріали',
+  'products.operationsSpecTitle': 'Специфікація Операцій',
+  'products.specTable.number': '№',
+  'products.specTable.qty': 'К-сть',
+  'products.specTable.details': 'Деталі',
+  'products.editOperationTitle': 'Редагувати операцію',
+  'products.durationMinutesLabel': 'Тривалість, хв',
   'products.qrHint': 'Скануйте для перегляду картки продукту · Етикетка 40×58мм',
   'products.filteredOfTotal': '{{filtered}} з {{total}}',
 
@@ -112,6 +119,7 @@ const uk = {
 
   'common.edit': 'Редагувати',
   'common.cancel': 'Скасувати',
+  'common.moreActions': 'Ще дії',
   'common.add': 'Додати',
   'common.close': 'Закрити',
   'common.save': 'Зберегти',
@@ -313,6 +321,10 @@ const uk = {
   'profile.phone': 'Телефон',
   'profile.department': 'Департамент',
   'profile.position': 'Посада',
+  'profile.emailEditHint': 'Змінити email іншого працівника можна лише через його власний профіль',
+  'profile.resetPasswordAction': 'Скинути пароль',
+  'profile.toastResetSent': 'Лист для скидання пароля надіслано на email',
+  'profile.toastEmailConfirmSent': 'Лист для підтвердження нового email надіслано',
 
   'employees.title': 'Працівники',
   'employees.empty': 'Працівників ще немає — додайте першого вище',
@@ -476,6 +488,9 @@ const uk = {
   'dashboards.specTable.materials': 'Матеріали',
   'dashboards.specTable.operations': 'Операції',
   'dashboards.specTable.itemsShort': 'поз.',
+  'dashboards.people.tasksByPosition': 'Завдання по посадах',
+  'dashboards.people.noPositions': 'Немає посад із завданнями',
+  'dashboards.people.tasksWord': 'завдань',
 
   'directory.tiles.suppliers.label': 'Постачальники',
   'directory.tiles.suppliers.desc': 'Контакти та реквізити постачальників',

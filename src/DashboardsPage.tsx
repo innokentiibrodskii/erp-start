@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useDashboardStats, useDrilldownRecords, SPECIFICATION_FIELD_ID, type DashboardFieldStat } from './hooks/useDashboardStats'
+import { usePositionTaskStats, usePositionEmployeeBreakdown } from './hooks/usePeopleDashboardStats'
 import type { EntityType } from './hooks/useCustomFields'
+import type { AssignmentStatus } from './hooks/useAssignments'
 import { useMaterialCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
 import { fmt } from './lib/materialFormat'
 import { useLocale } from './LocaleContext'
@@ -31,6 +33,24 @@ const ENTITIES: EntityType[] = ['product', 'material', 'supplier']
 // Циклічна палітра для значень усередині одного поля — за індексом, не за сутністю.
 const BAR_COLORS = ['#3b82f6', '#f59e0b', '#ec4899', '#14b8a6', '#8b5cf6', '#ef4444']
 
+// Ті самі підписи/кольори статусу завдання, що й на сторінці "Завдання" (AssignmentsPage.tsx) —
+// тут локальна копія лише для чіпів у деталізації "Люди", щоб не тягнути залежність між сторінками.
+const STATUS_ORDER: AssignmentStatus[] = ['in_progress', 'paused', 'pending', 'done', 'cancelled']
+const STATUS_LABEL_KEY: Record<AssignmentStatus, TranslationKey> = {
+  pending: 'assignmentStatus.pending',
+  in_progress: 'assignmentStatus.inProgress',
+  paused: 'assignmentStatus.paused',
+  done: 'assignmentStatus.done',
+  cancelled: 'assignmentStatus.cancelled',
+}
+const STATUS_STYLE: Record<AssignmentStatus, { bg: string; text: string }> = {
+  pending: { bg: '#e0f2fe', text: '#0284c7' },
+  in_progress: { bg: '#dbeafe', text: '#2563eb' },
+  paused: { bg: '#fef3c7', text: '#d97706' },
+  done: { bg: '#dcfce7', text: '#16a34a' },
+  cancelled: { bg: '#f1f5f9', text: '#64748b' },
+}
+
 /** Мінімальний ідентифікатор деталізації — саме він (не готові підписи) кодується
  *  в deep-link URL (?field=...&value=...), щоб "назад" з картки продукту/матеріалу
  *  могло відновити точно той самий список, а не просто верхній рівень дашбордів.
@@ -46,9 +66,11 @@ export default function DashboardsPage({ initialDrilldown = null }: { initialDri
   const { t } = useLocale()
   const [search, setSearch] = useState('')
   const [drilldown, setDrilldown] = useState<DrilldownTarget | null>(initialDrilldown)
+  const [positionDrilldown, setPositionDrilldown] = useState<string | null>(null)
   const q = search.trim().toLowerCase()
 
   if (drilldown) return <DrilldownPage target={drilldown} onBack={() => setDrilldown(null)} />
+  if (positionDrilldown !== null) return <PositionDrilldownPage positionId={positionDrilldown} onBack={() => setPositionDrilldown(null)} />
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -67,6 +89,7 @@ export default function DashboardsPage({ initialDrilldown = null }: { initialDri
       </div>
 
       <div className="px-4 space-y-3 pb-8">
+        <PeopleCard search={q} onSelectPosition={setPositionDrilldown} />
         {ENTITIES.map(entityType => (
           <EntityCard key={entityType} entityType={entityType} search={q} onSelectValue={setDrilldown} />
         ))}
@@ -142,6 +165,65 @@ function FieldStatGroup({ entityType, field, onSelectValue }: { entityType: Enti
           )
         })}
       </div>
+    </div>
+  )
+}
+
+/* ───────────────────────────────────────────────────────────
+   "Люди": скільки завдань має кожна посада (сума по всіх
+   працівниках цієї посади) — та сама верстка бару, що й
+   FieldStatGroup вище, лише дані інші (usePeopleDashboardStats,
+   не кастомні поля). Клік по бару відкриває PositionDrilldownPage.
+─────────────────────────────────────────────────────────── */
+
+function PeopleCard({ search, onSelectPosition }: { search: string; onSelectPosition: (positionId: string) => void }) {
+  const { t, tn } = useLocale()
+  const { stats, totalTasks, isLoading } = usePositionTaskStats()
+
+  const cardLabel = t('dashboards.people.tasksByPosition').toLowerCase()
+  const matching = search
+    ? stats.filter(s => tn(s.positionName, s.positionNameEn).toLowerCase().includes(search))
+    : stats
+  if (search && matching.length === 0 && !cardLabel.includes(search)) return null
+
+  return (
+    <div className="rounded-2xl bg-white p-4" style={{ border: '1px solid rgba(157,200,255,0.25)', boxShadow: '0 1px 8px rgba(157,200,255,0.08)' }}>
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-sm font-semibold text-slate-800">{t('dashboards.people.tasksByPosition')}</span>
+        <span className="text-xl font-bold" style={{ color: '#3b82f6' }}>{isLoading ? '—' : totalTasks}</span>
+      </div>
+
+      {isLoading ? (
+        <p className="py-4 text-center text-xs text-slate-400">{t('common.loading')}</p>
+      ) : stats.length === 0 ? (
+        <p className="text-xs text-slate-300 italic">{t('dashboards.people.noPositions')}</p>
+      ) : (
+        <div className="space-y-1.5">
+          {matching.map((s, i) => {
+            const posLabel = tn(s.positionName, s.positionNameEn)
+            const clickable = s.taskCount > 0
+            return (
+              <button key={s.positionId} disabled={!clickable}
+                onClick={() => clickable && onSelectPosition(s.positionId)}
+                className="relative h-8 w-full rounded-full overflow-hidden text-left transition-transform active:scale-[0.98] disabled:active:scale-100"
+                style={{ background: '#f1f5f9', cursor: clickable ? 'pointer' : 'default' }}
+                title={clickable ? t('dashboards.viewRecordsHint') : undefined}>
+                {s.taskCount > 0 ? (
+                  <div className="absolute inset-y-0 left-0 flex items-center gap-2 rounded-full px-3"
+                    style={{ width: `${Math.max(s.fraction * 100, 28)}%`, background: BAR_COLORS[i % BAR_COLORS.length] }}>
+                    <span className="text-xs font-medium text-white truncate">{posLabel}</span>
+                    <span className="text-xs font-semibold text-white shrink-0">{s.taskCount}</span>
+                  </div>
+                ) : (
+                  <div className="absolute inset-y-0 left-0 flex items-center px-3">
+                    <span className="text-xs text-slate-400 truncate">{posLabel}</span>
+                  </div>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -273,6 +355,68 @@ function DrilldownPage({ target, onBack }: { target: DrilldownTarget; onBack: ()
               )
             })}
           </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ───────────────────────────────────────────────────────────
+   Деталізація "Люди": працівники обраної посади, у кожного —
+   к-сть завдань і розподіл по статусах (чіпи). Записи не ведуть
+   нікуди далі (немає окремої сторінки картки працівника з дашбордів).
+─────────────────────────────────────────────────────────── */
+
+function PositionDrilldownPage({ positionId, onBack }: { positionId: string; onBack: () => void }) {
+  const { t, tn } = useLocale()
+  const { stats, isLoading: statsLoading } = usePositionTaskStats()
+  const { employees, isLoading: employeesLoading } = usePositionEmployeeBreakdown(positionId)
+
+  const stat = stats.find(s => s.positionId === positionId)
+  const positionLabel = stat ? tn(stat.positionName, stat.positionNameEn) : ''
+  const count = stat?.taskCount ?? 0
+  const isLoading = statsLoading || employeesLoading
+
+  return (
+    <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
+      <div className="flex items-center gap-3 px-4 pt-5 pb-3">
+        <button onClick={onBack}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 active:scale-95 transition-all">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+        <div className="min-w-0">
+          <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800 truncate">{statsLoading ? '…' : positionLabel}</h1>
+          <p className="text-xs text-slate-400 truncate">{statsLoading ? t('common.loading') : `${count} ${t('dashboards.people.tasksWord')}`}</p>
+        </div>
+      </div>
+
+      <div className="px-4 pb-8 space-y-2">
+        {isLoading ? (
+          <div className="py-10 text-center text-sm text-slate-400">{t('common.loading')}</div>
+        ) : employees.length === 0 ? (
+          <div className="rounded-2xl bg-white py-12 text-center text-sm text-slate-400" style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
+            {t('common.notFound')}
+          </div>
+        ) : (
+          employees.map(e => (
+            <div key={e.employeeId} className="rounded-2xl bg-white px-4 py-3.5" style={{ border: '1px solid rgba(157,200,255,0.22)', boxShadow: '0 1px 6px rgba(157,200,255,0.07)' }}>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <span className="text-sm font-medium text-slate-800 truncate">{e.employeeName}</span>
+                <span className="text-sm font-semibold text-slate-700 shrink-0">{e.taskCount} {t('dashboards.people.tasksWord')}</span>
+              </div>
+              {e.taskCount > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {STATUS_ORDER.filter(s => e.byStatus[s]).map(s => (
+                    <span key={s} className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: STATUS_STYLE[s].bg, color: STATUS_STYLE[s].text }}>
+                      {t(STATUS_LABEL_KEY[s])} · {e.byStatus[s]}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))
         )}
       </div>
     </div>
