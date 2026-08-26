@@ -275,7 +275,8 @@ const en: Record<TranslationKey, string> = {
   'common.operation': 'Operation',
 
   'materialPicker.emptyCatalog': 'No materials in the catalog yet',
-  'materialPicker.allAddedOrNotFound': 'All materials already added or not found',
+  'materialPicker.notFound': 'Nothing found',
+  'materialPicker.alreadyAddedBadge': 'already added',
   'materialPicker.operationNotInList': "+ Operation isn't in the list — add a new one",
   'materialPicker.operationNamePlaceholder': 'Operation name',
   'materialPicker.createAndSelect': 'Create and select',

@@ -6,7 +6,14 @@ import { useLocale } from './LocaleContext'
 
 /* ───────────────────────────────────────────────────────────
    Пікер додавання матеріалу до продукту: матеріал → кількість →
-   операція (обрати наявну / без операції / створити нову інлайн)
+   операція (обрати наявну / без операції / створити нову інлайн).
+   Той самий матеріал можна додати кілька разів — але лише з РІЗНИМИ
+   операціями (напр. 2м тканини на "Крій" + 1.5м на "Пошиття" —
+   два окремі рядки специфікації). Тому список тут не приховує вже
+   додані матеріали (лише позначає бейджем "вже додано") — заборона
+   дублю тієї самої пари матеріал+операція лишається за базою
+   (unique-індекс, дає дружню помилку при спробі повторити точно
+   ту саму операцію).
 ─────────────────────────────────────────────────────────── */
 
 export default function MaterialPickerSheet({ productId, allMaterials, alreadyAddedIds, operations, onClose, onAdd }: {
@@ -27,7 +34,7 @@ export default function MaterialPickerSheet({ productId, allMaterials, alreadyAd
   const [newOpName, setNewOpName] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const available = allMaterials.filter(m => !alreadyAddedIds.includes(m.id) && m.name.toLowerCase().includes(search.toLowerCase()))
+  const available = allMaterials.filter(m => m.name.toLowerCase().includes(search.toLowerCase()))
   const selectedMaterial = materialId ? allMaterials.find(m => m.id === materialId) ?? null : null
 
   const handleCreateOperation = async () => {
@@ -75,7 +82,7 @@ export default function MaterialPickerSheet({ productId, allMaterials, alreadyAd
             <div className="space-y-1.5 max-h-64 overflow-y-auto">
               {available.length === 0 ? (
                 <p className="py-6 text-center text-sm text-slate-400">
-                  {allMaterials.length === 0 ? t('materialPicker.emptyCatalog') : t('materialPicker.allAddedOrNotFound')}
+                  {allMaterials.length === 0 ? t('materialPicker.emptyCatalog') : t('materialPicker.notFound')}
                 </p>
               ) : available.map(m => (
                 <button key={m.id} onClick={() => setMaterialId(m.id)}
@@ -88,6 +95,9 @@ export default function MaterialPickerSheet({ productId, allMaterials, alreadyAd
                     <p className="text-sm font-medium text-slate-800 truncate">{tn(m.name, m.nameEn)}</p>
                     <p className="text-xs text-slate-400">{tn(m.unitShortName, m.unitShortNameEn)}{m.categoryName ? ` · ${tn(m.categoryName, m.categoryNameEn)}` : ''}</p>
                   </div>
+                  {alreadyAddedIds.includes(m.id) && (
+                    <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">{t('materialPicker.alreadyAddedBadge')}</span>
+                  )}
                 </button>
               ))}
             </div>

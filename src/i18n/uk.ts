@@ -280,7 +280,8 @@ const uk = {
   'common.operation': 'Операція',
 
   'materialPicker.emptyCatalog': 'У каталозі ще немає матеріалів',
-  'materialPicker.allAddedOrNotFound': 'Усі матеріали вже додані або не знайдено',
+  'materialPicker.notFound': 'Нічого не знайдено',
+  'materialPicker.alreadyAddedBadge': 'вже додано',
   'materialPicker.operationNotInList': '+ Операції немає в списку — додати нову',
   'materialPicker.operationNamePlaceholder': 'Назва операції',
   'materialPicker.createAndSelect': 'Створити і обрати',

@@ -15,6 +15,9 @@ export const MAX_PHOTO_SIZE = 10 * 1024 * 1024 // 10 МБ
 export const MAX_VIDEO_SIZE = 100 * 1024 * 1024 // 100 МБ
 
 export interface ProductMaterialLink {
+  /** Рядок специфікації (не сам матеріал) — потрібен окремо від materialId,
+   *  бо один матеріал тепер можна додати кілька разів з різними операціями. */
+  id: string
   materialId: string
   qty: number
   unitId: string
@@ -197,7 +200,7 @@ export function useProducts() {
         .select(`
           id, name, description, sku, category_id, status_id, created_at, updated_at,
           product_images(url, position),
-          product_materials(material_id, qty, unit_id, operation_id, units(short_name, short_name_en)),
+          product_materials(id, material_id, qty, unit_id, operation_id, units(short_name, short_name_en)),
           product_operations(id, operation_id, task_id, tasks!product_operations_task_id_fkey(name, duration_minutes, cost)),
           product_attribute_values(attribute_value_id, attribute_values(value, value_en, attribute_id, attributes(name, name_en)))
         `)
@@ -218,6 +221,7 @@ export function useProducts() {
           createdAt: new Date(p.created_at).getTime(),
           updatedAt: new Date(p.updated_at).getTime(),
           materials: (p.product_materials ?? []).map(m => ({
+            id: m.id,
             materialId: m.material_id,
             qty: Number(m.qty),
             unitId: m.unit_id,

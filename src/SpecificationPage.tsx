@@ -35,7 +35,7 @@ export default function SpecificationPage({ productId, type, onBack }: {
 
   const [materialPickerOpen, setMaterialPickerOpen] = useState(false)
   const [operationPickerOpen, setOperationPickerOpen] = useState(false)
-  const [editingQtyMaterialId, setEditingQtyMaterialId] = useState<string | null>(null)
+  const [editingRowId, setEditingRowId] = useState<string | null>(null)
   const [qtyDraft, setQtyDraft] = useState('')
   const [opDraft, setOpDraft] = useState('')
   // Редагування рядка "Операції" — окрема шторка (не інлайн, як к-сть у
@@ -97,9 +97,9 @@ export default function SpecificationPage({ productId, type, onBack }: {
                   {product.materials.map((pm, i) => {
                     const m = materials.find(x => x.id === pm.materialId)
                     const op = pm.operationId ? operations.find(x => x.id === pm.operationId) : null
-                    const editing = editingQtyMaterialId === pm.materialId
+                    const editing = editingRowId === pm.id
                     return (
-                      <tr key={pm.materialId} className="hover:bg-slate-50 transition-colors" style={{ borderBottom: '1px solid rgba(157,200,255,0.12)' }}>
+                      <tr key={pm.id} className="hover:bg-slate-50 transition-colors" style={{ borderBottom: '1px solid rgba(157,200,255,0.12)' }}>
                         <td className="px-4 py-3 text-slate-400">{i + 1}</td>
                         <td className="px-3 py-3">
                           <p className="font-medium text-slate-800 truncate">{m ? tn(m.name, m.nameEn) : '—'}</p>
@@ -130,24 +130,24 @@ export default function SpecificationPage({ productId, type, onBack }: {
                               <>
                                 <button onClick={async () => {
                                     const qty = Number(qtyDraft)
-                                    if (qty > 0) await updateMaterial({ productId: product.id, materialId: pm.materialId, qty, operationId: opDraft || null })
-                                    setEditingQtyMaterialId(null)
+                                    if (qty > 0) await updateMaterial({ id: pm.id, productId: product.id, qty, operationId: opDraft || null })
+                                    setEditingRowId(null)
                                   }}
                                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-emerald-600 hover:bg-emerald-50 transition-all">
                                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                                     <path d="M2 6.5l2.5 2.5L10 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
                                   </svg>
                                 </button>
-                                <button onClick={() => setEditingQtyMaterialId(null)}
+                                <button onClick={() => setEditingRowId(null)}
                                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 transition-all">
                                   <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
                                     <path d="M1 1l9 9M10 1L1 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
                                   </svg>
                                 </button>
                               </>
-                            ) : confirmDeleteId === pm.materialId ? (
+                            ) : confirmDeleteId === pm.id ? (
                               <>
-                                <button onClick={() => { removeMaterial({ productId: product.id, materialId: pm.materialId }); setConfirmDeleteId(null) }}
+                                <button onClick={() => { removeMaterial({ id: pm.id }); setConfirmDeleteId(null) }}
                                   title={t('common.delete')}
                                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 transition-all">
                                   <svg width="12" height="12" viewBox="0 0 13 13" fill="none">
@@ -164,14 +164,14 @@ export default function SpecificationPage({ productId, type, onBack }: {
                               </>
                             ) : (
                               <>
-                                <button onClick={() => { setEditingQtyMaterialId(pm.materialId); setQtyDraft(String(pm.qty)); setOpDraft(pm.operationId ?? '') }}
+                                <button onClick={() => { setEditingRowId(pm.id); setQtyDraft(String(pm.qty)); setOpDraft(pm.operationId ?? '') }}
                                   title={t('common.edit')}
                                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-all">
                                   <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
                                     <path d="M9.5 2.5l2 2L4 12l-2.5.5L2 10l7.5-7.5z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
                                   </svg>
                                 </button>
-                                <button onClick={() => setConfirmDeleteId(pm.materialId)}
+                                <button onClick={() => setConfirmDeleteId(pm.id)}
                                   title={t('common.moreActions')}
                                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all">
                                   <MoreIcon />

@@ -62,14 +62,14 @@ export function useProductMaterialMutations() {
   })
 
   const update = useMutation({
-    mutationFn: async ({ productId, materialId, qty, operationId }: {
-      productId: string; materialId: string; qty: number; operationId: string | null
+    mutationFn: async ({ id, productId, qty, operationId }: {
+      id: string; productId: string; qty: number; operationId: string | null
     }) => {
       if (operationId) await ensureProductOperation(orgId, productId, operationId)
       const { error } = await supabase
         .from('product_materials')
         .update({ qty, operation_id: operationId })
-        .eq('product_id', productId).eq('material_id', materialId)
+        .eq('id', id)
       if (error) throw error
     },
     onSuccess: invalidateProducts,
@@ -77,8 +77,8 @@ export function useProductMaterialMutations() {
   })
 
   const remove = useMutation({
-    mutationFn: async ({ productId, materialId }: { productId: string; materialId: string }) => {
-      const { error } = await supabase.from('product_materials').delete().eq('product_id', productId).eq('material_id', materialId)
+    mutationFn: async ({ id }: { id: string }) => {
+      const { error } = await supabase.from('product_materials').delete().eq('id', id)
       if (error) throw error
     },
     onSuccess: invalidateProducts,
@@ -93,8 +93,8 @@ export function useProductMaterialMutations() {
 
   return {
     addMaterial: (args: { productId: string; materialId: string; qty: number; unitId: string; operationId: string | null }) => add.mutateAsync(args),
-    updateMaterial: (args: { productId: string; materialId: string; qty: number; operationId: string | null }) => update.mutateAsync(args),
-    removeMaterial: (args: { productId: string; materialId: string }) => remove.mutate(args),
+    updateMaterial: (args: { id: string; productId: string; qty: number; operationId: string | null }) => update.mutateAsync(args),
+    removeMaterial: (args: { id: string }) => remove.mutate(args),
     createOperation: (args: { name: string }) => createOperation.mutateAsync(args),
     isSaving: add.isPending || update.isPending || createOperation.isPending,
   }

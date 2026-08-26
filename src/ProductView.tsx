@@ -229,7 +229,7 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
               {product.materials.map(pm => {
                 const mat = materials.find(m => m.id === pm.materialId)
                 return (
-                  <div key={pm.materialId} className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3"
+                  <div key={pm.id} className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3"
                     style={{ border: '1px solid rgba(157,200,255,0.18)' }}>
                     <MaterialIcon />
                     <div className="flex-1 min-w-0">
