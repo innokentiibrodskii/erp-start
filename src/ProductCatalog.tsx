@@ -2,9 +2,12 @@ import { useState } from 'react'
 import QRCodeLib from 'react-qr-code'
 import { useCatalog } from './hooks/useCatalog'
 import { useProducts, useMaterials, useProductStatuses, type Product } from './hooks/useProducts'
+import { useCurrentUser } from './hooks/useCurrentUser'
+import { useUsers } from './hooks/useUsers'
 import ProductEditor from './ProductEditor'
 import ProductView from './ProductView'
 import SpecificationPage from './SpecificationPage'
+import { AssignmentFormSheet } from './AssignmentsPage'
 import { CategoryTreeNode } from './CategoryTreeNode'
 import { useMaterialCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
 import { useLocale } from './LocaleContext'
@@ -45,6 +48,9 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
   const currencyQ = useMaterialCostCurrency()
   const currencySymbol = CURRENCY_SYMBOL[currencyQ.data ?? 'UAH']
   const { t, tn } = useLocale()
+  const { data: currentUser } = useCurrentUser()
+  const isManager = currentUser?.role === 'manager' || currentUser?.role === 'admin'
+  const usersQ = useUsers()
 
   const defaultStatusId = productStatuses.find(s => s.isDefault)?.id ?? null
 
@@ -56,6 +62,11 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
   const [quickAction, setQuickAction] = useState<{ productId: string; type: QuickActionType } | null>(
     () => initialQuickActionProductId ? { productId: initialQuickActionProductId, type: 'materials' } : null
   )
+  // "Завдання" на картці продукту — та сама форма створення завдання, що на
+  // сторінці "Завдання" (AssignmentFormSheet), лише з уже обраним продуктом.
+  const [taskProductId, setTaskProductId] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2200) }
   const [sortBy, setSortBy]   = useState<'name' | 'createdAt' | 'updatedAt'>(() => ls(LS_SORT_BY, 'createdAt'))
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => ls(LS_SORT_DIR, 'desc'))
   const [filterStatusId, setFilterStatusId] = useState<string | null>(() => ls(LS_FILTER, null))
@@ -373,86 +384,92 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
             return (
               <div key={product.id} className="rounded-2xl bg-white"
                 style={{ border: '1px solid rgba(157,200,255,0.22)', boxShadow: '0 1px 10px rgba(157,200,255,0.09)' }}>
-                {/* Main row — tap opens view */}
-                <div role="button" tabIndex={0} onClick={() => setViewId(product.id)} onKeyDown={e => e.key === 'Enter' && setViewId(product.id)} className="flex w-full items-center gap-3 px-4 pt-4 pb-3 cursor-pointer">
-                  <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-slate-100">
+                {/* Main row — tap opens view; фото збільшене (за макетом Figma
+                    node 72-36516), назва/sku/бейджі та кнопка "Специфікація"
+                    стоять поруч у стовпчик на всю висоту фото. */}
+                <div role="button" tabIndex={0} onClick={() => setViewId(product.id)} onKeyDown={e => e.key === 'Enter' && setViewId(product.id)} className="flex w-full items-stretch gap-3 px-4 pt-4 pb-4 cursor-pointer">
+                  <div className="w-40 shrink-0 overflow-hidden rounded-xl bg-slate-100">
                     {product.photo
                       ? <img src={product.photo} alt={product.name} loading="lazy" className="h-full w-full object-cover" />
                       : <div className="h-full w-full flex items-center justify-center text-slate-300">
-                          <svg width="22" height="22" viewBox="0 0 20 20" fill="none"><rect x="2" y="2" width="16" height="16" rx="3" stroke="currentColor" strokeWidth="1.4"/><path d="M2 13l4-4 3 3 3-3 4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                          <svg width="32" height="32" viewBox="0 0 20 20" fill="none"><rect x="2" y="2" width="16" height="16" rx="3" stroke="currentColor" strokeWidth="1.4"/><path d="M2 13l4-4 3 3 3-3 4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
                         </div>
                     }
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-slate-800 truncate">{product.name}</p>
-                    <p className="text-xs font-mono text-slate-400 mt-0.5">{product.sku}</p>
-                    <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                      {statusObj && (
-                        <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
-                          <span className="h-1.5 w-1.5 rounded-full" style={{ background: statusObj.color }} />
-                          {tn(statusObj.name, statusObj.nameEn)}
+                  <div className="flex-1 min-w-0 flex flex-col">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-800 truncate">{product.name}</p>
+                        <p className="text-xs font-mono text-slate-400 mt-0.5">{product.sku}</p>
+                        <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                          {statusObj && (
+                            <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                              <span className="h-1.5 w-1.5 rounded-full" style={{ background: statusObj.color }} />
+                              {tn(statusObj.name, statusObj.nameEn)}
+                            </span>
+                          )}
+                          {cat && (
+                            <span className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                              style={{ background: '#f5f3ff', color: cat.color ?? '#7c3aed' }}>{tn(cat.name, cat.nameEn)}</span>
+                          )}
+                          {product.materials.length > 0 && (
+                            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-600">
+                              {t('products.materialsCount', { count: product.materials.length })}
+                            </span>
+                          )}
+                          {product.operations.length > 0 && (
+                            <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[10px] text-orange-500">
+                              {t('products.operationsCount', { count: product.operations.length })}
+                            </span>
+                          )}
+                          {product.attributes.length > 0 && (
+                            <span className="rounded-full px-2 py-0.5 text-[10px]" style={{ background: '#f5f3ff', color: '#7c3aed' }}>
+                              {t('products.attributesCount', { count: product.attributes.length })}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {/* More actions — stop propagation so card tap still works */}
+                      <div className="relative shrink-0" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => setOpenMenu(openMenu === product.id ? null : product.id)}
+                          className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 text-slate-400 hover:border-blue-300 hover:text-blue-500 transition-all">
+                          <MoreIcon />
+                        </button>
+                        {openMenu === product.id && (
+                          <>
+                            <div className="fixed inset-0 z-10" onClick={() => setOpenMenu(null)} />
+                            <div className="absolute right-0 top-9 z-20 w-52 rounded-2xl bg-white py-1.5"
+                              style={{ border: '1px solid rgba(157,200,255,0.3)', boxShadow: '0 8px 32px rgba(15,23,42,0.14)' }}>
+                              <MenuBtn icon={<PencilIcon />} label={t('common.edit')} onClick={() => { setEditId(product.id); setOpenMenu(null) }} />
+                              <MenuBtn icon={<QRIcon />} label={t('products.printQr')} onClick={() => { setQrProductId(product.id); setOpenMenu(null) }} />
+                              <MenuBtn icon={<CostIcon />} label={t('products.cost')} onClick={() => { handleExportCost(product); setOpenMenu(null) }} />
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    {/* Специфікація (веде на спільну сторінку з табами "Матеріали"/
+                        "Операції", SpecificationPage.tsx) і Завдання (форма створення
+                        з уже обраним цим продуктом) — обидві притиснуті до низу
+                        стовпчика, врівень із фото, а не на всю ширину картки. */}
+                    <div className="mt-auto pt-3 space-y-2" onClick={e => e.stopPropagation()}>
+                      <button
+                        onClick={() => setQuickAction({ productId: product.id, type: 'materials' })}
+                        className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 py-2.5 text-xs font-medium text-amber-600 active:scale-[0.97] transition-all">
+                        <LayersIcon />
+                        <span className="text-center leading-4">
+                          <span className="block">{t('products.specificationTitle')}</span>
+                          <span className="block">{t('products.materialsAndOperationsLabel')}</span>
                         </span>
-                      )}
-                      {cat && (
-                        <span className="rounded-full px-2 py-0.5 text-[10px] font-medium"
-                          style={{ background: '#f5f3ff', color: cat.color ?? '#7c3aed' }}>{tn(cat.name, cat.nameEn)}</span>
-                      )}
-                      {product.materials.length > 0 && (
-                        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-600">
-                          {t('products.materialsCount', { count: product.materials.length })}
-                        </span>
-                      )}
-                      {product.operations.length > 0 && (
-                        <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[10px] text-orange-500">
-                          {t('products.operationsCount', { count: product.operations.length })}
-                        </span>
-                      )}
-                      {product.attributes.length > 0 && (
-                        <span className="rounded-full px-2 py-0.5 text-[10px]" style={{ background: '#f5f3ff', color: '#7c3aed' }}>
-                          {t('products.attributesCount', { count: product.attributes.length })}
-                        </span>
-                      )}
+                      </button>
+                      <button
+                        onClick={() => setTaskProductId(product.id)}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 py-2.5 text-xs font-medium text-white active:scale-[0.97] transition-all">
+                        <TaskIcon />
+                        {t('nav.tasks')}
+                      </button>
                     </div>
                   </div>
-                  {/* More actions — stop propagation so card tap still works */}
-                  <div className="relative shrink-0" onClick={e => e.stopPropagation()}>
-                    <button onClick={() => setOpenMenu(openMenu === product.id ? null : product.id)}
-                      className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 text-slate-400 hover:border-blue-300 hover:text-blue-500 transition-all">
-                      <MoreIcon />
-                    </button>
-                    {openMenu === product.id && (
-                      <>
-                        <div className="fixed inset-0 z-10" onClick={() => setOpenMenu(null)} />
-                        <div className="absolute right-0 top-9 z-20 w-52 rounded-2xl bg-white py-1.5"
-                          style={{ border: '1px solid rgba(157,200,255,0.3)', boxShadow: '0 8px 32px rgba(15,23,42,0.14)' }}>
-                          <MenuBtn icon={<PencilIcon />} label={t('common.edit')} onClick={() => { setEditId(product.id); setOpenMenu(null) }} />
-                          <MenuBtn icon={<QRIcon />} label={t('products.printQr')} onClick={() => { setQrProductId(product.id); setOpenMenu(null) }} />
-                          <MenuBtn icon={<CostIcon />} label={t('products.cost')} onClick={() => { handleExportCost(product); setOpenMenu(null) }} />
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-                {/* Quick actions row */}
-                <div className="flex gap-2 px-4 pb-4" onClick={e => e.stopPropagation()}>
-                  <button
-                    onClick={() => setQuickAction({ productId: product.id, type: 'materials' })}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 py-2.5 text-xs font-medium text-amber-600 active:scale-[0.97] transition-all">
-                    <LayersIcon />
-                    <span className="text-center leading-4">
-                      <span className="block">{t('nav.materials')}</span>
-                      <span className="block">{t('products.bomLabel')}</span>
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => setQuickAction({ productId: product.id, type: 'operations' })}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-orange-200 bg-orange-50 py-2.5 text-xs font-medium text-orange-500 active:scale-[0.97] transition-all">
-                    <GearIcon />
-                    <span className="text-center leading-4">
-                      <span className="block">{t('products.operationsLabel')}</span>
-                      <span className="block">{t('products.booLabel')}</span>
-                    </span>
-                  </button>
                 </div>
               </div>
             )
@@ -464,6 +481,31 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
       {qrProductId !== null && (
         <QRModal productId={qrProductId} products={products} onClose={() => setQrProductId(null)} />
       )}
+
+      {/* Форма створення завдання (кнопка "Завдання" на картці) */}
+      {taskProductId !== null && currentUser && (
+        <AssignmentFormSheet
+          currentUser={currentUser}
+          isManager={!!isManager}
+          users={usersQ.data ?? []}
+          products={products}
+          operations={operations}
+          initialProductId={taskProductId}
+          onClose={() => setTaskProductId(null)}
+          onCreated={() => { setTaskProductId(null); showToast(t('assignments.toastCreated')) }}
+        />
+      )}
+
+      {/* Toast */}
+      <div className="pointer-events-none fixed top-5 left-1/2 z-50 -translate-x-1/2 transition-all duration-300"
+        style={{ opacity: toast ? 1 : 0, transform: `translateX(-50%) translateY(${toast ? 0 : -12}px)` }}>
+        <div className="flex items-center gap-2 rounded-2xl bg-slate-800 px-5 py-3 text-sm font-medium text-white shadow-xl">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+            <path d="M2.5 7.5l3.5 3.5 6.5-7" stroke="#34d399" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          {toast}
+        </div>
+      </div>
     </div>
   )
 }
@@ -710,11 +752,11 @@ function LayersIcon({ size = 13 }: { size?: number }) {
   )
 }
 
-function GearIcon({ size = 13 }: { size?: number }) {
+function TaskIcon({ size = 15 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 14 14" fill="none">
-      <circle cx="7" cy="7" r="2" stroke="currentColor" strokeWidth="1.3"/>
-      <path d="M7 1v1.5M7 11.5V13M1 7h1.5M11.5 7H13M2.7 2.7l1.06 1.06M10.24 10.24l1.06 1.06M2.7 11.3l1.06-1.06M10.24 3.76l1.06-1.06" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+      <rect x="2" y="1" width="10" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
+      <path d="M4.5 4.5h5M4.5 7h5M4.5 9.5h3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
     </svg>
   )
 }

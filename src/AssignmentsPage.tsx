@@ -459,12 +459,16 @@ export default function AssignmentsPage() {
    Вартість (з шаблону) бачить лише менеджер.
 ─────────────────────────────────────────────────────────── */
 
-function AssignmentFormSheet({ currentUser, isManager, users, products, operations, onClose, onCreated }: {
+/** Продукт уже обраний (кнопка "Завдання" на картці продукту в
+ *  ProductCatalog.tsx) — сюди приходить `initialProductId`, форма одразу
+ *  відкривається з ним, без кроку пошуку. */
+export function AssignmentFormSheet({ currentUser, isManager, users, products, operations, initialProductId, onClose, onCreated }: {
   currentUser: CurrentUser
   isManager: boolean
   users: AppUser[]
   products: Product[]
   operations: Operation[]
+  initialProductId?: string | null
   onClose: () => void
   onCreated: () => void
 }) {
@@ -477,7 +481,7 @@ function AssignmentFormSheet({ currentUser, isManager, users, products, operatio
   const activeProducts = products.filter(p => activeStatusId === null || p.statusId === activeStatusId)
 
   const [productSearch, setProductSearch] = useState('')
-  const [productId, setProductId] = useState<string | null>(null)
+  const [productId, setProductId] = useState<string | null>(initialProductId ?? null)
   // Продукт не обов'язковий — можна створити завдання без нього й прив'язати пізніше
   // (з деталей завдання). Без продукту немає "рекомендованих завдань" — одразу вручну.
   const [productSkipped, setProductSkipped] = useState(false)

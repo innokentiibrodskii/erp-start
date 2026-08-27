@@ -4,6 +4,8 @@ import { useProducts, useMaterials } from './hooks/useProducts'
 import { useProductMaterialMutations } from './hooks/useProductMaterials'
 import { useProductOperationMutations } from './hooks/useProductOperations'
 import { useProductMaterialEvents, type ProductMaterialEvent } from './hooks/useProductMaterialEvents'
+import { useProductSpecifications, useProductSpecificationMutations } from './hooks/useProductSpecifications'
+import ProductSpecificationVersionsPage from './ProductSpecificationVersionsPage'
 import MaterialPickerSheet from './MaterialPickerSheet'
 import OperationPickerSheet from './OperationPickerSheet'
 import { fmt } from './lib/materialFormat'
@@ -17,7 +19,28 @@ import type { TranslationKey } from './i18n'
    к-сть/видалити) — ті самі, що й у sheet, лише перенесені в рядки
    таблиці: "+" у шапці відкриває той самий пікер, олівець — те саме
    інлайн-редагування к-сті, кошик — те саме видалення.
+
+   Статуси й версії (sql/product_specifications.sql): специфікація за
+   замовчуванням read-only, "Редагувати" вмикає режим чернетки — лише тоді
+   product_materials/product_operations можна міняти (і на рівні БД теж).
+   "Зберегти" фіксує вміст як нову версію.
 ─────────────────────────────────────────────────────────── */
+
+type SpecStatus = 'draft' | 'active' | 'closed' | 'none'
+
+const SPEC_STATUS_LABEL_KEY: Record<SpecStatus, TranslationKey> = {
+  draft: 'productSpecification.statusDraft',
+  active: 'productSpecification.statusActive',
+  closed: 'productSpecification.statusClosed',
+  none: 'productSpecification.statusNone',
+}
+
+const SPEC_STATUS_STYLE: Record<SpecStatus, { bg: string; text: string }> = {
+  draft: { bg: '#fef3c7', text: '#d97706' },
+  active: { bg: '#dcfce7', text: '#16a34a' },
+  closed: { bg: '#f1f5f9', text: '#64748b' },
+  none: { bg: '#f1f5f9', text: '#94a3b8' },
+}
 
 export default function SpecificationPage({ productId, type, onBack }: {
   productId: string
@@ -30,10 +53,23 @@ export default function SpecificationPage({ productId, type, onBack }: {
   const materialsQ = useMaterials()
   const { addMaterial, updateMaterial, removeMaterial } = useProductMaterialMutations()
   const { removeOperation, updateOperationTask, isUpdating: isUpdatingTask } = useProductOperationMutations()
+  const specsQ = useProductSpecifications(productId)
+  const { startEditing, saveVersion, cancelEditing, isSaving: isSavingSpec } = useProductSpecificationMutations()
 
   const product = (productsQ.data ?? []).find(p => p.id === productId) ?? null
   const materials = materialsQ.data ?? []
-  const isMat = type === 'materials'
+  // Одна сторінка на продукт, "Матеріали"/"Операції" — таби всередині (за
+  // макетом Figma node 72-36516), а не два окремі входи з картки продукту.
+  // `type` — лише початкова вкладка (з якою кнопкою на картці зайшли).
+  const [activeType, setActiveType] = useState<'materials' | 'operations'>(type)
+  const isMat = activeType === 'materials'
+  const specEditing = product?.specificationEditing ?? false
+  const latestVersion = specsQ.data?.[0] ?? null
+  const specStatus: SpecStatus = specEditing ? 'draft' : (latestVersion?.status ?? 'none')
+
+  const [toast, setToast] = useState<string | null>(null)
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2200) }
+  const [menuOpen, setMenuOpen] = useState(false)
 
   const [materialPickerOpen, setMaterialPickerOpen] = useState(false)
   const [operationPickerOpen, setOperationPickerOpen] = useState(false)
@@ -57,15 +93,43 @@ export default function SpecificationPage({ productId, type, onBack }: {
 
   // "Історія" — аудит-лог дій зі специфікацією матеріалів (хто додав/змінив/
   // видалив). Лише для матеріалів — операції в цьому запиті не логуються.
-  const [view, setView] = useState<'table' | 'history'>('table')
+  const [view, setView] = useState<'table' | 'history' | 'versions'>('table')
   const eventsQ = useProductMaterialEvents(isMat && view === 'history' ? product?.id ?? null : null)
 
   if (!product) return null
 
+  const startEditingClick = async () => {
+    setMenuOpen(false)
+    await startEditing(product.id)
+  }
+  const saveVersionClick = async () => {
+    await saveVersion({ productId: product.id, materials: product.materials, operations: product.operations })
+    showToast(t('materials.toastSaved'))
+  }
+  // Якщо в чернетці нічого не хотіли міняти (або передумали) — повернутись
+  // до вмісту останньої версії без створення нової. Доступно лише коли є що
+  // повертати (продукт уже мав хоч одну збережену версію).
+  const cancelEditingClick = async () => {
+    if (!latestVersion) return
+    await cancelEditing({ productId: product.id, latestSpecificationId: latestVersion.id })
+    showToast(t('productSpecification.toastCancelled'))
+  }
+
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
+      {/* Toast */}
+      <div className="pointer-events-none fixed top-5 left-1/2 z-50 -translate-x-1/2 transition-all duration-300"
+        style={{ opacity: toast ? 1 : 0, transform: `translateX(-50%) translateY(${toast ? 0 : -12}px)` }}>
+        <div className="flex items-center gap-2 rounded-2xl bg-slate-800 px-5 py-3 text-sm font-medium text-white shadow-xl">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+            <path d="M2.5 7.5l3.5 3.5 6.5-7" stroke="#34d399" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          {toast}
+        </div>
+      </div>
+
       <div className="flex items-center gap-3 px-4 pt-5 pb-3">
-        <button onClick={() => view === 'history' ? setView('table') : onBack()}
+        <button onClick={() => { if (view !== 'table') { setView('table'); setMenuOpen(false) } else onBack() }}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 active:scale-95 transition-all">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
@@ -73,30 +137,104 @@ export default function SpecificationPage({ productId, type, onBack }: {
         </button>
         <div className="flex-1 min-w-0">
           <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800 truncate">
-            {view === 'history' ? t('assignments.historyTab') : isMat ? t('products.materialsSpecTitle') : t('products.operationsSpecTitle')}
+            {view === 'history' ? t('assignments.historyTab') : view === 'versions' ? t('productSpecification.versionsTitle') : t('products.specificationTitle')}
           </h1>
-          <p className="text-xs text-slate-400 truncate">{product.name}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="text-xs text-slate-400 truncate">{product.name}</p>
+            {view === 'table' && (
+              <span className="flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium" style={{ background: SPEC_STATUS_STYLE[specStatus].bg, color: SPEC_STATUS_STYLE[specStatus].text }}>
+                <span className="h-1.5 w-1.5 rounded-full" style={{ background: SPEC_STATUS_STYLE[specStatus].text }} />
+                {t(SPEC_STATUS_LABEL_KEY[specStatus])}
+              </span>
+            )}
+          </div>
         </div>
         {view === 'table' && (
-          <>
-            {isMat && (
-              <button onClick={() => setView('history')} title={t('assignments.historyTab')}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 active:scale-95 transition-all">
-                <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-                  <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.4"/>
-                  <path d="M8 4.5V8l2.5 1.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
+          specEditing ? (
+            <>
+              {(isMat || latestVersion) && (
+                <div className="relative">
+                  <button onClick={() => setMenuOpen(o => !o)} title={t('common.moreActions')}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 active:scale-95 transition-all">
+                    <MoreIcon />
+                  </button>
+                  {menuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+                      <div className="absolute right-0 top-11 z-50 w-48 overflow-hidden rounded-2xl bg-white py-1 shadow-xl" style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
+                        {isMat && (
+                          <button onClick={() => { setMenuOpen(false); setView('history') }}
+                            className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                            {t('productSpecification.historyMenuItem')}
+                          </button>
+                        )}
+                        {/* "Скасувати" — лишити доступним лише якщо є до чого повертатись
+                            (продукт уже мав хоч одну збережену версію до цієї чернетки). */}
+                        {latestVersion && (
+                          <button onClick={() => { setMenuOpen(false); cancelEditingClick() }}
+                            className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                            {t('common.cancel')}
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+              <button onClick={() => isMat ? setMaterialPickerOpen(true) : setOperationPickerOpen(true)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-800 text-white active:scale-95 transition-all">
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v11M1 6.5h11" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>
               </button>
-            )}
-            <button onClick={() => isMat ? setMaterialPickerOpen(true) : setOperationPickerOpen(true)}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-800 text-white active:scale-95 transition-all">
-              <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v11M1 6.5h11" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>
-            </button>
-          </>
+              <button onClick={saveVersionClick} disabled={isSavingSpec}
+                className="shrink-0 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-40 active:scale-95 transition-all">
+                {t('productSpecification.saveButton')}
+              </button>
+            </>
+          ) : (
+            <div className="relative">
+              <button onClick={() => setMenuOpen(o => !o)} title={t('common.moreActions')}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 active:scale-95 transition-all">
+                <MoreIcon />
+              </button>
+              {menuOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+                  <div className="absolute right-0 top-11 z-50 w-52 overflow-hidden rounded-2xl bg-white py-1 shadow-xl" style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
+                    <button onClick={startEditingClick}
+                      className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                      {t('productSpecification.editButton')}
+                    </button>
+                    <button onClick={() => { setMenuOpen(false); setView('versions') }}
+                      className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                      {t('productSpecification.versionsMenuItem')}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )
         )}
       </div>
 
-      {view === 'history' ? (
+      {view === 'table' && (
+        <div className="mx-4 mb-3 flex gap-1 rounded-2xl bg-slate-100 p-1">
+          <button onClick={() => { setActiveType('materials'); setEditingRowId(null); setConfirmDeleteId(null) }}
+            className={`flex-1 rounded-xl py-2.5 text-sm font-medium transition-all ${isMat ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}>
+            {t('nav.materials')}
+          </button>
+          <button onClick={() => { setActiveType('operations'); setEditingRowId(null); setConfirmDeleteId(null) }}
+            className={`flex-1 rounded-xl py-2.5 text-sm font-medium transition-all ${!isMat ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}>
+            {t('products.operationsLabel')}
+          </button>
+        </div>
+      )}
+
+      {view === 'versions' ? (
+        <ProductSpecificationVersionsPage
+          productId={product.id}
+          onRestored={() => { setView('table'); showToast(t('productSpecification.toastRestored')) }}
+        />
+      ) : view === 'history' ? (
         <div className="px-4 pb-8 space-y-2">
           {eventsQ.isLoading ? (
             <p className="py-8 text-center text-sm text-slate-400">{t('common.loading')}</p>
@@ -157,7 +295,7 @@ export default function SpecificationPage({ productId, type, onBack }: {
                         </td>
                         <td className="px-3 py-3">
                           <div className="flex items-center justify-end gap-1">
-                            {editing ? (
+                            {!specEditing ? null : editing ? (
                               <>
                                 <button onClick={async () => {
                                     const qty = Number(qtyDraft)
@@ -250,7 +388,7 @@ export default function SpecificationPage({ productId, type, onBack }: {
                       </td>
                       <td className="px-3 py-3">
                         <div className="flex items-center justify-end gap-1">
-                          {confirmDeleteId === po.id ? (
+                          {!specEditing ? null : confirmDeleteId === po.id ? (
                             <>
                               <button onClick={() => { removeOperation({ id: po.id, productId: product.id, taskId: po.taskId }); setConfirmDeleteId(null) }}
                                 title={t('common.delete')}

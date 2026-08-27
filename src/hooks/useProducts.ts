@@ -54,6 +54,10 @@ export interface Product {
   photo: string | null
   createdAt: number
   updatedAt: number
+  /** Специфікація (матеріали+операції) зараз у режимі редагування ("чернетка") —
+   *  sql/product_specifications.sql. Поки false, product_materials/product_operations
+   *  реально заборонено міняти на рівні БД, не лише в інтерфейсі. */
+  specificationEditing: boolean
   materials: ProductMaterialLink[]
   operations: ProductOperationLink[]
   attributes: ProductAttributeLink[]
@@ -198,7 +202,7 @@ export function useProducts() {
       const { data, error } = await supabase
         .from('products')
         .select(`
-          id, name, description, sku, category_id, status_id, created_at, updated_at,
+          id, name, description, sku, category_id, status_id, created_at, updated_at, specification_editing,
           product_images(url, position),
           product_materials(id, material_id, qty, unit_id, operation_id, units(short_name, short_name_en)),
           product_operations(id, operation_id, task_id, tasks!product_operations_task_id_fkey(name, duration_minutes, cost)),
@@ -220,6 +224,7 @@ export function useProducts() {
           photo: images[0]?.url ?? null,
           createdAt: new Date(p.created_at).getTime(),
           updatedAt: new Date(p.updated_at).getTime(),
+          specificationEditing: p.specification_editing,
           materials: (p.product_materials ?? []).map(m => ({
             id: m.id,
             materialId: m.material_id,
