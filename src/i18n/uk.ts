@@ -101,6 +101,10 @@ const uk = {
   'products.specTable.details': 'Деталі',
   'products.editOperationTitle': 'Редагувати операцію',
   'products.durationMinutesLabel': 'Тривалість, хв',
+  'productMaterialEvent.added': 'Додано матеріал',
+  'productMaterialEvent.qtyChanged': 'Змінено кількість',
+  'productMaterialEvent.operationChanged': 'Змінено операцію',
+  'productMaterialEvent.removed': 'Видалено матеріал',
   'products.qrHint': 'Скануйте для перегляду картки продукту · Етикетка 40×58мм',
   'products.filteredOfTotal': '{{filtered}} з {{total}}',
 

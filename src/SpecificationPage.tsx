@@ -3,10 +3,12 @@ import { useCatalog } from './hooks/useCatalog'
 import { useProducts, useMaterials } from './hooks/useProducts'
 import { useProductMaterialMutations } from './hooks/useProductMaterials'
 import { useProductOperationMutations } from './hooks/useProductOperations'
+import { useProductMaterialEvents, type ProductMaterialEvent } from './hooks/useProductMaterialEvents'
 import MaterialPickerSheet from './MaterialPickerSheet'
 import OperationPickerSheet from './OperationPickerSheet'
 import { fmt } from './lib/materialFormat'
 import { useLocale } from './LocaleContext'
+import type { TranslationKey } from './i18n'
 
 /* ───────────────────────────────────────────────────────────
    Специфікація продукту (матеріали/операції) — за макетом Figma
@@ -53,12 +55,17 @@ export default function SpecificationPage({ productId, type, onBack }: {
   // траплявся з ⋮-меню в AssignmentsPage.tsx.
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
+  // "Історія" — аудит-лог дій зі специфікацією матеріалів (хто додав/змінив/
+  // видалив). Лише для матеріалів — операції в цьому запиті не логуються.
+  const [view, setView] = useState<'table' | 'history'>('table')
+  const eventsQ = useProductMaterialEvents(isMat && view === 'history' ? product?.id ?? null : null)
+
   if (!product) return null
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
       <div className="flex items-center gap-3 px-4 pt-5 pb-3">
-        <button onClick={onBack}
+        <button onClick={() => view === 'history' ? setView('table') : onBack()}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 active:scale-95 transition-all">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
@@ -66,16 +73,40 @@ export default function SpecificationPage({ productId, type, onBack }: {
         </button>
         <div className="flex-1 min-w-0">
           <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800 truncate">
-            {isMat ? t('products.materialsSpecTitle') : t('products.operationsSpecTitle')}
+            {view === 'history' ? t('assignments.historyTab') : isMat ? t('products.materialsSpecTitle') : t('products.operationsSpecTitle')}
           </h1>
           <p className="text-xs text-slate-400 truncate">{product.name}</p>
         </div>
-        <button onClick={() => isMat ? setMaterialPickerOpen(true) : setOperationPickerOpen(true)}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-800 text-white active:scale-95 transition-all">
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v11M1 6.5h11" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>
-        </button>
+        {view === 'table' && (
+          <>
+            {isMat && (
+              <button onClick={() => setView('history')} title={t('assignments.historyTab')}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 active:scale-95 transition-all">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.4"/>
+                  <path d="M8 4.5V8l2.5 1.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+            )}
+            <button onClick={() => isMat ? setMaterialPickerOpen(true) : setOperationPickerOpen(true)}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-800 text-white active:scale-95 transition-all">
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v11M1 6.5h11" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>
+            </button>
+          </>
+        )}
       </div>
 
+      {view === 'history' ? (
+        <div className="px-4 pb-8 space-y-2">
+          {eventsQ.isLoading ? (
+            <p className="py-8 text-center text-sm text-slate-400">{t('common.loading')}</p>
+          ) : (eventsQ.data ?? []).length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-400">{t('assignments.noHistoryYet')}</p>
+          ) : (eventsQ.data ?? []).map(ev => (
+            <ProductMaterialEventRow key={ev.id} event={ev} materials={materials} operations={operations} />
+          ))}
+        </div>
+      ) : (
       <div className="px-4 pb-8">
         {isMat ? (
           product.materials.length === 0 ? (
@@ -268,6 +299,7 @@ export default function SpecificationPage({ productId, type, onBack }: {
           </div>
         )}
       </div>
+      )}
 
       {isMat && materialPickerOpen && (
         <MaterialPickerSheet
@@ -364,5 +396,62 @@ function MoreIcon() {
       <circle cx="7" cy="7" r="1.1" fill="currentColor"/>
       <circle cx="7" cy="11.5" r="1.1" fill="currentColor"/>
     </svg>
+  )
+}
+
+const EVENT_LABEL_KEY: Record<ProductMaterialEvent['eventType'], TranslationKey> = {
+  added: 'productMaterialEvent.added',
+  qty_changed: 'productMaterialEvent.qtyChanged',
+  operation_changed: 'productMaterialEvent.operationChanged',
+  removed: 'productMaterialEvent.removed',
+}
+
+/** Один рядок "Історії" — назва матеріалу (за materialId, навіть якщо сам
+ *  рядок специфікації вже видалено) + подія + деталі зміни (к-сть чи
+ *  операція, стара → нова) + хто й коли. */
+function ProductMaterialEventRow({ event, materials, operations }: {
+  event: ProductMaterialEvent
+  materials: { id: string; name: string; nameEn: string | null }[]
+  operations: { id: string; name: string; nameEn: string | null }[]
+}) {
+  const { t, tn } = useLocale()
+  const material = materials.find(m => m.id === event.materialId)
+  const opName = (id: string | null | undefined) => {
+    if (!id) return t('products.noOperation')
+    const o = operations.find(x => x.id === id)
+    return o ? tn(o.name, o.nameEn) : '—'
+  }
+
+  const detail = (() => {
+    if (event.eventType === 'qty_changed' && typeof event.oldValue === 'number' && typeof event.newValue === 'number') {
+      return `${fmt(event.oldValue)} → ${fmt(event.newValue)}`
+    }
+    if (event.eventType === 'operation_changed') {
+      const oldId = typeof event.oldValue === 'string' ? event.oldValue : null
+      const newId = typeof event.newValue === 'string' ? event.newValue : null
+      return `${opName(oldId)} → ${opName(newId)}`
+    }
+    if (event.eventType === 'added' && event.newValue && typeof event.newValue === 'object') {
+      return `${fmt(event.newValue.qty ?? 0)} · ${opName(event.newValue.operation_id)}`
+    }
+    if (event.eventType === 'removed' && event.oldValue && typeof event.oldValue === 'object') {
+      return `${fmt(event.oldValue.qty ?? 0)} · ${opName(event.oldValue.operation_id)}`
+    }
+    return null
+  })()
+
+  return (
+    <div className="rounded-2xl bg-white px-4 py-3" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-medium text-slate-700 truncate">
+          {t(EVENT_LABEL_KEY[event.eventType])}{material ? ` · ${tn(material.name, material.nameEn)}` : ''}
+        </span>
+        <span className="text-[10px] text-slate-400 shrink-0">
+          {new Date(event.occurredAt).toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+        </span>
+      </div>
+      {detail && <p className="text-xs text-slate-500 mt-0.5">{detail}</p>}
+      <p className="text-xs text-slate-400 mt-0.5">{event.actorName}</p>
+    </div>
   )
 }

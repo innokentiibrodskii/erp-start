@@ -96,6 +96,10 @@ const en: Record<TranslationKey, string> = {
   'products.specTable.details': 'Details',
   'products.editOperationTitle': 'Edit operation',
   'products.durationMinutesLabel': 'Duration, min',
+  'productMaterialEvent.added': 'Material added',
+  'productMaterialEvent.qtyChanged': 'Quantity changed',
+  'productMaterialEvent.operationChanged': 'Operation changed',
+  'productMaterialEvent.removed': 'Material removed',
   'products.qrHint': 'Scan to view the product card · 40×58mm label',
   'products.filteredOfTotal': '{{filtered}} of {{total}}',
 
