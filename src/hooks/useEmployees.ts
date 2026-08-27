@@ -97,9 +97,11 @@ interface CreateEmployeeArgs {
   positionId: string | null
 }
 
-/** Редагування вже наявного працівника: ім'я/прізвище/телефон — прямий
+/** Редагування вже наявного працівника: ім'я/прізвище/телефон/роль — прямий
  *  update рядка users (RLS дозволяє менеджеру/адміну редагувати працівників
- *  своєї організації); посада — не поле users, а окремий зв'язок у
+ *  своєї організації); зміну ролі в UI (ProfilePage.tsx) дозволено лише
+ *  адміну і лише для чужого профілю (не для себе) — щоб виключити
+ *  самопідвищення. Посада — не поле users, а окремий зв'язок у
  *  user_positions, тож оновлюємо його delete+insert (простіше й безпечніше
  *  за upsert, коли невідомо, чи вже є рядок для цього користувача/організації).
  *  Департамент у профілі — похідний від посади (positions.department_id),
@@ -114,6 +116,7 @@ interface UpdateEmployeeArgs {
   firstName: string
   lastName: string
   phone: string | null
+  role: UserRole
   positionId: string | null
 }
 
@@ -149,7 +152,7 @@ export function useEmployeeMutations() {
   const update = useMutation({
     mutationFn: async (args: UpdateEmployeeArgs) => {
       const { error: userErr } = await supabase.from('users')
-        .update({ first_name: args.firstName, last_name: args.lastName, phone: args.phone })
+        .update({ first_name: args.firstName, last_name: args.lastName, phone: args.phone, role: args.role })
         .eq('id', args.id)
       if (userErr) throw userErr
 

@@ -40,12 +40,16 @@ export default function ProfilePage({ employeeId, onBack }: { employeeId: string
   const employee = employees.find(e => e.id === employeeId) ?? null
   const taskCount = assignments.filter(a => a.assigneeId === employeeId).length
   const fullName = employee?.fullName || t('profile.defaultUser')
-  const role = employee?.role ?? 'performer'
+  const displayRole = employee?.role ?? 'performer'
 
   const isManager = currentUser?.role === 'manager' || currentUser?.role === 'admin'
+  const isAdmin = currentUser?.role === 'admin'
   const isOwnProfile = currentUser?.id === employeeId
   const canEdit = isManager
   const canEditEmail = isManager && isOwnProfile
+  // Роль може змінювати лише адмін, і лише в чужому профілі — щоб ніхто
+  // (навіть адмін) не міг випадково підвищити/понизити сам себе.
+  const canEditRole = isAdmin && !isOwnProfile
 
   const [editing, setEditing] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
@@ -55,6 +59,7 @@ export default function ProfilePage({ employeeId, onBack }: { employeeId: string
   const [lastName, setLastName] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
+  const [role, setRole] = useState<UserRole>('performer')
   const [departmentId, setDepartmentId] = useState<string | null>(null)
   const [positionId, setPositionId] = useState<string | null>(null)
   const [showDeptPicker, setShowDeptPicker] = useState(false)
@@ -67,6 +72,7 @@ export default function ProfilePage({ employeeId, onBack }: { employeeId: string
     setLastName(employee.lastName)
     setPhone(employee.phone ?? '')
     setEmail(employee.email)
+    setRole(employee.role)
     setDepartmentId(employee.departmentId)
     setPositionId(employee.positionId)
     setEditing(true)
@@ -81,7 +87,7 @@ export default function ProfilePage({ employeeId, onBack }: { employeeId: string
     try {
       await updateEmployee({
         id: employee.id, firstName: firstName.trim(), lastName: lastName.trim(),
-        phone: phone.trim() || null, positionId,
+        phone: phone.trim() || null, role, positionId,
       })
       if (canEditEmail && email.trim() && email.trim() !== employee.email) {
         const { error } = await supabase.auth.updateUser({ email: email.trim() })
@@ -152,7 +158,7 @@ export default function ProfilePage({ employeeId, onBack }: { employeeId: string
           </div>
           <div className="rounded-2xl bg-white px-4 py-4 flex flex-col gap-1" style={{ border: '1px solid rgba(157,200,255,0.2)' }}>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('profile.role')}</p>
-            <p className="text-lg font-bold leading-tight text-slate-800 mt-1">{t(ROLE_LABEL_KEY[role])}</p>
+            <p className="text-lg font-bold leading-tight text-slate-800 mt-1">{t(ROLE_LABEL_KEY[displayRole])}</p>
           </div>
         </div>
 
@@ -183,6 +189,19 @@ export default function ProfilePage({ employeeId, onBack }: { employeeId: string
                 <ChevronDown />
               </button>
             </Field>
+            {canEditRole && (
+              <Field label={t('profile.role')}>
+                <div className="relative">
+                  <select value={role} onChange={e => setRole(e.target.value as UserRole)}
+                    className="w-full appearance-none rounded-2xl border border-slate-200 bg-white pl-4 pr-9 py-3.5 text-sm outline-none focus:border-blue-400 transition-all">
+                    <option value="performer">{t('role.performer')}</option>
+                    <option value="manager">{t('role.manager')}</option>
+                    <option value="admin">{t('role.admin')}</option>
+                  </select>
+                  <div className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2"><ChevronDown /></div>
+                </div>
+              </Field>
+            )}
           </div>
         ) : (
           <div className="rounded-2xl bg-white overflow-hidden" style={{ border: '1px solid rgba(157,200,255,0.2)' }}>
