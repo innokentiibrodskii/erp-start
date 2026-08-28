@@ -2,23 +2,20 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useActiveOrgId } from '../OrgContext'
 import { useLocale } from '../LocaleContext'
+import { friendlyReferenceError as friendlyError } from '../lib/errors'
+import { showErrorToast } from '../lib/toast'
 
 /* ───────────────────────────────────────────────────────────
    Прив'язка характеристик (значень атрибутів із довідника) до
    продукту — просте перемикання, без окремого збереження.
 ─────────────────────────────────────────────────────────── */
 
-function friendlyError(error: { message: string; code?: string }, t: (key: 'errors.referenceError') => string): string {
-  if (error.code === '23503') return t('errors.referenceError')
-  return error.message
-}
-
 export function useProductAttributeMutations() {
   const qc = useQueryClient()
   const orgId = useActiveOrgId()
   const { t } = useLocale()
   const invalidate = () => qc.invalidateQueries({ queryKey: ['products'] })
-  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error, t))
+  const onErr = (error: { message: string; code?: string }) => showErrorToast(friendlyError(error, t))
 
   const add = useMutation({
     mutationFn: async ({ productId, attributeValueId }: { productId: string; attributeValueId: string }) => {

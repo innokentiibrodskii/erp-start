@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useActiveOrgId } from '../OrgContext'
 import { useLocale } from '../LocaleContext'
+import { friendlyReferenceError as friendlyError } from '../lib/errors'
+import { showErrorToast } from '../lib/toast'
 
 /* ───────────────────────────────────────────────────────────
    Залишки матеріалів на складах: журнал рухів (прихід/списання),
@@ -39,11 +41,6 @@ export interface StockBalance {
   materialId: string
   warehouseId: string
   qty: number
-}
-
-function friendlyError(error: { message: string; code?: string }, t: (key: 'errors.referenceError') => string): string {
-  if (error.code === '23503') return t('errors.referenceError')
-  return error.message
 }
 
 export function useStockMovements() {
@@ -101,7 +98,7 @@ export function useStockMutations() {
   const orgId = useActiveOrgId()
   const { t } = useLocale()
   const invalidate = () => qc.invalidateQueries({ queryKey: ['material-stock-movements', orgId] })
-  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error, t))
+  const onErr = (error: { message: string; code?: string }) => showErrorToast(friendlyError(error, t))
 
   const add = useMutation({
     mutationFn: async ({ materialId, warehouseId, qty, cost, batchCode, note, series }: {

@@ -3,6 +3,8 @@ import { supabase } from '../lib/supabase'
 import { createOperationDirect } from './useCatalog'
 import { useActiveOrgId } from '../OrgContext'
 import { useLocale } from '../LocaleContext'
+import { friendlyPgError } from '../lib/errors'
+import { showErrorToast } from '../lib/toast'
 import type { TranslationKey } from '../i18n'
 
 /* ───────────────────────────────────────────────────────────
@@ -15,9 +17,7 @@ import type { TranslationKey } from '../i18n'
 ─────────────────────────────────────────────────────────── */
 
 function friendlyError(error: { message: string; code?: string }, t: (key: TranslationKey) => string): string {
-  if (error.code === '23505') return t('errors.materialAlreadyAdded')
-  if (error.code === '23503') return t('errors.referenceError')
-  return error.message
+  return friendlyPgError(error, { '23505': 'errors.materialAlreadyAdded', '23503': 'errors.referenceError' }, t)
 }
 
 async function ensureProductOperation(orgId: string, productId: string, operationId: string) {
@@ -45,7 +45,7 @@ export function useProductMaterialMutations() {
   const { t } = useLocale()
   const invalidateProducts = () => qc.invalidateQueries({ queryKey: ['products'] })
   const invalidateOperations = () => qc.invalidateQueries({ queryKey: ['operations', orgId] })
-  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error, t))
+  const onErr = (error: { message: string; code?: string }) => showErrorToast(friendlyError(error, t))
 
   const add = useMutation({
     mutationFn: async ({ productId, materialId, qty, unitId, operationId }: {

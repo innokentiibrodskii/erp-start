@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useActiveOrgId } from '../OrgContext'
+import { showErrorToast } from '../lib/toast'
 import type { TranslationKey } from '../i18n'
 
 /* ───────────────────────────────────────────────────────────
@@ -36,7 +37,7 @@ export function useSetMaterialCostCurrency() {
       if (error) throw error
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['org-settings', orgId] }),
-    onError: (error: { message: string }) => alert(error.message),
+    onError: (error: { message: string }) => showErrorToast(error.message),
   })
   return (currency: Currency) => mutation.mutateAsync(currency)
 }

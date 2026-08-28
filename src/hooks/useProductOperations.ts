@@ -3,6 +3,8 @@ import { supabase } from '../lib/supabase'
 import { useActiveOrgId } from '../OrgContext'
 import { useLocale } from '../LocaleContext'
 import type { TranslationKey } from '../i18n'
+import { friendlyPgError } from '../lib/errors'
+import { showErrorToast } from '../lib/toast'
 
 /* ───────────────────────────────────────────────────────────
    Додавання операцій до продукту: операція з каталогу + завдання
@@ -21,9 +23,7 @@ export interface ProductTask {
 }
 
 function friendlyError(error: { message: string; code?: string }, t: (key: TranslationKey) => string): string {
-  if (error.code === '23505') return t('errors.taskNameExists')
-  if (error.code === '23503') return t('errors.referenceError')
-  return error.message
+  return friendlyPgError(error, { '23505': 'errors.taskNameExists', '23503': 'errors.referenceError' }, t)
 }
 
 /** Усі завдання, вже створені в межах конкретного продукту (для повторного використання) */
@@ -55,7 +55,7 @@ export function useProductOperationMutations() {
   const { t } = useLocale()
   const invalidateProducts = () => qc.invalidateQueries({ queryKey: ['products', orgId] })
   const invalidateTasks = (productId: string) => qc.invalidateQueries({ queryKey: ['product-tasks', productId] })
-  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error, t))
+  const onErr = (error: { message: string; code?: string }) => showErrorToast(friendlyError(error, t))
 
   /** Додати операцію до продукту разом з новим завданням. Одну операцію можна
    *  додати декілька разів — кожне додавання створює свій рядок і своє завдання

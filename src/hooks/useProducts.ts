@@ -4,6 +4,8 @@ import { uploadFileWithProgress } from '../lib/storageUpload'
 import { useActiveOrgId } from '../OrgContext'
 import { useLocale } from '../LocaleContext'
 import type { TranslationKey } from '../i18n'
+import { friendlyReferenceOrDuplicateError as friendlyError } from '../lib/errors'
+import { showErrorToast } from '../lib/toast'
 
 /* ───────────────────────────────────────────────────────────
    Types
@@ -114,7 +116,7 @@ export function useProductStatusMutations() {
   const orgId = useActiveOrgId()
   const { t } = useLocale()
   const invalidate = () => qc.invalidateQueries({ queryKey: ['product-statuses', orgId] })
-  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error, t))
+  const onErr = (error: { message: string; code?: string }) => showErrorToast(friendlyError(error, t))
 
   const add = useMutation({
     mutationFn: async ({ name, nameEn, color }: { name: string; nameEn: string | null; color: string }) => {
@@ -185,12 +187,6 @@ export interface VideoItem {
   url: string
   /** Заповнено лише для щойно доданих (ще не завантажених) відео */
   file?: File
-}
-
-function friendlyError(error: { message: string; code?: string }, t: (key: TranslationKey) => string): string {
-  if (error.code === '23503') return t('errors.cannotDeleteInUse')
-  if (error.code === '23505') return t('errors.alreadyExists')
-  return error.message
 }
 
 /* ───────────────────────────────────────────────────────────
@@ -319,7 +315,7 @@ export function useProductMutations() {
   const orgId = useActiveOrgId()
   const { t } = useLocale()
   const invalidate = () => qc.invalidateQueries({ queryKey: ['products', orgId] })
-  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error, t))
+  const onErr = (error: { message: string; code?: string }) => showErrorToast(friendlyError(error, t))
 
   const create = useMutation({
     mutationFn: async ({ name, description, categoryId, sku, photos, videos, onProgress }: { name: string; description: string; categoryId: string | null; sku: string; photos: PhotoItem[]; videos: VideoItem[]; onProgress?: (key: string, loadedBytes: number) => void }) => {

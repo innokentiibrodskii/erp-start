@@ -13,7 +13,9 @@ import {
   type CustomFieldDefinition,
 } from './hooks/useCustomFields'
 import { fmt, dateStr, buildCatPath, genBatchCode, genSeries } from './lib/materialFormat'
+import { printQrLabel, downloadQrLabelPng } from './lib/qrLabel'
 import MaterialEditorPage, { type PendingDelivery, type CustomFieldInput } from './MaterialEditorPage'
+import ConfirmDeleteModal from './ConfirmDeleteModal'
 import { CategoryTreeNode } from './CategoryTreeNode'
 import { useLocale } from './LocaleContext'
 
@@ -471,24 +473,11 @@ export default function MaterialStock({ onNavigate, initialMaterialId, initialMa
       </div>
 
       {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-6">
-          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setConfirmDelete(null)} />
-          <div className="relative z-10 w-full max-w-sm rounded-3xl bg-white px-6 py-6"
-            style={{ boxShadow: '0 16px 48px rgba(0,0,0,0.18)' }}>
-            <p className="text-base font-semibold text-slate-800 mb-2">{t('materials.deleteConfirm', { name: tn(confirmDelete.name, confirmDelete.nameEn) })}</p>
-            <p className="text-sm text-slate-500 mb-6">{t('common.actionIrreversible')}</p>
-            <div className="flex gap-3">
-              <button onClick={() => setConfirmDelete(null)}
-                className="flex-1 rounded-2xl border border-slate-200 py-3 text-sm font-medium text-slate-500 active:scale-[0.98]">
-                {t('common.cancel')}
-              </button>
-              <button onClick={() => { removeMaterial(confirmDelete.id); setConfirmDelete(null) }}
-                className="flex-1 rounded-2xl bg-red-500 py-3 text-sm font-semibold text-white active:scale-[0.98]">
-                {t('common.delete')}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDeleteModal
+          message={t('materials.deleteConfirm', { name: tn(confirmDelete.name, confirmDelete.nameEn) })}
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={() => { removeMaterial(confirmDelete.id); setConfirmDelete(null) }}
+        />
       )}
     </div>
   )
@@ -544,19 +533,6 @@ function TrashIcon() {
   )
 }
 
-/** Прокладає шлях заокругленого прямокутника вручну (замість `ctx.roundRect`),
- *  щоб коректно працювати і в старіших вбудованих браузерах застосунків
- *  Bluetooth-термопринтерів. */
-function drawRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  ctx.beginPath()
-  ctx.moveTo(x + r, y)
-  ctx.arcTo(x + w, y, x + w, y + h, r)
-  ctx.arcTo(x + w, y + h, x, y + h, r)
-  ctx.arcTo(x, y + h, x, y, r)
-  ctx.arcTo(x, y, x + w, y, r)
-  ctx.closePath()
-}
-
 /* ═══════════════════════════════════════════════════════════
    Material QR — сторінка друку етикетки
 ═══════════════════════════════════════════════════════════ */
@@ -569,127 +545,11 @@ function MaterialQRPage({ material, categoryPath, stock, onBack }: {
   const { t, tn } = useLocale()
   // QR веде на сторінку перегляду матеріалу в застосунку — сканування відкриває картку.
   const qrValue = `${window.location.origin}/?material=${material.id}`
+  const materialName = tn(material.name, material.nameEn)
+  const labelContent = { svgElementId: 'mat-qr-svg', name: materialName, code: material.code }
 
-  const DPI = 203
-  const mm = (v: number) => Math.round((v * DPI) / 25.4)
-  const LABEL_W = mm(40)
-  const LABEL_H = mm(58)
-
-  /** Малює етикетку (40×58мм при 203 dpi) на canvas — за макетом з Figma
-   *  (назва → код → QR у білій картці із заокругленими кутами й тонкою рамкою).
-   *  Використовується і для збереження PNG, і для друку, щоб обидва виходи
-   *  мали однаковий розмір і вигляд. */
-  const buildLabelCanvas = async (): Promise<HTMLCanvasElement> => {
-    const svgEl = document.getElementById('mat-qr-svg')
-    if (!svgEl) throw new Error('QR не знайдено')
-
-    // Дочекатись завантаження шрифтів застосунку (DM Serif Display / DM Sans),
-    // інакше canvas може намалювати текст системним шрифтом за замовчуванням.
-    await document.fonts.ready
-
-    const svgData = new XMLSerializer().serializeToString(svgEl)
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const image = new Image()
-      image.onload = () => resolve(image)
-      image.onerror = () => reject(new Error('Не вдалося завантажити QR'))
-      image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgData)}`
-    })
-
-    const canvas = document.createElement('canvas')
-    canvas.width = LABEL_W
-    canvas.height = LABEL_H
-    const ctx = canvas.getContext('2d')
-    if (!ctx) throw new Error('Canvas недоступний')
-
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, LABEL_W, LABEL_H)
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'top'
-
-    const maxWidth = LABEL_W - mm(6)
-    let y = mm(8.5)
-
-    // Назва — DM Serif Display, той самий стиль заголовків, що й у застосунку
-    ctx.font = `${mm(3.4)}px 'DM Serif Display', serif`
-    ctx.fillStyle = '#1d293d'
-    const words = tn(material.name, material.nameEn).split(' ')
-    const lines: string[] = []
-    let cur = ''
-    for (const w of words) {
-      const test = cur ? `${cur} ${w}` : w
-      if (cur && ctx.measureText(test).width > maxWidth) { lines.push(cur); cur = w } else cur = test
-    }
-    if (cur) lines.push(cur)
-    for (const line of lines.slice(0, 2)) { ctx.fillText(line, LABEL_W / 2, y); y += mm(4.2) }
-
-    // Код — DM Sans
-    if (material.code) {
-      y += mm(0.8)
-      ctx.font = `${mm(2.3)}px 'DM Sans', sans-serif`
-      ctx.fillStyle = '#1d293d'
-      ctx.fillText(material.code, LABEL_W / 2, y)
-      y += mm(5)
-    } else {
-      y += mm(2)
-    }
-
-    // QR — у білій картці із заокругленими кутами й тонкою рамкою (як у Figma-шаблоні)
-    const boxSize = Math.min(LABEL_W - mm(6), LABEL_H - y - mm(3))
-    const boxX = (LABEL_W - boxSize) / 2
-    const boxY = y
-    ctx.fillStyle = '#ffffff'
-    ctx.strokeStyle = 'rgba(157,200,255,0.6)'
-    ctx.lineWidth = Math.max(1, mm(0.08))
-    drawRoundedRect(ctx, boxX, boxY, boxSize, boxSize, mm(2))
-    ctx.fill()
-    ctx.stroke()
-
-    const qrPadding = mm(2.5)
-    const qrSize = boxSize - qrPadding * 2
-    ctx.drawImage(img, boxX + qrPadding, boxY + qrPadding, qrSize, qrSize)
-
-    return canvas
-  }
-
-  /** Друк через діалог браузера — та ж сама картинка, що й у збереженому PNG,
-   *  тож фізичний розмір етикетки завжди однаковий. */
-  const handlePrint = async () => {
-    const canvas = await buildLabelCanvas().catch(() => null)
-    if (!canvas) return
-    const dataUrl = canvas.toDataURL('image/png')
-    const win = window.open('', '_blank', 'width=400,height=320')
-    if (!win) return
-    win.document.write(`<!DOCTYPE html><html><head><title>QR — ${tn(material.name, material.nameEn)}</title>
-    <style>
-      @page{size:40mm 58mm;margin:0}
-      *{margin:0;padding:0}
-      html,body{width:40mm;height:58mm}
-      img{width:40mm;height:58mm;display:block}
-    </style></head><body>
-    <img src="${dataUrl}" alt="QR label" />
-    <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}<\/script>
-    </body></html>`)
-    win.document.close()
-  }
-
-  /** Готовий PNG-файл точного розміру етикетки (40×58мм при 203 dpi — стандарт
-   *  мобільних Bluetooth-принтерів) — для друку через застосунки типу Mobi Print,
-   *  куди файл передається напряму (не через діалог друку браузера). */
-  const handleDownloadImage = async () => {
-    const canvas = await buildLabelCanvas().catch(() => null)
-    if (!canvas) return
-    canvas.toBlob(blob => {
-      if (!blob) return
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `qr-${material.code ?? material.id}.png`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
-    }, 'image/png')
-  }
+  const handlePrint = () => printQrLabel(labelContent, materialName)
+  const handleDownloadImage = () => downloadQrLabelPng(labelContent, `qr-${material.code ?? material.id}.png`)
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>

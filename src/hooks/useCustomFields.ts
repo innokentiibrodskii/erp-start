@@ -3,6 +3,8 @@ import { supabase } from '../lib/supabase'
 import { useActiveOrgId } from '../OrgContext'
 import { useLocale } from '../LocaleContext'
 import type { TranslationKey } from '../i18n'
+import { friendlyPgError } from '../lib/errors'
+import { showErrorToast } from '../lib/toast'
 
 /* ───────────────────────────────────────────────────────────
    Кастомні поля — конструктор додаткових полів для трьох сутностей
@@ -74,9 +76,7 @@ export interface CustomFieldValue {
 }
 
 function friendlyError(error: { message: string; code?: string }, t: (key: TranslationKey) => string): string {
-  if (error.code === '23503') return t('errors.referenceError')
-  if (error.code === '23505') return t('errors.alreadyExists')
-  return error.message
+  return friendlyPgError(error, { '23503': 'errors.referenceError', '23505': 'errors.alreadyExists' }, t)
 }
 
 /* ───────────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ export function useCustomFieldDefinitionMutations(entityType: EntityType) {
   const orgId = useActiveOrgId()
   const { t } = useLocale()
   const invalidate = () => qc.invalidateQueries({ queryKey: ['custom-field-definitions', entityType, orgId] })
-  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error, t))
+  const onErr = (error: { message: string; code?: string }) => showErrorToast(friendlyError(error, t))
 
   const add = useMutation({
     mutationFn: async ({ name, nameEn, fieldType, isRequired, position }: { name: string; nameEn: string | null; fieldType: FieldType; isRequired: boolean; position: number }) => {
@@ -294,7 +294,7 @@ export function useCustomFieldValueMutations(entityType: EntityType) {
     qc.invalidateQueries({ queryKey: ['custom-field-values', entityType, entityId] })
     qc.invalidateQueries({ queryKey: ['custom-field-files', entityType, entityId] })
   }
-  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error, t))
+  const onErr = (error: { message: string; code?: string }) => showErrorToast(friendlyError(error, t))
 
   const setValue = useMutation({
     mutationFn: async (args: { entityId: string; fieldDefinitionId: string; valueText?: string | null; valueNumber?: number | null; valueBoolean?: boolean | null; valueOptionId?: string | null }) => {

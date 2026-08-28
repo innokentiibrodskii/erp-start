@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { showErrorToast } from '../lib/toast'
 import type { ProductMaterialLink, ProductOperationLink } from './useProducts'
 
 /* ───────────────────────────────────────────────────────────
@@ -218,7 +219,7 @@ export function useProductSpecificationMutations() {
     qc.invalidateQueries({ queryKey: ['product-specification-events', productId] })
     qc.invalidateQueries({ queryKey: ['product-material-events', productId] })
   }
-  const onErr = (error: { message: string }) => alert(error.message)
+  const onErr = (error: { message: string }) => showErrorToast(error.message)
 
   const startEditing = useMutation({
     mutationFn: async (productId: string) => {

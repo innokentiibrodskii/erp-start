@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useActiveOrgId } from '../OrgContext'
 import { useLocale } from '../LocaleContext'
+import { showErrorToast } from '../lib/toast'
 
 /* ───────────────────────────────────────────────────────────
    Зарплатний період: адмін задає правило "з X по Y число місяця"
@@ -130,7 +131,7 @@ export function useSetPayrollSettings() {
       if (error) throw error
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['payroll-settings', orgId] }),
-    onError: (error: { message: string }) => alert(error.message),
+    onError: (error: { message: string }) => showErrorToast(error.message),
   })
   return (settings: { openFromDay: number; openToDay: number }) => mutation.mutateAsync(settings)
 }
@@ -180,7 +181,7 @@ export function useClosePayrollPeriod() {
       if (error) throw error
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['payroll-closures', orgId] }),
-    onError: (error: { message: string; code?: string }) => alert(error.code === '23505' ? t('payroll.alreadyClosed') : error.message),
+    onError: (error: { message: string; code?: string }) => showErrorToast(error.code === '23505' ? t('payroll.alreadyClosed') : error.message),
   })
   return (args: { periodYear: number; periodMonth: number; closedById: string }) => mutation.mutateAsync(args)
 }

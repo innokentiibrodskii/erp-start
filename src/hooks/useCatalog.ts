@@ -4,6 +4,8 @@ import { PRESET_COLORS } from '../lib/colors'
 import { useActiveOrgId } from '../OrgContext'
 import { useLocale } from '../LocaleContext'
 import type { TranslationKey } from '../i18n'
+import { friendlyReferenceOrDuplicateError as friendlyError } from '../lib/errors'
+import { showErrorToast } from '../lib/toast'
 
 /* ───────────────────────────────────────────────────────────
    Types (id — uuid-рядок з Supabase)
@@ -130,12 +132,6 @@ export async function createOperationDirect(organizationId: string, name: string
   const { data, error } = await supabase.from('operations').insert({ name, description, organization_id: organizationId }).select('id').single()
   if (error) throw error
   return data.id as string
-}
-
-function friendlyError(error: { message: string; code?: string }, t: (key: TranslationKey) => string): string {
-  if (error.code === '23503') return t('errors.cannotDeleteInUse')
-  if (error.code === '23505') return t('errors.alreadyExists')
-  return error.message
 }
 
 /* ───────────────────────────────────────────────────────────
@@ -318,7 +314,7 @@ export function useCatalog() {
     materialCategoriesQ.isLoading || unitsQ.isLoading || suppliersQ.isLoading
 
   const invalidate = (key: string) => qc.invalidateQueries({ queryKey: [key, orgId] })
-  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error, t))
+  const onErr = (error: { message: string; code?: string }) => showErrorToast(friendlyError(error, t))
 
   /* Departments */
   const addDepartmentM = useMutation({

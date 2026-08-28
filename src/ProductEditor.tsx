@@ -111,7 +111,10 @@ export default function ProductEditor({ productId, onBack }: Props) {
       setToast(t('productEditor.photoCompressed', { names: compressed.join(', '), limit: MAX_PHOTO_SIZE / (1024 * 1024) }))
       setTimeout(() => setToast(null), 3000)
     }
-    if (tooLarge.length > 0) alert(t('productEditor.photoTooLarge', { names: tooLarge.join(', '), limit: MAX_PHOTO_SIZE / (1024 * 1024) }))
+    if (tooLarge.length > 0) {
+      setToast(t('productEditor.photoTooLarge', { names: tooLarge.join(', '), limit: MAX_PHOTO_SIZE / (1024 * 1024) }))
+      setTimeout(() => setToast(null), 3000)
+    }
   }
 
   const removePhoto = (key: string) =>
@@ -135,7 +138,10 @@ export default function ProductEditor({ productId, onBack }: Props) {
       if (file.size > MAX_VIDEO_SIZE) { tooLarge.push(file.name); return }
       setVideos(prev => [...prev, { key: crypto.randomUUID(), url: URL.createObjectURL(file), file }])
     })
-    if (tooLarge.length > 0) alert(t('productEditor.videoTooLarge', { names: tooLarge.join(', '), limit: MAX_VIDEO_SIZE / (1024 * 1024) }))
+    if (tooLarge.length > 0) {
+      setToast(t('productEditor.videoTooLarge', { names: tooLarge.join(', '), limit: MAX_VIDEO_SIZE / (1024 * 1024) }))
+      setTimeout(() => setToast(null), 3000)
+    }
   }
 
   const removeVideo = (key: string) =>

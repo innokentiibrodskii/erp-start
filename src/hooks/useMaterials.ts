@@ -3,6 +3,8 @@ import { supabase } from '../lib/supabase'
 import { useActiveOrgId } from '../OrgContext'
 import { useLocale } from '../LocaleContext'
 import type { TranslationKey } from '../i18n'
+import { friendlyReferenceOrDuplicateError as friendlyError } from '../lib/errors'
+import { showErrorToast } from '../lib/toast'
 
 /* ───────────────────────────────────────────────────────────
    Каталог матеріалів (повний CRUD): назва, фото, категорія
@@ -32,12 +34,6 @@ export interface Material {
 }
 
 export function genCode() { return `MAT-${Math.floor(100 + Math.random() * 900)}` }
-
-function friendlyError(error: { message: string; code?: string }, t: (key: TranslationKey) => string): string {
-  if (error.code === '23503') return t('errors.cannotDeleteInUse')
-  if (error.code === '23505') return t('errors.alreadyExists')
-  return error.message
-}
 
 export function useMaterials() {
   const orgId = useActiveOrgId()
@@ -117,7 +113,7 @@ export function useMaterialMutations() {
   const orgId = useActiveOrgId()
   const { t } = useLocale()
   const invalidate = () => qc.invalidateQueries({ queryKey: ['materials', orgId] })
-  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error, t))
+  const onErr = (error: { message: string; code?: string }) => showErrorToast(friendlyError(error, t))
 
   const create = useMutation({
     mutationFn: async ({ name, nameEn, code, categoryId, unitId, cost, photoFile, primarySupplierId, supplierIds }: MaterialFormArgs) => {

@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useActiveOrgId } from '../OrgContext'
 import { useLocale } from '../LocaleContext'
+import { friendlyReferenceError as friendlyError } from '../lib/errors'
+import { showErrorToast } from '../lib/toast'
 
 /* ───────────────────────────────────────────────────────────
    Завдання для виконавців: конкретне доручення співробітнику —
@@ -60,10 +62,6 @@ export interface Assignment {
 
 type PersonRef = { first_name: string; last_name: string } | null
 
-function friendlyError(error: { message: string; code?: string }, t: (key: 'errors.referenceError') => string): string {
-  if (error.code === '23503') return t('errors.referenceError')
-  return error.message
-}
 
 /** Рік/місяць/день за київським часом — для порівняння "той самий день"/"той самий місяць" */
 function kyivDateParts(ts: number): { year: string; month: string; day: string } {
@@ -149,7 +147,7 @@ export function useAssignmentMutations() {
   const orgId = useActiveOrgId()
   const { t } = useLocale()
   const invalidate = () => qc.invalidateQueries({ queryKey: ['assignments', orgId] })
-  const onErr = (error: { message: string; code?: string }) => alert(friendlyError(error, t))
+  const onErr = (error: { message: string; code?: string }) => showErrorToast(friendlyError(error, t))
 
   const create = useMutation({
     mutationFn: async (args: {
