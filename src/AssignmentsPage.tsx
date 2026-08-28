@@ -125,6 +125,12 @@ export default function AssignmentsPage() {
   // Адмін успадковує права менеджера скрізь у застосунку (те саме правило, що й у Shell.tsx) —
   // тож на "Завданнях" теж бачить усі завдання команди й фільтр за виконавцем, а не лише свої.
   const isManager = currentUser?.role === 'manager' || currentUser?.role === 'admin'
+  // "Менеджер перегляд" — бачить лише свої/створені ним завдання (RLS-видимість,
+  // sql/manager_view_role.sql), але керує ними й створює нові так само, як
+  // повний менеджер (canManageTasks нижче передається замість isManager у
+  // формі/деталях завдання).
+  const isManagerView = currentUser?.role === 'manager_view'
+  const canManageTasks = isManager || isManagerView
 
   const assignmentsQ = useAssignments()
   const productsQ = useProducts()
@@ -157,7 +163,7 @@ export default function AssignmentsPage() {
 
   // Той самий доступ, що й у деталях завдання: виконавець своїх, менеджер/адмін — усіх;
   // завершене й заблоковане (день завершення минув) — статус більше не змінити.
-  const canEditStatusFor = (a: Assignment) => (isManager || a.assigneeId === currentUser?.id) && !isAssignmentLocked(a)
+  const canEditStatusFor = (a: Assignment) => (isManager || a.assigneeId === currentUser?.id || a.assignedById === currentUser?.id) && !isAssignmentLocked(a)
 
   // Quick-action одразу на картці списку — той самий виклик, що й у деталях
   // завдання: міняє лише статус (фактичний час хук довраховує сам при виході
@@ -232,6 +238,7 @@ export default function AssignmentsPage() {
         assignment={detail}
         currentUser={currentUser}
         isManager={!!isManager}
+        canManageTasks={canManageTasks}
         products={products}
         operations={operations}
         users={users}
@@ -268,7 +275,7 @@ export default function AssignmentsPage() {
         </div>
         <div className="flex items-center gap-2 mb-3">
           <p className="text-xs text-slate-400">
-            {isManager ? t('assignments.allTeamTasks') : t('assignments.yourTasks')} · {list.length}
+            {isManager ? t('assignments.allTeamTasks') : isManagerView ? t('assignments.yourAndCreatedTasks') : t('assignments.yourTasks')} · {list.length}
           </p>
           {archivedCount > 0 && (
             <button onClick={() => setFilters(f => ({ ...f, showArchived: !f.showArchived }))}
@@ -306,7 +313,7 @@ export default function AssignmentsPage() {
 
         {filterOpen && (
           <div className="mb-3 rounded-2xl bg-white p-4 space-y-3" style={{ border: '1px solid rgba(157,200,255,0.3)', boxShadow: '0 2px 12px rgba(157,200,255,0.1)' }}>
-            {isManager && (
+            {canManageTasks && (
               <div>
                 <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">{t('assignments.workersLabel')}</label>
                 <select value={filters.assigneeId ?? ''} onChange={e => setFilters(f => ({ ...f, assigneeId: e.target.value || null }))}
@@ -402,7 +409,7 @@ export default function AssignmentsPage() {
                   {period && <p className="text-[10px] text-slate-300 mt-0.5">{t('assignments.payrollPeriodPrefix')} {period}</p>}
                 </div>
                 <div className="flex flex-col items-end gap-1.5 shrink-0">
-                  {isManager && (
+                  {canManageTasks && (
                     <span className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold" style={{ background: '#eff6ff', color: '#2563eb' }}>
                       <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
                         <circle cx="5" cy="3.2" r="1.8" stroke="currentColor" strokeWidth="1.2"/>
@@ -440,7 +447,7 @@ export default function AssignmentsPage() {
       {formOpen && currentUser && (
         <AssignmentFormSheet
           currentUser={currentUser}
-          isManager={!!isManager}
+          isManager={canManageTasks}
           users={users}
           products={products}
           operations={operations}
@@ -752,10 +759,16 @@ function BackChevron() {
   )
 }
 
-function AssignmentDetailPage({ assignment, currentUser, isManager, products, operations, users, onBack, onSaved, onDeleted }: {
+function AssignmentDetailPage({ assignment, currentUser, isManager, canManageTasks, products, operations, users, onBack, onSaved, onDeleted }: {
   assignment: Assignment
   currentUser: CurrentUser
+  /** Реальний менеджер/адмін — бачить/редагує УСІ завдання команди; лише для
+   *  canDelete (видалити чуже завдання може тільки повний менеджер). */
   isManager: boolean
+  /** isManager АБО "менеджер перегляд" — керує вмістом "Дані для менеджера"
+   *  (призначення, продукт, пріоритет тощо) для завдань, до яких і так є
+   *  доступ (hasAccess) — власних чи створених самим собою для когось. */
+  canManageTasks: boolean
   products: Product[]
   operations: Operation[]
   users: AppUser[]
@@ -790,7 +803,10 @@ function AssignmentDetailPage({ assignment, currentUser, isManager, products, op
   const linkedAssignee = assigneeId ? users.find(u => u.id === assigneeId) ?? null : null
   const filteredPickerProducts = products.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.sku.toLowerCase().includes(productSearch.toLowerCase()))
 
-  const hasAccess = isManager || assignment.assigneeId === currentUser.id
+  // "Менеджер перегляд" (isManager тут false) керує і завданнями, які сам
+  // створив для когось іншого, не лише своїми — той самий принцип, що вже є
+  // нижче для canDelete.
+  const hasAccess = isManager || assignment.assigneeId === currentUser.id || assignment.assignedById === currentUser.id
 
   // Статус — стара логіка без змін: завершене завдання можна змінювати статусом
   // лише в день завершення (те саме перевіряє тригер у базі).
@@ -968,7 +984,7 @@ function AssignmentDetailPage({ assignment, currentUser, isManager, products, op
                 замість окремих "пігулок". Продукт тут — лише інформаційний рядок, без
                 можливості змінити (редагування — нижче, у блоці "Дані для менеджера"). */}
             <div className="rounded-2xl bg-white overflow-hidden divide-y divide-slate-100" style={{ border: '1px solid rgba(157,200,255,0.22)', boxShadow: '0 1px 6px rgba(157,200,255,0.07)' }}>
-              {isManager && (
+              {canManageTasks && (
                 <div className="flex items-center justify-between px-4 py-3">
                   <span className="text-xs text-slate-400">{t('assignments.assigneeLabel')}</span>
                   <span className="text-sm font-medium text-slate-700">{linkedAssignee ? linkedAssignee.fullName : t('assignments.unassigned')}</span>
@@ -982,7 +998,7 @@ function AssignmentDetailPage({ assignment, currentUser, isManager, products, op
                 <span className="text-xs text-slate-400">{t('assignments.spentTimeLabel')}</span>
                 <span className="text-sm font-medium text-slate-700">{assignment.durationMinutes ?? 0} {t('common.minutesShort')}</span>
               </div>
-              {isManager && (
+              {canManageTasks && (
                 <div className="flex items-center justify-between px-4 py-3">
                   <span className="text-xs text-slate-400">{t('assignments.costLabel')}</span>
                   <span className="text-sm font-medium text-slate-700">{assignment.cost !== null ? `${assignment.cost} ₴` : '—'}</span>
@@ -996,7 +1012,7 @@ function AssignmentDetailPage({ assignment, currentUser, isManager, products, op
 
             {/* "Дані для менеджера" — пріоритет, дедлайн, плановий час і зміна продукту:
                 бачить лише менеджер/адмін, виконавцю цей блок узагалі не показуємо. */}
-            {isManager && (
+            {canManageTasks && (
               <>
                 <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('assignments.managerDataSection')}</label>
 
@@ -1117,7 +1133,7 @@ function AssignmentDetailPage({ assignment, currentUser, isManager, products, op
               </div>
             )}
 
-            {isManager && (
+            {canManageTasks && (
               <div>
                 <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">{t('assignments.costLabel')}</label>
                 <input type="number" min="0" step="any" value={cost} onChange={e => setCost(e.target.value)} disabled={!canEditTimeCost} placeholder="0"

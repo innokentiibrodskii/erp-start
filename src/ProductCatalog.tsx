@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import QRCodeLib from 'react-qr-code'
 import { useCatalog } from './hooks/useCatalog'
-import { useProducts, useMaterials, useProductStatuses, type Product } from './hooks/useProducts'
+import { useProducts, useMaterials, useProductStatuses, useProductMutations, type Product } from './hooks/useProducts'
 import { useCurrentUser } from './hooks/useCurrentUser'
 import { useUsers } from './hooks/useUsers'
+import { useCustomFieldDefinitions, useAllCustomFieldValues } from './hooks/useCustomFields'
 import ProductEditor from './ProductEditor'
 import ProductView from './ProductView'
 import SpecificationPage from './SpecificationPage'
@@ -50,7 +51,20 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
   const { t, tn } = useLocale()
   const { data: currentUser } = useCurrentUser()
   const isManager = currentUser?.role === 'manager' || currentUser?.role === 'admin'
+  // "Менеджер перегляд" бачить сторінку Продукти й може створювати/редагувати
+  // продукт (усі зміни логуються — sql/manager_view_role.sql,
+  // hooks/useProductEvents.ts), і створювати завдання, як і повний менеджер —
+  // але без доступу до Специфікації.
+  const isManagerView = currentUser?.role === 'manager_view'
+  const canEditProducts = isManager || isManagerView
+  const canAssignTasks = isManager || isManagerView
+  const isAdmin = currentUser?.role === 'admin'
   const usersQ = useUsers()
+  const { removeProduct, archiveProduct } = useProductMutations()
+  const productFieldsQ = useCustomFieldDefinitions('product')
+  const productFields = productFieldsQ.data ?? []
+  const allFieldValuesQ = useAllCustomFieldValues('product')
+  const allFieldValues = allFieldValuesQ.data ?? []
 
   const defaultStatusId = productStatuses.find(s => s.isDefault)?.id ?? null
 
@@ -71,6 +85,17 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => ls(LS_SORT_DIR, 'desc'))
   const [filterStatusId, setFilterStatusId] = useState<string | null>(() => ls(LS_FILTER, null))
   const [filterCatId, setFilterCatId] = useState<string | null>(null)
+  // Архів — той самий патерн, що й у MaterialStock.tsx: перемикач поруч із
+  // лічильником, а не всередині панелі фільтрів.
+  const [showArchived, setShowArchived] = useState(false)
+  // Видалити продукт — лише адмін, підтвердження окремою модалкою (як і
+  // видалення матеріалу в MaterialStock.tsx), а не одразу по кліку.
+  const [confirmDelete, setConfirmDelete] = useState<Product | null>(null)
+  // Фільтр за кастомним полем продукту — спершу яке поле, тоді яке значення
+  // (варіанти залежать від типу поля: select → його опції, boolean → так/ні).
+  const [filterFieldId, setFilterFieldId] = useState<string | null>(null)
+  const [filterFieldValue, setFilterFieldValue] = useState<string | null>(null)
+  const filterField = productFields.find(f => f.id === filterFieldId) ?? null
   // Секція "Категорія" згорнута в один рядок за замовчуванням — дерево розгортається
   // лише по кліку на шеврон (той самий патерн, що й у фільтрі матеріалів).
   const [catSectionOpen, setCatSectionOpen] = useState(false)
@@ -97,14 +122,32 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
   const [filterOpen, setFilterOpen] = useState(false)
 
   const activeStatus = productStatuses.find(s => s.id === filterStatusId)
-  const hasActiveFilters = filterStatusId !== null || filterCatId !== null || sortBy !== 'createdAt' || sortDir !== 'desc'
+  const hasActiveFilters = filterStatusId !== null || filterCatId !== null || filterFieldId !== null || sortBy !== 'createdAt' || sortDir !== 'desc'
+  const archivedCount = products.filter(p => p.archived).length
+
+  // Продукти, чиє значення обраного кастомного поля збігається з обраним —
+  // resolve відбувається тут (а не в .filter нижче) заради читабельності.
+  const matchingFieldProductIds = (() => {
+    if (!filterField || filterFieldValue === null) return null
+    return new Set(
+      allFieldValues
+        .filter(v => v.fieldDefinitionId === filterField.id && (
+          filterField.fieldType === 'boolean'
+            ? String(v.valueBoolean) === filterFieldValue
+            : v.valueOptionId === filterFieldValue
+        ))
+        .map(v => v.entityId)
+    )
+  })()
 
   const filtered = products
     .filter(p => {
+      const matchArchived = showArchived ? p.archived : !p.archived
       const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.sku.toLowerCase().includes(search.toLowerCase())
       const matchStatus = filterStatusId === null || p.statusId === filterStatusId
       const matchCat = filterCatId === null || p.categoryId === filterCatId
-      return matchSearch && matchStatus && matchCat
+      const matchField = matchingFieldProductIds === null || matchingFieldProductIds.has(p.id)
+      return matchArchived && matchSearch && matchStatus && matchCat && matchField
     })
     .sort((a, b) => {
       let cmp = 0
@@ -225,20 +268,31 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
       <div className="px-4 pt-5 pb-4">
         <div className="flex items-start justify-between mb-1">
           <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="text-2xl text-slate-800">{t('products.title')}</h1>
-          <button onClick={() => setEditId('new')}
-            className="flex items-center gap-1.5 rounded-2xl bg-slate-800 px-4 py-2.5 text-xs font-semibold text-white active:scale-95 transition-all shrink-0 mt-1">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-              <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-            </svg>
-            {t('products.new')}
-          </button>
+          {canEditProducts && (
+            <button onClick={() => setEditId('new')}
+              className="flex items-center gap-1.5 rounded-2xl bg-slate-800 px-4 py-2.5 text-xs font-semibold text-white active:scale-95 transition-all shrink-0 mt-1">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              </svg>
+              {t('products.new')}
+            </button>
+          )}
         </div>
-        <p className="text-xs text-slate-400 mb-4">
-          {filtered.length !== products.length
-            ? <>{t('products.filteredOfTotal', { filtered: filtered.length, total: products.length })} · {activeStatus ? <span style={{ color: activeStatus.color }}>{tn(activeStatus.name, activeStatus.nameEn)}</span> : t('filters.all')}</>
-            : <>{products.length} {t('products.items')}</>
-          }
-        </p>
+        <div className="flex items-center gap-2 mb-4">
+          <p className="text-xs text-slate-400">
+            {filtered.length !== products.length
+              ? <>{t('products.filteredOfTotal', { filtered: filtered.length, total: products.length })} · {activeStatus ? <span style={{ color: activeStatus.color }}>{tn(activeStatus.name, activeStatus.nameEn)}</span> : t('filters.all')}</>
+              : <>{filtered.length} {t('products.items')}</>
+            }
+          </p>
+          {(archivedCount > 0 || showArchived) && (
+            <button onClick={() => setShowArchived(v => !v)}
+              className="rounded-full px-2 py-0.5 text-[10px] font-semibold transition-all"
+              style={showArchived ? { background: '#1e293b', color: '#fff' } : { background: '#f1f5f9', color: '#64748b' }}>
+              {showArchived ? t('products.toActive') : t('products.archiveWithCount', { count: archivedCount })}
+            </button>
+          )}
+        </div>
 
         {/* Search + filter row */}
         <div className="flex gap-2 mb-3">
@@ -356,9 +410,50 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
                     </div>
                   </div>
                 )}
+                {/* Кастомне поле — спершу яке поле (лише select/boolean мають
+                    дискретні значення, зручні для фільтра), тоді яке значення. */}
+                {productFields.filter(f => f.fieldType === 'select' || f.fieldType === 'boolean').length > 0 && (
+                  <div>
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">{t('filters.customField')}</p>
+                    <select value={filterFieldId ?? ''} onChange={e => { setFilterFieldId(e.target.value || null); setFilterFieldValue(null) }}
+                      className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-blue-400 transition-all mb-1.5">
+                      <option value="">{t('filters.allFields')}</option>
+                      {productFields.filter(f => f.fieldType === 'select' || f.fieldType === 'boolean').map(f => (
+                        <option key={f.id} value={f.id}>{tn(f.name, f.nameEn)}</option>
+                      ))}
+                    </select>
+                    {filterField && (
+                      <div className="space-y-1">
+                        {filterField.fieldType === 'boolean' ? (
+                          [['true', t('common.yes')], ['false', t('common.no')]].map(([val, label]) => {
+                            const active = filterFieldValue === val
+                            return (
+                              <button key={val} onClick={() => setFilterFieldValue(active ? null : val)}
+                                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-all"
+                                style={active ? { background: '#f8fafc', color: '#1e293b', fontWeight: 500 } : { color: '#64748b' }}>
+                                {label}
+                              </button>
+                            )
+                          })
+                        ) : (
+                          filterField.options.map(o => {
+                            const active = filterFieldValue === o.id
+                            return (
+                              <button key={o.id} onClick={() => setFilterFieldValue(active ? null : o.id)}
+                                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-all"
+                                style={active ? { background: '#f8fafc', color: '#1e293b', fontWeight: 500 } : { color: '#64748b' }}>
+                                {tn(o.value, o.valueEn)}
+                              </button>
+                            )
+                          })
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {/* Reset */}
                 {hasActiveFilters && (
-                  <button onClick={() => { setFilter(defaultStatusId); setFilterCatId(null); setSortBy('createdAt'); setSortDir('desc'); lsSet(LS_SORT_BY, 'createdAt'); lsSet(LS_SORT_DIR, 'desc') }}
+                  <button onClick={() => { setFilter(defaultStatusId); setFilterCatId(null); setFilterFieldId(null); setFilterFieldValue(null); setSortBy('createdAt'); setSortDir('desc'); lsSet(LS_SORT_BY, 'createdAt'); lsSet(LS_SORT_DIR, 'desc') }}
                     className="w-full rounded-xl py-2 text-xs text-slate-400 hover:text-red-400 transition-colors text-center">
                     {t('filters.reset')}
                   </button>
@@ -375,7 +470,7 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
         ) : filtered.length === 0 ? (
           <div className="rounded-2xl bg-white py-14 text-center" style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
             <p className="text-2xl mb-2">📦</p>
-            <p className="text-sm text-slate-400">{t('products.empty')}</p>
+            <p className="text-sm text-slate-400">{showArchived ? t('products.archiveEmpty') : t('products.empty')}</p>
           </div>
         ) : (
           filtered.map(product => {
@@ -402,6 +497,9 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
                         <p className="text-sm font-semibold text-slate-800 truncate">{product.name}</p>
                         <p className="text-xs font-mono text-slate-400 mt-0.5">{product.sku}</p>
                         <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                          {product.archived && (
+                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-600">{t('products.archived')}</span>
+                          )}
                           {statusObj && (
                             <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
                               <span className="h-1.5 w-1.5 rounded-full" style={{ background: statusObj.color }} />
@@ -429,30 +527,52 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
                           )}
                         </div>
                       </div>
-                      {/* More actions — stop propagation so card tap still works */}
-                      <div className="relative shrink-0" onClick={e => e.stopPropagation()}>
-                        <button onClick={() => setOpenMenu(openMenu === product.id ? null : product.id)}
-                          className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 text-slate-400 hover:border-blue-300 hover:text-blue-500 transition-all">
-                          <MoreIcon />
-                        </button>
-                        {openMenu === product.id && (
-                          <>
-                            <div className="fixed inset-0 z-10" onClick={() => setOpenMenu(null)} />
-                            <div className="absolute right-0 top-9 z-20 w-52 rounded-2xl bg-white py-1.5"
-                              style={{ border: '1px solid rgba(157,200,255,0.3)', boxShadow: '0 8px 32px rgba(15,23,42,0.14)' }}>
-                              <MenuBtn icon={<PencilIcon />} label={t('common.edit')} onClick={() => { setEditId(product.id); setOpenMenu(null) }} />
-                              <MenuBtn icon={<QRIcon />} label={t('products.printQr')} onClick={() => { setQrProductId(product.id); setOpenMenu(null) }} />
-                              <MenuBtn icon={<CostIcon />} label={t('products.cost')} onClick={() => { handleExportCost(product); setOpenMenu(null) }} />
-                            </div>
-                          </>
-                        )}
-                      </div>
+                      {/* More actions — редагування продукту (доступно й "менеджеру
+                          перегляд" — зміни логуються, sql/manager_view_role.sql);
+                          stop propagation so card tap still works */}
+                      {canEditProducts && (
+                        <div className="relative shrink-0" onClick={e => e.stopPropagation()}>
+                          <button onClick={() => setOpenMenu(openMenu === product.id ? null : product.id)}
+                            className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 text-slate-400 hover:border-blue-300 hover:text-blue-500 transition-all">
+                            <MoreIcon />
+                          </button>
+                          {openMenu === product.id && (
+                            <>
+                              <div className="fixed inset-0 z-10" onClick={() => setOpenMenu(null)} />
+                              <div className="absolute right-0 top-9 z-20 w-52 rounded-2xl bg-white py-1.5"
+                                style={{ border: '1px solid rgba(157,200,255,0.3)', boxShadow: '0 8px 32px rgba(15,23,42,0.14)' }}>
+                                {showArchived ? (
+                                  <MenuBtn icon={<ArchiveIcon />} label={t('products.returnFromArchive')} onClick={() => { archiveProduct(product.id, false); setOpenMenu(null) }} />
+                                ) : (
+                                  <>
+                                    <MenuBtn icon={<PencilIcon />} label={t('common.edit')} onClick={() => { setEditId(product.id); setOpenMenu(null) }} />
+                                    <MenuBtn icon={<QRIcon />} label={t('products.printQr')} onClick={() => { setQrProductId(product.id); setOpenMenu(null) }} />
+                                    {/* Собівартість (матеріалів/операцій) — не для "менеджера перегляд" */}
+                                    {isManager && (
+                                      <MenuBtn icon={<CostIcon />} label={t('products.cost')} onClick={() => { handleExportCost(product); setOpenMenu(null) }} />
+                                    )}
+                                    <MenuBtn icon={<ArchiveIcon />} label={t('products.archive')} onClick={() => { archiveProduct(product.id, true); setOpenMenu(null) }} />
+                                  </>
+                                )}
+                                {/* Видалити — лише адмін (і на рівні БД теж, не лише тут — sql/product_archive_and_delete.sql) */}
+                                {isAdmin && (
+                                  <>
+                                    <div className="my-1 mx-3 border-t border-slate-100" />
+                                    <MenuBtn icon={<TrashIcon />} label={t('common.delete')} danger onClick={() => { setConfirmDelete(product); setOpenMenu(null) }} />
+                                  </>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    {/* Специфікація (веде на спільну сторінку з табами "Матеріали"/
-                        "Операції", SpecificationPage.tsx) і Завдання (форма створення
-                        з уже обраним цим продуктом) — обидві притиснуті до низу
-                        стовпчика, врівень із фото, а не на всю ширину картки. */}
+                    {/* Специфікація (лише повний менеджер/адмін — "менеджер перегляд"
+                        доступу до неї не має) і Завдання (форма створення з уже
+                        обраним цим продуктом, доступна й "менеджеру перегляд") —
+                        обидві притиснуті до низу стовпчика, врівень із фото. */}
                     <div className="mt-auto pt-3 space-y-2" onClick={e => e.stopPropagation()}>
+                      {isManager && (
                       <button
                         onClick={() => setQuickAction({ productId: product.id, type: 'materials' })}
                         className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 py-2.5 text-xs font-medium text-amber-600 active:scale-[0.97] transition-all">
@@ -462,6 +582,7 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
                           <span className="block">{t('products.materialsAndOperationsLabel')}</span>
                         </span>
                       </button>
+                      )}
                       <button
                         onClick={() => setTaskProductId(product.id)}
                         className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 py-2.5 text-xs font-medium text-white active:scale-[0.97] transition-all">
@@ -486,7 +607,7 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
       {taskProductId !== null && currentUser && (
         <AssignmentFormSheet
           currentUser={currentUser}
-          isManager={!!isManager}
+          isManager={canAssignTasks}
           users={usersQ.data ?? []}
           products={products}
           operations={operations}
@@ -494,6 +615,28 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
           onClose={() => setTaskProductId(null)}
           onCreated={() => { setTaskProductId(null); showToast(t('assignments.toastCreated')) }}
         />
+      )}
+
+      {/* Підтвердження видалення — лише адмін, той самий патерн, що й у MaterialStock.tsx */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-6">
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setConfirmDelete(null)} />
+          <div className="relative z-10 w-full max-w-sm rounded-3xl bg-white px-6 py-6"
+            style={{ boxShadow: '0 16px 48px rgba(0,0,0,0.18)' }}>
+            <p className="text-base font-semibold text-slate-800 mb-2">{t('products.deleteConfirm', { name: confirmDelete.name })}</p>
+            <p className="text-sm text-slate-500 mb-6">{t('common.actionIrreversible')}</p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmDelete(null)}
+                className="flex-1 rounded-2xl border border-slate-200 py-3 text-sm font-medium text-slate-500 active:scale-[0.98]">
+                {t('common.cancel')}
+              </button>
+              <button onClick={() => { removeProduct(confirmDelete.id); setConfirmDelete(null) }}
+                className="flex-1 rounded-2xl bg-red-500 py-3 text-sm font-semibold text-white active:scale-[0.98]">
+                {t('common.delete')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Toast */}
@@ -720,6 +863,23 @@ function CostIcon() {
     <svg width="15" height="15" viewBox="0 0 14 14" fill="none">
       <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.3"/>
       <path d="M7 3.7v6.6M9 5.2c0-.8-.9-1.5-2-1.5s-2 .6-2 1.4c0 .9.9 1.2 2 1.4 1.1.2 2 .6 2 1.4 0 .8-.9 1.4-2 1.4s-2-.6-2-1.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+    </svg>
+  )
+}
+
+function ArchiveIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 13 13" fill="none">
+      <path d="M1.5 3.5h10v2h-10v-2z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+      <path d="M2.5 5.5v5.5a1 1 0 001 1h5a1 1 0 001-1V5.5M5.3 8h2.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
+function TrashIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 13 13" fill="none">
+      <path d="M2 3h9M4 3V2h5v1M5 6v4M8 6v4M3 3l.5 8h6l.5-8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   )
 }

@@ -9,7 +9,7 @@ import PositionPickerSheet from './PositionPickerSheet'
 import { useLocale } from './LocaleContext'
 import type { TranslationKey } from './i18n'
 
-const ROLE_LABEL_KEY: Record<UserRole, TranslationKey> = { admin: 'role.admin', manager: 'role.manager', performer: 'role.performer' }
+const ROLE_LABEL_KEY: Record<UserRole, TranslationKey> = { admin: 'role.admin', manager: 'role.manager', manager_view: 'role.managerView', performer: 'role.performer' }
 
 /* ───────────────────────────────────────────────────────────
    Картка працівника — і власний профіль (Shell.tsx), і чужа картка
@@ -195,6 +195,7 @@ export default function ProfilePage({ employeeId, onBack }: { employeeId: string
                   <select value={role} onChange={e => setRole(e.target.value as UserRole)}
                     className="w-full appearance-none rounded-2xl border border-slate-200 bg-white pl-4 pr-9 py-3.5 text-sm outline-none focus:border-blue-400 transition-all">
                     <option value="performer">{t('role.performer')}</option>
+                    <option value="manager_view">{t('role.managerView')}</option>
                     <option value="manager">{t('role.manager')}</option>
                     <option value="admin">{t('role.admin')}</option>
                   </select>

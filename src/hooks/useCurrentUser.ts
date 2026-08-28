@@ -9,7 +9,11 @@ import { supabase } from '../lib/supabase'
    performer — лише свої.
 ─────────────────────────────────────────────────────────── */
 
-export type UserRole = 'admin' | 'manager' | 'performer'
+/** manager_view — "Менеджер перегляд": доступ до Продуктів (лише перегляд,
+ *  без специфікації/редагування продукту), Завдань (лише свої створені +
+ *  призначені йому, але може створювати комусь), Довідників, Налаштувань.
+ *  Без Матеріалів, Дашбордів, Працівників. */
+export type UserRole = 'admin' | 'manager' | 'manager_view' | 'performer'
 
 export interface CurrentUser {
   id: string

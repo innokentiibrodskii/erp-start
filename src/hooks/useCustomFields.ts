@@ -254,6 +254,37 @@ export function useCustomFieldValues(entityType: EntityType, entityId: string | 
   }
 }
 
+/** Значення кастомних полів УСІХ сутностей одного типу одразу (не однієї
+ *  конкретної, як useCustomFieldValues) — для фільтрації списку за значенням
+ *  кастомного поля (ProductCatalog.tsx). */
+export interface BulkCustomFieldValue {
+  entityId: string
+  fieldDefinitionId: string
+  valueOptionId: string | null
+  valueBoolean: boolean | null
+}
+
+export function useAllCustomFieldValues(entityType: EntityType) {
+  const orgId = useActiveOrgId()
+  const idCol = ID_COLUMN[entityType]
+  return useQuery({
+    queryKey: ['all-custom-field-values', entityType, orgId],
+    queryFn: async (): Promise<BulkCustomFieldValue[]> => {
+      const { data, error } = await supabase
+        .from(VALUE_TABLE[entityType])
+        .select(`${idCol}, field_definition_id, value_option_id, value_boolean`)
+        .eq('organization_id', orgId)
+      if (error) throw error
+      return (data as unknown as Record<string, unknown>[]).map(v => ({
+        entityId: v[idCol] as string,
+        fieldDefinitionId: v.field_definition_id as string,
+        valueOptionId: v.value_option_id as string | null,
+        valueBoolean: v.value_boolean as boolean | null,
+      }))
+    },
+  })
+}
+
 export function useCustomFieldValueMutations(entityType: EntityType) {
   const qc = useQueryClient()
   const orgId = useActiveOrgId()

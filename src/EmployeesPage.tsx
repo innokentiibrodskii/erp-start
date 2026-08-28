@@ -8,10 +8,11 @@ import PositionPickerSheet from './PositionPickerSheet'
 import { useLocale } from './LocaleContext'
 import type { TranslationKey } from './i18n'
 
-const ROLE_LABEL_KEY: Record<UserRole, TranslationKey> = { admin: 'role.admin', manager: 'role.manager', performer: 'role.performer' }
+const ROLE_LABEL_KEY: Record<UserRole, TranslationKey> = { admin: 'role.admin', manager: 'role.manager', manager_view: 'role.managerView', performer: 'role.performer' }
 const ROLE_BADGE: Record<UserRole, { bg: string; text: string }> = {
   admin: { bg: '#eef2ff', text: '#4f46e5' },
   manager: { bg: '#eff6ff', text: '#2563eb' },
+  manager_view: { bg: '#f0fdfa', text: '#0d9488' },
   performer: { bg: '#f1f5f9', text: '#64748b' },
 }
 
@@ -205,6 +206,7 @@ function EmployeeFormSheet({ onClose }: { onClose: () => void }) {
                 <select value={role} onChange={e => setRole(e.target.value as UserRole)}
                   className="w-full appearance-none rounded-2xl border border-slate-200 bg-white pl-4 pr-9 py-3.5 text-sm outline-none focus:border-blue-400 transition-all">
                   <option value="performer">{t('role.performer')}</option>
+                  <option value="manager_view">{t('role.managerView')}</option>
                   <option value="manager">{t('role.manager')}</option>
                   <option value="admin">{t('role.admin')}</option>
                 </select>

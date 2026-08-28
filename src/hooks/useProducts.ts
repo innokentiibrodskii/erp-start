@@ -58,6 +58,9 @@ export interface Product {
    *  sql/product_specifications.sql. Поки false, product_materials/product_operations
    *  реально заборонено міняти на рівні БД, не лише в інтерфейсі. */
   specificationEditing: boolean
+  /** Архівований продукт не показується в загальному списку (лише через
+   *  фільтр "Архів") — той самий підхід, що materials.archived. */
+  archived: boolean
   materials: ProductMaterialLink[]
   operations: ProductOperationLink[]
   attributes: ProductAttributeLink[]
@@ -202,7 +205,7 @@ export function useProducts() {
       const { data, error } = await supabase
         .from('products')
         .select(`
-          id, name, description, sku, category_id, status_id, created_at, updated_at, specification_editing,
+          id, name, description, sku, category_id, status_id, created_at, updated_at, specification_editing, archived,
           product_images(url, position),
           product_materials(id, material_id, qty, unit_id, operation_id, units(short_name, short_name_en)),
           product_operations(id, operation_id, task_id, tasks!product_operations_task_id_fkey(name, duration_minutes, cost)),
@@ -225,6 +228,7 @@ export function useProducts() {
           createdAt: new Date(p.created_at).getTime(),
           updatedAt: new Date(p.updated_at).getTime(),
           specificationEditing: p.specification_editing,
+          archived: p.archived,
           materials: (p.product_materials ?? []).map(m => ({
             id: m.id,
             materialId: m.material_id,
@@ -361,10 +365,23 @@ export function useProductMutations() {
     onError: onErr,
   })
 
+  // Архівувати може будь-хто з доступом до редагування продукту (звичайна
+  // update-політика) — видалити насправді може лише адмін, це вже
+  // забезпечує тригер у БД (sql/product_archive_and_delete.sql).
+  const setArchived = useMutation({
+    mutationFn: async ({ id, archived }: { id: string; archived: boolean }) => {
+      const { error } = await supabase.from('products').update({ archived }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+    onError: onErr,
+  })
+
   return {
     createProduct: (args: { name: string; description: string; categoryId: string | null; sku: string; photos: PhotoItem[]; videos: VideoItem[]; onProgress?: (key: string, loadedBytes: number) => void }) => create.mutateAsync(args),
     updateProduct: (args: { id: string; name: string; description: string; categoryId: string | null; statusId: string | null; photos: PhotoItem[]; videos: VideoItem[]; onProgress?: (key: string, loadedBytes: number) => void }) => update.mutateAsync(args),
     removeProduct: (id: string) => remove.mutate(id),
+    archiveProduct: (id: string, archived: boolean) => setArchived.mutate({ id, archived }),
     isSaving: create.isPending || update.isPending,
   }
 }

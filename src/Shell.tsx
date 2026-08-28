@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import type { DrilldownTarget } from './DashboardsPage'
-import { useCurrentUser } from './hooks/useCurrentUser'
+import { useCurrentUser, type UserRole } from './hooks/useCurrentUser'
 import { useOrg } from './OrgContext'
 import { useLocale } from './LocaleContext'
 import { LOCALE_LABEL, type Locale } from './i18n'
@@ -19,13 +19,20 @@ const AboutPage = lazy(() => import('./AboutPage'))
 
 type Page = 'products' | 'materials' | 'tasks' | 'directory' | 'settings' | 'employees' | 'dashboards' | 'profile' | 'about'
 
-/** Сторінки, доступні лише менеджеру (і адміну, який успадковує права менеджера) */
-const MANAGER_ONLY_PAGES: Page[] = ['products', 'materials', 'directory', 'settings', 'dashboards']
-/** Сторінки, доступні лише адміну */
-const ADMIN_ONLY_PAGES: Page[] = ['employees']
+/** Які сторінки бачить кожна роль (крім tasks/profile/about — вони відкриті всім).
+ *  manager_view: Продукти (лише перегляд — гейт на редагування/специфікацію
+ *  всередині ProductCatalog.tsx/SpecificationPage.tsx), Довідники, Налаштування —
+ *  без Матеріалів/Дашбордів/Працівників. */
+const ROLE_PAGES: Record<UserRole, Page[]> = {
+  admin: ['products', 'materials', 'directory', 'settings', 'employees', 'dashboards'],
+  manager: ['products', 'materials', 'directory', 'settings', 'dashboards'],
+  manager_view: ['products', 'directory', 'settings'],
+  performer: [],
+}
 
 /** Вкладки нижньої мобільної навігації — окремо для кожної ролі */
 const MOBILE_TABS_MANAGER: Page[] = ['products', 'materials']
+const MOBILE_TABS_MANAGER_VIEW: Page[] = ['products', 'tasks']
 const MOBILE_TABS_PERFORMER: Page[] = ['tasks']
 
 interface Props {
@@ -36,6 +43,8 @@ export default function Shell({ onLogout }: Props) {
   const { data: currentUser } = useCurrentUser()
   const isAdmin = currentUser?.role === 'admin'
   const isManager = currentUser?.role === 'manager' || isAdmin
+  const isManagerView = currentUser?.role === 'manager_view'
+  const pages = currentUser ? ROLE_PAGES[currentUser.role] : []
   const { activeOrgName, canSwitch, requestSwitch } = useOrg()
   const { locale, setLocale, t } = useLocale()
 
@@ -88,22 +97,22 @@ export default function Shell({ onLogout }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Виконавцю недоступні "Продукти" й "Матеріали" — якщо туди потрапили
-  // (наприклад дефолтний стан до завантаження ролі), повертаємо на "Завдання".
-  // "Працівники" доступні лише адміну.
+  // Якщо потрапили на сторінку, недоступну поточній ролі (наприклад дефолтний
+  // стан до завантаження ролі, чи "Працівники" не адміну), повертаємо на "Завдання".
   useEffect(() => {
     if (!currentUser) return
-    if (!isManager && MANAGER_ONLY_PAGES.includes(page)) { setPage('tasks'); return }
-    if (!isAdmin && ADMIN_ONLY_PAGES.includes(page)) setPage('tasks')
-  }, [currentUser, isManager, isAdmin, page])
+    if (page !== 'tasks' && page !== 'profile' && page !== 'about' && !pages.includes(page)) setPage('tasks')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser, page])
 
-  // Менеджеру за замовчуванням відкриваємо "Продукти", щойно роль відома.
+  // Менеджеру (і "менеджеру перегляд") за замовчуванням відкриваємо "Продукти",
+  // щойно роль відома.
   useEffect(() => {
-    if (currentUser && isManager) {
+    if (currentUser && (isManager || isManagerView)) {
       setPage(p => (p === 'tasks' ? 'products' : p))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser?.id, isManager])
+  }, [currentUser?.id, isManager, isManagerView])
 
   const allNavItems: { id: Page; label: string; icon: (active: boolean) => React.ReactNode }[] = [
     {
@@ -194,9 +203,8 @@ export default function Shell({ onLogout }: Props) {
     },
   ]
 
-  const navItems = allNavItems.filter(item =>
-    (isManager || !MANAGER_ONLY_PAGES.includes(item.id)) && (isAdmin || !ADMIN_ONLY_PAGES.includes(item.id)))
-  const mobileTabIds = isManager ? MOBILE_TABS_MANAGER : MOBILE_TABS_PERFORMER
+  const navItems = allNavItems.filter(item => item.id === 'tasks' || item.id === 'about' || pages.includes(item.id))
+  const mobileTabIds = isManager ? MOBILE_TABS_MANAGER : isManagerView ? MOBILE_TABS_MANAGER_VIEW : MOBILE_TABS_PERFORMER
   const mobileTabItems = allNavItems.filter(item => mobileTabIds.includes(item.id))
 
   return (
@@ -282,7 +290,7 @@ export default function Shell({ onLogout }: Props) {
         <main className="flex-1 overflow-y-auto pb-24 md:pb-8">
           <div className="max-w-lg mx-auto md:max-w-3xl md:mx-auto">
             <Suspense fallback={<div className="px-4 pt-8 text-center text-sm text-slate-400">{t('common.loading')}</div>}>
-              {page === 'products'  && isManager && (
+              {page === 'products'  && pages.includes('products') && (
                 <ProductCatalog key={productsResetKey} onNavigate={p => setPage(p as Page)}
                   initialViewId={productsResetKey === 0 && deepLink.view !== 'materials' ? deepLink.productId : null}
                   initialViewReturnTo={deepLink.returnTo}
@@ -290,8 +298,8 @@ export default function Shell({ onLogout }: Props) {
               )}
               {page === 'materials' && isManager && <MaterialStock key={materialsResetKey} onNavigate={p => setPage(p as Page)} initialMaterialId={materialsResetKey === 0 ? deepLink.materialId : null} initialMaterialReturnTo={deepLink.returnTo} />}
               {page === 'tasks'     && <AssignmentsPage />}
-              {page === 'directory' && isManager && <DirectoryCatalog onNavigate={p => setPage(p as Page)} />}
-              {page === 'settings'  && isManager && <CustomFieldsPage onBack={() => setPage('products')} />}
+              {page === 'directory' && pages.includes('directory') && <DirectoryCatalog onNavigate={p => setPage(p as Page)} />}
+              {page === 'settings'  && pages.includes('settings') && <CustomFieldsPage onBack={() => setPage('products')} />}
               {page === 'employees' && isAdmin && <EmployeesPage />}
               {page === 'dashboards' && isManager && <DashboardsPage initialDrilldown={deepLink.dashboardsDrilldown} />}
               {page === 'profile' && currentUser && <ProfilePage employeeId={currentUser.id} onBack={() => setPage(prevPage)} />}
@@ -385,16 +393,20 @@ export default function Shell({ onLogout }: Props) {
                     onClick={() => { setPage('dashboards'); setMenuOpen(false) }}
                   />
                 )}
-                <DrawerItem
-                  icon={<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="3" y="2.5" width="12" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.4"/><path d="M6 7h6M6 10h6M6 13h3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>}
-                  label={t('nav.directory')}
-                  onClick={() => { if (isManager) setPage('directory'); setMenuOpen(false) }}
-                />
-                <DrawerItem
-                  icon={<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.4"/><path d="M9 1.5v2M9 14.5v2M1.5 9h2M14.5 9h2M3.6 3.6l1.4 1.4M13 13l1.4 1.4M3.6 14.4L5 13M13 5l1.4-1.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>}
-                  label={t('nav.settings')}
-                  onClick={() => { if (isManager) setPage('settings'); setMenuOpen(false) }}
-                />
+                {pages.includes('directory') && (
+                  <DrawerItem
+                    icon={<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="3" y="2.5" width="12" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.4"/><path d="M6 7h6M6 10h6M6 13h3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>}
+                    label={t('nav.directory')}
+                    onClick={() => { setPage('directory'); setMenuOpen(false) }}
+                  />
+                )}
+                {pages.includes('settings') && (
+                  <DrawerItem
+                    icon={<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.4"/><path d="M9 1.5v2M9 14.5v2M1.5 9h2M14.5 9h2M3.6 3.6l1.4 1.4M13 13l1.4 1.4M3.6 14.4L5 13M13 5l1.4-1.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>}
+                    label={t('nav.settings')}
+                    onClick={() => { setPage('settings'); setMenuOpen(false) }}
+                  />
+                )}
                 <DrawerItem
                   icon={<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.4"/><path d="M9 8v4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><circle cx="9" cy="5.7" r="0.9" fill="currentColor"/></svg>}
                   label={t('nav.about')}

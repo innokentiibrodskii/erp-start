@@ -1,13 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
 import QRCodeLib from 'react-qr-code'
 import { useCatalog, type ProductCategory } from './hooks/useCatalog'
+import { useCurrentUser } from './hooks/useCurrentUser'
 import { useProducts, useMaterials, useProductStatuses, useProductPhotos, useProductVideos, type PhotoItem, type VideoItem } from './hooks/useProducts'
 import { useAssignments } from './hooks/useAssignments'
 import { useStockMovements } from './hooks/useMaterialStock'
 import { useCustomFieldDefinitions, useCustomFieldValues } from './hooks/useCustomFields'
 import { useMaterialCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
+import { useProductEvents, type ProductEvent, type ProductEventType } from './hooks/useProductEvents'
 import { fmt } from './lib/materialFormat'
 import { useLocale } from './LocaleContext'
+import type { TranslationKey } from './i18n'
 
 interface Props {
   productId: string
@@ -56,6 +59,13 @@ function buildProductCatPath(id: string | null, all: ProductCategory[], tn: (nam
 
 export default function ProductView({ productId, onBack, onEdit }: Props) {
   const { t, tn } = useLocale()
+  // "Менеджер перегляд" теж може редагувати продукт (зміни логуються —
+  // sql/manager_view_role.sql, useProductEvents.ts) — та сама умова, що й у
+  // ProductCatalog.tsx.
+  const { data: currentUser } = useCurrentUser()
+  const isManager = currentUser?.role === 'manager' || currentUser?.role === 'admin'
+  const isManagerView = currentUser?.role === 'manager_view'
+  const canEditProduct = isManager || isManagerView
   const { categories, operations, warehouses, attributes: catalogAttributes } = useCatalog()
   const productsQ = useProducts()
   const materialsQ = useMaterials()
@@ -75,6 +85,11 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
   const customDefs = customDefsQ.data ?? []
   const photos = photosQ.data ?? []
   const videos = videosQ.data ?? []
+
+  // "Історія" — аудит-лог змін продукту (хто/коли змінив назву, опис,
+  // категорію, статус) — та сама верстка, що й "Історія" у SpecificationPage.tsx.
+  const [view, setView] = useState<'detail' | 'history'>('detail')
+  const eventsQ = useProductEvents(canEditProduct && view === 'history' ? productId : null)
 
   const [variantsOpen, setVariantsOpen] = useState(false)
   const [openSection, setOpenSection] = useState<string | null>(null)
@@ -121,22 +136,46 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
       {/* Header */}
       <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3"
         style={{ background: 'rgba(248,251,255,0.95)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(157,200,255,0.2)' }}>
-        <button onClick={onBack}
+        <button onClick={() => view === 'history' ? setView('detail') : onBack()}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 active:scale-95 transition-all">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </button>
-        <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="flex-1 text-lg text-slate-800 truncate">{product.name}</h1>
-        <button onClick={onEdit}
-          className="flex items-center gap-1.5 rounded-xl bg-slate-800 px-4 py-2.5 text-xs font-medium text-white active:scale-95 transition-all shrink-0">
-          <svg width="12" height="12" viewBox="0 0 13 13" fill="none">
-            <path d="M9 2l2 2-7 7H2v-2L9 2z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          {t('common.edit')}
-        </button>
+        <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="flex-1 text-lg text-slate-800 truncate">
+          {view === 'history' ? t('assignments.historyTab') : product.name}
+        </h1>
+        {view === 'detail' && canEditProduct && (
+          <>
+            <button onClick={() => setView('history')} title={t('assignments.historyTab')}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 active:scale-95 transition-all">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.4"/>
+                <path d="M8 4.5V8l2.5 1.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+            <button onClick={onEdit}
+              className="flex items-center gap-1.5 rounded-xl bg-slate-800 px-4 py-2.5 text-xs font-medium text-white active:scale-95 transition-all shrink-0">
+              <svg width="12" height="12" viewBox="0 0 13 13" fill="none">
+                <path d="M9 2l2 2-7 7H2v-2L9 2z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              {t('common.edit')}
+            </button>
+          </>
+        )}
       </div>
 
+      {view === 'history' ? (
+        <div className="px-4 pb-8 pt-4 space-y-2">
+          {eventsQ.isLoading ? (
+            <p className="py-8 text-center text-sm text-slate-400">{t('common.loading')}</p>
+          ) : (eventsQ.data ?? []).length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-400">{t('assignments.noHistoryYet')}</p>
+          ) : (eventsQ.data ?? []).map(ev => (
+            <ProductEventRow key={ev.id} event={ev} categories={categories} statuses={statuses} />
+          ))}
+        </div>
+      ) : (
       <div className="px-4 pb-10 space-y-5 pt-4">
         {/* Photo + Video — окремі блоки в одній лінії */}
         {(photos.length > 0 || videos.length > 0) && (
@@ -160,12 +199,14 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
           <p className="text-xs font-mono text-slate-400 mt-0.5">SKU – {product.sku}</p>
         </div>
 
-        {/* Info rows: категорія, собівартість, статус */}
+        {/* Info rows: категорія, собівартість (не для "менеджера перегляд"), статус */}
         <div className="rounded-2xl bg-white overflow-hidden" style={{ border: '1px solid rgba(157,200,255,0.2)' }}>
           {[
             [t('filters.category'), catPath || '—'],
-            [t('productView.materialsCost'), `${fmt(materialsCost)} ${currencySymbol}`],
-            [t('productView.operationsCost'), `${fmt(operationsCost)} ₴`],
+            ...(isManagerView ? [] : [
+              [t('productView.materialsCost'), `${fmt(materialsCost)} ${currencySymbol}`],
+              [t('productView.operationsCost'), `${fmt(operationsCost)} ₴`],
+            ]),
             [t('productView.statusLabel'), status ? tn(status.name, status.nameEn) : '—'],
           ].map(([label, value], i, arr) => (
             <div key={label} className="flex items-center justify-between px-4 py-3"
@@ -368,6 +409,7 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
           </div>
         </div>
       </div>
+      )}
     </div>
   )
 }
@@ -377,6 +419,66 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
 ═══════════════════════════════════════════════════════════ */
 /** Спільний обробник для каруселей із прокруткою-снепом (фото й відео) —
  *  визначає активний слайд за позицією скролу. */
+const PRODUCT_EVENT_LABEL_KEY: Record<ProductEventType, TranslationKey> = {
+  created: 'productEvent.created',
+  name_changed: 'productEvent.nameChanged',
+  description_changed: 'productEvent.descriptionChanged',
+  category_changed: 'productEvent.categoryChanged',
+  status_changed: 'productEvent.statusChanged',
+}
+
+/** Один рядок "Історії" продукту — подія + деталі зміни (стара → нова) + хто
+ *  й коли. category_changed/status_changed зберігають id — резолвимо назву за
+ *  вже завантаженим каталогом (той самий підхід, що й ProductMaterialEventRow
+ *  у SpecificationPage.tsx). */
+function ProductEventRow({ event, categories, statuses }: {
+  event: ProductEvent
+  categories: ProductCategory[]
+  statuses: { id: string; name: string; nameEn: string | null }[]
+}) {
+  const { t, tn } = useLocale()
+
+  const catName = (id: string | null) => {
+    if (!id) return '—'
+    const c = categories.find(x => x.id === id)
+    return c ? tn(c.name, c.nameEn) : '—'
+  }
+  const statusName = (id: string | null) => {
+    if (!id) return '—'
+    const s = statuses.find(x => x.id === id)
+    return s ? tn(s.name, s.nameEn) : '—'
+  }
+
+  const detail = (() => {
+    if (event.eventType === 'created' && event.newValue && typeof event.newValue === 'object') return event.newValue.name
+    if (event.eventType === 'category_changed') {
+      const oldId = typeof event.oldValue === 'string' ? event.oldValue : null
+      const newId = typeof event.newValue === 'string' ? event.newValue : null
+      return `${catName(oldId)} → ${catName(newId)}`
+    }
+    if (event.eventType === 'status_changed') {
+      const oldId = typeof event.oldValue === 'string' ? event.oldValue : null
+      const newId = typeof event.newValue === 'string' ? event.newValue : null
+      return `${statusName(oldId)} → ${statusName(newId)}`
+    }
+    if (typeof event.oldValue === 'string' && typeof event.newValue === 'string') return `${event.oldValue} → ${event.newValue}`
+    return null
+  })()
+
+  return (
+    <div className="rounded-2xl bg-white px-4 py-3" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-medium text-slate-700 truncate">{t(PRODUCT_EVENT_LABEL_KEY[event.eventType])}</span>
+        <span className="text-[10px] text-slate-400 shrink-0">
+          {new Date(event.occurredAt).toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+        </span>
+      </div>
+      {detail && <p className="text-xs text-slate-500 mt-0.5 truncate">{detail}</p>}
+      <p className="text-xs text-slate-400 mt-0.5">{event.actorName}</p>
+    </div>
+  )
+}
+
 function trackScrolled(setIdx: (i: number) => void) {
   return (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget
