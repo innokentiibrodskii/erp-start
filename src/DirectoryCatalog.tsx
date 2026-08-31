@@ -3,7 +3,7 @@ import { useCatalog, genCategoryShortCode } from './hooks/useCatalog'
 import { PRESET_COLORS } from './lib/colors'
 import { buildCatPath } from './lib/materialFormat'
 import type { Department, Position, ProductCategory, ProductAttribute, Operation, Warehouse, MaterialCategory, Unit, Supplier } from './hooks/useCatalog'
-import { useProductStatuses, useProductStatusMutations, type ProductStatus } from './hooks/useProducts'
+import { useProductStatuses, useProductStatusMutations, type ProductStatus, usePhotoStatuses, usePhotoStatusMutations, type PhotoStatus } from './hooks/useProducts'
 import { useCustomFieldDefinitions, useCustomFieldDefinitionMutations, type CustomFieldDefinition, type EntityType, type FieldType } from './hooks/useCustomFields'
 import { useMaterialCostCurrency, useSetMaterialCostCurrency, CURRENCIES, CURRENCY_LABEL_KEY } from './hooks/useOrgSettings'
 import { useCurrentUser } from './hooks/useCurrentUser'
@@ -23,6 +23,7 @@ type SubPage =
   | 'units'
   | 'suppliers'
   | 'productStatuses'
+  | 'photoStatuses'
 
 type DirectoryGroup = 'Продукт' | 'Матеріали' | 'Люди' | 'Системні каталоги'
 
@@ -47,6 +48,7 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<DirectoryGroup>>(new Set(['Системні каталоги']))
   const catalog = useCatalog()
   const statusesQ = useProductStatuses()
+  const photoStatusesQ = usePhotoStatuses()
 
   const toggleGroup = (g: DirectoryGroup) => setCollapsedGroups(prev => {
     const next = new Set(prev)
@@ -109,6 +111,11 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
       color: '#64748b', bg: '#f1f5f9', count: () => statusesQ.data?.length ?? 0,
       icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.5"/><path d="M6.8 10l2.2 2.2 4.2-4.4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
     },
+    {
+      id: 'photoStatuses', group: 'Системні каталоги', label: t('directory.tiles.photoStatuses.label'), description: t('directory.tiles.photoStatuses.desc'),
+      color: '#64748b', bg: '#f1f5f9', count: () => photoStatusesQ.data?.length ?? 0,
+      icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="4" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5"/><circle cx="7.5" cy="8.5" r="1.5" stroke="currentColor" strokeWidth="1.3"/><path d="M3 13.5l4-3.5 3 2.5 3.5-3L17 13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+    },
   ]
 
   const GROUP_LABEL_KEY: Record<DirectoryGroup, TranslationKey> = {
@@ -128,6 +135,7 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
   if (page === 'units')              return <UnitsPage              onBack={() => setPage(null)} />
   if (page === 'suppliers')          return <SuppliersPage          onBack={() => setPage(null)} />
   if (page === 'productStatuses')    return <ProductStatusesPage    onBack={() => setPage(null)} />
+  if (page === 'photoStatuses')      return <PhotoStatusesPage      onBack={() => setPage(null)} />
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -188,7 +196,7 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
    Shared primitives
 ─────────────────────────────────────────────────────────── */
 
-function SubPageHeader({ title, subtitle, onBack, onAdd }: { title: string; subtitle: string; onBack: () => void; onAdd?: () => void }) {
+export function SubPageHeader({ title, subtitle, onBack, onAdd }: { title: string; subtitle: string; onBack: () => void; onAdd?: () => void }) {
   const { t } = useLocale()
   return (
     <div className="flex items-center gap-3 px-4 py-4" style={{ borderBottom: '1px solid rgba(157,200,255,0.2)' }}>
@@ -215,7 +223,7 @@ function SubPageHeader({ title, subtitle, onBack, onAdd }: { title: string; subt
   )
 }
 
-function BottomSheet({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+export function BottomSheet({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center sm:p-4"
       style={{ background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)' }}
@@ -230,11 +238,11 @@ function BottomSheet({ children, onClose }: { children: React.ReactNode; onClose
   )
 }
 
-function SheetTitle({ children }: { children: React.ReactNode }) {
+export function SheetTitle({ children }: { children: React.ReactNode }) {
   return <h2 style={{ fontFamily: "'DM Serif Display', serif" }} className="py-3 text-2xl text-slate-800 px-5">{children}</h2>
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+export function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
       <label className="mb-1.5 block text-xs font-medium uppercase tracking-widest text-slate-400">{label}</label>
@@ -243,14 +251,14 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-function Input({ value, onChange, placeholder, type = 'text' }: { value: string; onChange: (v: string) => void; placeholder?: string; type?: string }) {
+export function Input({ value, onChange, placeholder, type = 'text' }: { value: string; onChange: (v: string) => void; placeholder?: string; type?: string }) {
   return (
     <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
       className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
   )
 }
 
-function SheetActions({ onCancel, onSave, saveLabel, disabled }: { onCancel: () => void; onSave: () => void; saveLabel?: string; disabled?: boolean }) {
+export function SheetActions({ onCancel, onSave, saveLabel, disabled }: { onCancel: () => void; onSave: () => void; saveLabel?: string; disabled?: boolean }) {
   const { t } = useLocale()
   return (
     <div className="flex gap-3 mt-6 px-5 pb-10">
@@ -263,7 +271,7 @@ function SheetActions({ onCancel, onSave, saveLabel, disabled }: { onCancel: () 
   )
 }
 
-function DeleteButton({ onDelete }: { onDelete: () => void }) {
+export function DeleteButton({ onDelete }: { onDelete: () => void }) {
   return (
     <button onClick={onDelete}
       className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 text-slate-300 hover:border-red-200 hover:text-red-400 active:scale-95 transition-all shrink-0">
@@ -274,7 +282,7 @@ function DeleteButton({ onDelete }: { onDelete: () => void }) {
   )
 }
 
-function EditButton({ onEdit }: { onEdit: () => void }) {
+export function EditButton({ onEdit }: { onEdit: () => void }) {
   return (
     <button onClick={onEdit}
       className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-800 text-white active:scale-95 transition-all shrink-0">
@@ -1148,6 +1156,85 @@ function ProductStatusesPage({ onBack }: { onBack: () => void }) {
   )
 }
 
+/** Прямий дублікат ProductStatusesPage вище — той самий довідниковий патерн,
+ *  для статусів окремих фото в галереї продукту, + перемикач "Показувати"
+ *  (is_visible: гейтить показ у ProductView.tsx і printProductForm.ts). */
+function PhotoStatusesPage({ onBack }: { onBack: () => void }) {
+  const statusesQ = usePhotoStatuses()
+  const statuses = statusesQ.data ?? []
+  const { addStatus, updateStatus, removeStatus, setDefaultStatus } = usePhotoStatusMutations()
+  const { t, tn } = useLocale()
+  const [form, setForm] = useState<{ open: boolean; editing: PhotoStatus | null; name: string; nameEn: string; color: string; isVisible: boolean }>
+    ({ open: false, editing: null, name: '', nameEn: '', color: PRESET_COLORS[0].text, isVisible: true })
+
+  const openAdd  = () => setForm({ open: true, editing: null, name: '', nameEn: '', color: PRESET_COLORS[0].text, isVisible: true })
+  const openEdit = (s: PhotoStatus) => setForm({ open: true, editing: s, name: s.name, nameEn: s.nameEn ?? '', color: s.color, isVisible: s.isVisible })
+  const close    = () => setForm(f => ({ ...f, open: false }))
+
+  const save = () => {
+    if (!form.name.trim()) return
+    const nameEn = form.nameEn.trim() || null
+    if (form.editing) updateStatus(form.editing.id, form.name.trim(), form.color, form.isVisible, nameEn)
+    else addStatus(form.name.trim(), form.color, form.isVisible, nameEn)
+    close()
+  }
+
+  const bgOf = (color: string) => PRESET_COLORS.find(c => c.text === color)?.bg ?? '#f1f5f9'
+
+  return (
+    <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
+      <SubPageHeader title={t('directory.tiles.photoStatuses.label')} subtitle={t('directory.countStatuses', { count: statuses.length })} onBack={onBack} onAdd={openAdd} />
+      <div className="px-4 py-4 space-y-2 pb-8">
+        {statuses.length === 0 && (
+          <p className="py-10 text-center text-sm text-slate-400">{t('directory.noStatusesYet')}</p>
+        )}
+        {statuses.map(s => (
+          <div key={s.id} className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3.5"
+            style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
+            <div className="h-9 w-9 shrink-0 rounded-xl flex items-center justify-center" style={{ background: bgOf(s.color) }}>
+              <div className="h-3 w-3 rounded-full" style={{ background: s.color }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="flex items-center gap-1.5 text-sm font-medium text-slate-800">
+                {tn(s.name, s.nameEn)}
+                {s.isDefault && (
+                  <span className="rounded-md px-1.5 py-0.5 text-[9px] font-medium" style={{ background: bgOf(s.color), color: s.color }}>{t('directory.defaultBadge')}</span>
+                )}
+                {!s.isVisible && (
+                  <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium text-slate-400">{t('directory.photoStatusHiddenBadge')}</span>
+                )}
+              </p>
+              {!s.isDefault && (
+                <button onClick={() => setDefaultStatus(s.id)} className="mt-0.5 text-xs text-blue-500 hover:underline">
+                  {t('directory.makeDefault')}
+                </button>
+              )}
+            </div>
+            <EditButton onEdit={() => openEdit(s)} />
+            <DeleteButton onDelete={() => removeStatus(s.id)} />
+          </div>
+        ))}
+      </div>
+      {form.open && (
+        <BottomSheet onClose={close}>
+          <SheetTitle>{form.editing ? t('directory.editStatus') : t('directory.newStatus')}</SheetTitle>
+          <div className="px-5 space-y-4">
+            <Field label={t('directory.nameLabel')}><Input value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} placeholder={t('directory.statusNameExample')} /></Field>
+            <Field label={t('common.nameEn')}><Input value={form.nameEn} onChange={v => setForm(f => ({ ...f, nameEn: v }))} placeholder="English name" /></Field>
+            <Field label={t('directory.colorLabel')}><ColorPicker value={form.color} onChange={v => setForm(f => ({ ...f, color: v }))} /></Field>
+            <label className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3 cursor-pointer">
+              <span className="text-sm text-slate-600">{t('directory.photoStatusVisibleLabel')}</span>
+              <input type="checkbox" checked={form.isVisible} onChange={e => setForm(f => ({ ...f, isVisible: e.target.checked }))}
+                className="h-4 w-4 rounded accent-slate-800" />
+            </label>
+          </div>
+          <SheetActions onCancel={close} onSave={save} saveLabel={form.editing ? t('common.save') : t('common.add')} disabled={!form.name.trim()} />
+        </BottomSheet>
+      )}
+    </div>
+  )
+}
+
 /* ─── CUSTOM FIELDS (системний конструктор для 3 сутностей) ─── */
 const ENTITY_TAB_IDS: EntityType[] = ['material', 'supplier', 'product']
 const ENTITY_TAB_LABEL_KEY: Record<EntityType, TranslationKey> = {
@@ -1175,7 +1262,7 @@ function FieldDefBody({ d }: { d: CustomFieldDefinition }) {
   )
 }
 
-export function CustomFieldsPage({ onBack }: { onBack: () => void }) {
+export function CustomFieldsPage({ onBack, onOpenPrintForms }: { onBack: () => void; onOpenPrintForms: () => void }) {
   const [entityType, setEntityType] = useState<EntityType>('material')
   const definitionsQ = useCustomFieldDefinitions(entityType)
   const definitions = definitionsQ.data ?? []
@@ -1292,6 +1379,26 @@ export function CustomFieldsPage({ onBack }: { onBack: () => void }) {
           </div>
           <p className="mt-1.5 text-[10px] text-slate-300">{t('directory.currencyHint')}</p>
         </div>
+      </div>
+
+      <div className="px-4 pt-3">
+        <button onClick={onOpenPrintForms}
+          className="flex w-full items-center gap-3 rounded-2xl bg-white p-4 text-left active:scale-[0.99] transition-all"
+          style={{ border: '1px solid rgba(157,200,255,0.22)' }}>
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-500">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M4 6V2h8v4M4 12h8v3H4v-3zM2 6h12a1 1 0 011 1v4a1 1 0 01-1 1h-2v-2H4v2H2a1 1 0 01-1-1V7a1 1 0 011-1z"
+                stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-slate-800">{t('printForms.title')}</p>
+            <p className="text-xs text-slate-400">{t('printForms.settingsCardHint')}</p>
+          </div>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="shrink-0 text-slate-300 -rotate-90">
+            <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
       </div>
 
       {isAdmin && (

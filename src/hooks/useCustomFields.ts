@@ -260,10 +260,15 @@ export function useCustomFieldValues(entityType: EntityType, entityId: string | 
 export interface BulkCustomFieldValue {
   entityId: string
   fieldDefinitionId: string
+  valueText: string | null
+  valueNumber: number | null
   valueOptionId: string | null
   valueBoolean: boolean | null
 }
 
+/** Значення кастомних полів усіх сутностей одразу — і для фільтрації списку
+ *  (ProductCatalog.tsx, потрібні лише valueOptionId/valueBoolean), і для
+ *  друкованих форм (PrintFormsPage.tsx, потрібні також valueText/valueNumber). */
 export function useAllCustomFieldValues(entityType: EntityType) {
   const orgId = useActiveOrgId()
   const idCol = ID_COLUMN[entityType]
@@ -272,12 +277,14 @@ export function useAllCustomFieldValues(entityType: EntityType) {
     queryFn: async (): Promise<BulkCustomFieldValue[]> => {
       const { data, error } = await supabase
         .from(VALUE_TABLE[entityType])
-        .select(`${idCol}, field_definition_id, value_option_id, value_boolean`)
+        .select(`${idCol}, field_definition_id, value_text, value_number, value_option_id, value_boolean`)
         .eq('organization_id', orgId)
       if (error) throw error
       return (data as unknown as Record<string, unknown>[]).map(v => ({
         entityId: v[idCol] as string,
         fieldDefinitionId: v.field_definition_id as string,
+        valueText: v.value_text as string | null,
+        valueNumber: v.value_number !== null ? Number(v.value_number) : null,
         valueOptionId: v.value_option_id as string | null,
         valueBoolean: v.value_boolean as boolean | null,
       }))

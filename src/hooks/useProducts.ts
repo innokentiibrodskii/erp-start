@@ -54,6 +54,13 @@ export interface Product {
   categoryId: string | null
   statusId: string | null
   photo: string | null
+  /** Усі фото галереї продукту (відсортовані за position, обкладинка — перша).
+   *  isVisible — з photo_statuses.is_visible (гейтить показ: друкована форма
+   *  й перегляд продукту пропускають фото з isVisible=false, якщо шаблон
+   *  друку не обрав конкретні статуси явно — statusId саме для цього).
+   *  Наразі використовується у друкованій формі (PrintFormsPage.tsx), щоб
+   *  показати кілька фото на картці, не лише обкладинку. */
+  photos: { url: string; isVisible: boolean; statusId: string | null }[]
   createdAt: number
   updatedAt: number
   /** Специфікація (матеріали+операції) зараз у режимі редагування ("чернетка") —
@@ -171,22 +178,139 @@ export function useProductStatusMutations() {
   }
 }
 
+/* ───────────────────────────────────────────────────────────
+   Статуси фото (довідник для окремих фото в галереї продукту, Довідники →
+   "Статуси фото") — прямий дублікат product_statuses, + isVisible: гейтить
+   показ фото в ProductPhotoGallery (ProductView.tsx) і в друкованій формі
+   (printProductForm.ts).
+─────────────────────────────────────────────────────────── */
+
+export interface PhotoStatus {
+  id: string
+  code: string
+  name: string
+  nameEn: string | null
+  color: string
+  isDefault: boolean
+  isVisible: boolean
+}
+
+export function usePhotoStatuses() {
+  const orgId = useActiveOrgId()
+  return useQuery({
+    queryKey: ['photo-statuses', orgId],
+    queryFn: async (): Promise<PhotoStatus[]> => {
+      const { data, error } = await supabase
+        .from('photo_statuses')
+        .select('id, code, name, name_en, color, is_default, is_visible')
+        .eq('organization_id', orgId)
+        .order('name')
+      if (error) throw error
+      return data.map(s => ({ id: s.id, code: s.code, name: s.name, nameEn: s.name_en, color: s.color ?? '#94a3b8', isDefault: s.is_default, isVisible: s.is_visible }))
+    },
+  })
+}
+
+export function usePhotoStatusMutations() {
+  const qc = useQueryClient()
+  const orgId = useActiveOrgId()
+  const { t } = useLocale()
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['photo-statuses', orgId] })
+  const onErr = (error: { message: string; code?: string }) => showErrorToast(friendlyError(error, t))
+
+  const add = useMutation({
+    mutationFn: async ({ name, nameEn, color, isVisible }: { name: string; nameEn: string | null; color: string; isVisible: boolean }) => {
+      const base = slugifyStatusCode(name)
+      let code = base
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const { error } = await supabase.from('photo_statuses').insert({ name, name_en: nameEn, color, code, is_visible: isVisible, organization_id: orgId })
+        if (!error) return
+        if (error.code === '23505') { code = `${base}-${attempt + 2}`; continue }
+        throw error
+      }
+    },
+    onSuccess: invalidate,
+    onError: onErr,
+  })
+
+  const update = useMutation({
+    mutationFn: async ({ id, name, nameEn, color, isVisible }: { id: string; name: string; nameEn: string | null; color: string; isVisible: boolean }) => {
+      const { error } = await supabase.from('photo_statuses').update({ name, name_en: nameEn, color, is_visible: isVisible }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+    onError: onErr,
+  })
+
+  const remove = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('photo_statuses').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+    onError: onErr,
+  })
+
+  const setDefault = useMutation({
+    mutationFn: async (id: string) => {
+      const { error: e1 } = await supabase.from('photo_statuses').update({ is_default: false }).eq('organization_id', orgId).neq('id', id)
+      if (e1) throw e1
+      const { error: e2 } = await supabase.from('photo_statuses').update({ is_default: true }).eq('id', id)
+      if (e2) throw e2
+    },
+    onSuccess: invalidate,
+    onError: onErr,
+  })
+
+  return {
+    addStatus: (name: string, color: string, isVisible: boolean, nameEn: string | null = null) => add.mutateAsync({ name, nameEn, color, isVisible }),
+    updateStatus: (id: string, name: string, color: string, isVisible: boolean, nameEn: string | null = null) => update.mutateAsync({ id, name, nameEn, color, isVisible }),
+    removeStatus: (id: string) => remove.mutate(id),
+    setDefaultStatus: (id: string) => setDefault.mutate(id),
+    isSaving: add.isPending || update.isPending,
+  }
+}
+
 export interface PhotoItem {
-  /** Стабільний ключ для React list (не id з бази) */
+  /** Стабільний ключ для React list (не завжди дорівнює dbId — для щойно
+   *  доданих, ще не збережених фото це crypto.randomUUID()). */
   key: string
   /** Прев'ю: object URL для нових файлів або публічний URL з бази */
   url: string
   /** Заповнено лише для щойно доданих (ще не завантажених) фото */
   file?: File
+  /** id рядка product_images у базі — null для ще не збереженого фото.
+   *  persistPhotos() використовує це для точкового upsert/delete замість
+   *  delete-all+insert (щоб statusId/originalUrl не губились при кожному
+   *  збереженні продукту). */
+  dbId: string | null
+  statusId: string | null
+  /** Посилання на нестиснений оригінал файлу — заповнюється лише якщо
+   *  користувач при завантаженні увімкнув "Зберігати оригінал". */
+  originalUrl: string | null
+  /** Сирий (нестиснений) файл — заповнюється для щойно доданого фото
+   *  завжди (сам об'єкт File нічого не коштує тримати в пам'яті); реально
+   *  вивантажується persistPhotos() лише якщо keepOriginal увімкнено для
+   *  цього конкретного фото — рішення приймається per-фото, а не глобально
+   *  на всі нові фото одразу (ProductEditor.tsx). */
+  originalFile?: File
+  keepOriginal?: boolean
+  /** Час додавання (product_images.created_at) — null для щойно доданого,
+   *  ще не збереженого фото (ProductEditor.tsx сортує такі як "найновіші"). */
+  createdAt: number | null
 }
 
 export interface VideoItem {
-  /** Стабільний ключ для React list (не id з бази) */
+  /** Стабільний ключ для React list (не завжди дорівнює dbId). */
   key: string
   /** Прев'ю: object URL для нових файлів або публічний URL з бази */
   url: string
   /** Заповнено лише для щойно доданих (ще не завантажених) відео */
   file?: File
+  /** id рядка product_videos у базі — null для ще не збереженого відео. */
+  dbId: string | null
+  /** Час додавання (product_videos.created_at) — null для щойно доданого. */
+  createdAt: number | null
 }
 
 /* ───────────────────────────────────────────────────────────
@@ -202,7 +326,7 @@ export function useProducts() {
         .from('products')
         .select(`
           id, name, description, sku, category_id, status_id, created_at, updated_at, specification_editing, archived,
-          product_images(url, position),
+          product_images(url, position, status_id, photo_statuses(is_visible)),
           product_materials(id, material_id, qty, unit_id, operation_id, units(short_name, short_name_en)),
           product_operations(id, operation_id, task_id, tasks!product_operations_task_id_fkey(name, duration_minutes, cost)),
           product_attribute_values(attribute_value_id, attribute_values(value, value_en, attribute_id, attributes(name, name_en)))
@@ -221,6 +345,11 @@ export function useProducts() {
           categoryId: p.category_id,
           statusId: p.status_id,
           photo: images[0]?.url ?? null,
+          photos: images.map(img => ({
+            url: img.url,
+            isVisible: (img.photo_statuses as unknown as { is_visible: boolean } | null)?.is_visible ?? true,
+            statusId: img.status_id,
+          })),
           createdAt: new Date(p.created_at).getTime(),
           updatedAt: new Date(p.updated_at).getTime(),
           specificationEditing: p.specification_editing,
@@ -262,45 +391,84 @@ export function useProducts() {
   })
 }
 
+async function getDefaultPhotoStatusId(orgId: string): Promise<string | null> {
+  const { data, error } = await supabase.from('photo_statuses').select('id').eq('organization_id', orgId).eq('is_default', true).limit(1).maybeSingle()
+  if (error) throw error
+  return data?.id ?? null
+}
+
+/** Точковий diff (upsert наявних за id + insert нових + delete прибраних)
+ *  замість delete-all+insert — щоб statusId/originalUrl не губились і не
+ *  переприв'язувались на новий id при кожному збереженні продукту (кожне
+ *  фото — окремий рядок product_images, id стабільний між збереженнями). */
 async function persistPhotos(orgId: string, productId: string, photos: PhotoItem[], onProgress?: (key: string, loadedBytes: number) => void) {
-  const resolvedUrls = await Promise.all(
+  const defaultStatusId = photos.some(p => p.statusId === null) ? await getDefaultPhotoStatusId(orgId) : null
+
+  const resolved = await Promise.all(
     photos.map(async (p, i) => {
-      if (!p.file) return p.url
-      const path = `${productId}/${Date.now()}-${i}-${p.file.name}`
-      await uploadFileWithProgress('product-photos', path, p.file, loaded => onProgress?.(p.key, loaded))
-      const { data } = supabase.storage.from('product-photos').getPublicUrl(path)
-      return data.publicUrl
+      let url = p.url
+      if (p.file) {
+        const path = `${productId}/${Date.now()}-${i}-${p.file.name}`
+        await uploadFileWithProgress('product-photos', path, p.file, loaded => onProgress?.(p.key, loaded))
+        url = supabase.storage.from('product-photos').getPublicUrl(path).data.publicUrl
+      }
+      let originalUrl = p.originalUrl
+      // keepOriginal — рішення per-фото (не глобальне на всі нові фото).
+      if (p.originalFile && p.keepOriginal) {
+        const originalPath = `${productId}/originals/${Date.now()}-${i}-${p.originalFile.name}`
+        await uploadFileWithProgress('product-photos', originalPath, p.originalFile)
+        originalUrl = supabase.storage.from('product-photos').getPublicUrl(originalPath).data.publicUrl
+      }
+      return { id: p.dbId ?? crypto.randomUUID(), url, statusId: p.statusId ?? defaultStatusId, originalUrl }
     })
   )
 
-  const { error: deleteError } = await supabase.from('product_images').delete().eq('product_id', productId)
-  if (deleteError) throw deleteError
+  const { data: existingRows, error: existingError } = await supabase.from('product_images').select('id').eq('product_id', productId)
+  if (existingError) throw existingError
+  const keepIds = new Set(resolved.map(p => p.id))
+  const toDelete = (existingRows ?? []).map(r => r.id).filter(id => !keepIds.has(id))
+  if (toDelete.length > 0) {
+    const { error: deleteError } = await supabase.from('product_images').delete().in('id', toDelete)
+    if (deleteError) throw deleteError
+  }
 
-  if (resolvedUrls.length > 0) {
-    const rows = resolvedUrls.map((url, position) => ({ product_id: productId, url, position, organization_id: orgId }))
-    const { error: insertError } = await supabase.from('product_images').insert(rows)
-    if (insertError) throw insertError
+  if (resolved.length > 0) {
+    const rows = resolved.map((p, position) => ({
+      id: p.id, product_id: productId, url: p.url, position, organization_id: orgId,
+      status_id: p.statusId, original_url: p.originalUrl,
+    }))
+    const { error: upsertError } = await supabase.from('product_images').upsert(rows)
+    if (upsertError) throw upsertError
   }
 }
 
+/** Той самий точковий diff, що й persistPhotos — id відео стабільний між збереженнями. */
 async function persistVideos(orgId: string, productId: string, videos: VideoItem[], onProgress?: (key: string, loadedBytes: number) => void) {
-  const resolvedUrls = await Promise.all(
+  const resolved = await Promise.all(
     videos.map(async (v, i) => {
-      if (!v.file) return v.url
-      const path = `${productId}/${Date.now()}-${i}-${v.file.name}`
-      await uploadFileWithProgress('product-videos', path, v.file, loaded => onProgress?.(v.key, loaded))
-      const { data } = supabase.storage.from('product-videos').getPublicUrl(path)
-      return data.publicUrl
+      let url = v.url
+      if (v.file) {
+        const path = `${productId}/${Date.now()}-${i}-${v.file.name}`
+        await uploadFileWithProgress('product-videos', path, v.file, loaded => onProgress?.(v.key, loaded))
+        url = supabase.storage.from('product-videos').getPublicUrl(path).data.publicUrl
+      }
+      return { id: v.dbId ?? crypto.randomUUID(), url }
     })
   )
 
-  const { error: deleteError } = await supabase.from('product_videos').delete().eq('product_id', productId)
-  if (deleteError) throw deleteError
+  const { data: existingRows, error: existingError } = await supabase.from('product_videos').select('id').eq('product_id', productId)
+  if (existingError) throw existingError
+  const keepIds = new Set(resolved.map(v => v.id))
+  const toDelete = (existingRows ?? []).map(r => r.id).filter(id => !keepIds.has(id))
+  if (toDelete.length > 0) {
+    const { error: deleteError } = await supabase.from('product_videos').delete().in('id', toDelete)
+    if (deleteError) throw deleteError
+  }
 
-  if (resolvedUrls.length > 0) {
-    const rows = resolvedUrls.map((url, position) => ({ product_id: productId, url, position, organization_id: orgId }))
-    const { error: insertError } = await supabase.from('product_videos').insert(rows)
-    if (insertError) throw insertError
+  if (resolved.length > 0) {
+    const rows = resolved.map((v, position) => ({ id: v.id, product_id: productId, url: v.url, position, organization_id: orgId }))
+    const { error: upsertError } = await supabase.from('product_videos').upsert(rows)
+    if (upsertError) throw upsertError
   }
 }
 
@@ -393,11 +561,14 @@ export function useProductPhotos(productId: string | null) {
     queryFn: async (): Promise<PhotoItem[]> => {
       const { data, error } = await supabase
         .from('product_images')
-        .select('id, url, position')
+        .select('id, url, position, status_id, original_url, created_at')
         .eq('product_id', productId as string)
         .order('position')
       if (error) throw error
-      return data.map(img => ({ key: img.id, url: img.url }))
+      return data.map(img => ({
+        key: img.id, url: img.url, dbId: img.id, statusId: img.status_id, originalUrl: img.original_url,
+        createdAt: new Date(img.created_at).getTime(),
+      }))
     },
   })
 }
@@ -413,11 +584,11 @@ export function useProductVideos(productId: string | null) {
     queryFn: async (): Promise<VideoItem[]> => {
       const { data, error } = await supabase
         .from('product_videos')
-        .select('id, url, position')
+        .select('id, url, position, created_at')
         .eq('product_id', productId as string)
         .order('position')
       if (error) throw error
-      return data.map(v => ({ key: v.id, url: v.url }))
+      return data.map(v => ({ key: v.id, url: v.url, dbId: v.id, createdAt: new Date(v.created_at).getTime() }))
     },
   })
 }
