@@ -22,6 +22,24 @@ import type { CustomFieldDefinition, BulkCustomFieldValue } from '../hooks/useCu
    одного SVG — непропорційно для цієї задачі. */
 
 const MAX_PHOTOS = 4
+const HERO_PHOTO_WIDTH = 700
+const EXTRA_PHOTO_WIDTH = 500
+
+/** Supabase Storage віддає повний оригінал — реальні фото продукту часто
+ *  кілька МБ (некомпресована камера телефону; ProductEditor.tsx стискає
+ *  лише файли понад 10 МБ). Для друку такий розмір не потрібен і сильно
+ *  сповільнює відкриття вікна: window.print() чекає window.onload, тобто
+ *  повного завантаження ВСІХ фото на сторінці одразу. Переписуємо URL на
+ *  вбудовану трансформацію Supabase (render/image) — стиснута версія на
+ *  льоту, ~10-15x менше за вагою (перевірено на реальних фото продукту),
+ *  без помітної для друку втрати якості. */
+function toPrintImageUrl(url: string, width: number): string {
+  const marker = '/storage/v1/object/public/'
+  const idx = url.indexOf(marker)
+  if (idx === -1) return url
+  const transformedPath = url.slice(0, idx) + '/storage/v1/render/image/public/' + url.slice(idx + marker.length)
+  return `${transformedPath}?width=${width}&quality=75`
+}
 
 /** Одним рядком "Мітка: значення" — так само, як у Figma-референсі
  *  ("SKU: COF-008", "Статус:") — порожнє значення лишає тільки мітку
@@ -57,11 +75,11 @@ function buildProductPageHtml(
         .filter(p => selectedPhotoStatusIds.size > 0 ? (p.statusId !== null && selectedPhotoStatusIds.has(p.statusId)) : p.isVisible)
         .map(p => p.url)
       heroPhotoHtml = photos[0]
-        ? `<img class="photo hero-photo" src="${escapeHtml(photos[0])}" alt="" />`
+        ? `<img class="photo hero-photo" src="${escapeHtml(toPrintImageUrl(photos[0], HERO_PHOTO_WIDTH))}" alt="" />`
         : `<div class="photo hero-photo photo-empty"></div>`
       const extra = photos.slice(1, MAX_PHOTOS)
       extraPhotosHtml = extra.length > 0
-        ? `<div class="extra-photos">${extra.map(url => `<img class="photo extra-photo" src="${escapeHtml(url)}" alt="" />`).join('')}</div>`
+        ? `<div class="extra-photos">${extra.map(url => `<img class="photo extra-photo" src="${escapeHtml(toPrintImageUrl(url, EXTRA_PHOTO_WIDTH))}" alt="" />`).join('')}</div>`
         : ''
       continue
     }
