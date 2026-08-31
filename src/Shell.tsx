@@ -16,6 +16,7 @@ const EmployeesPage = lazy(() => import('./EmployeesPage'))
 const DashboardsPage = lazy(() => import('./DashboardsPage'))
 const ProfilePage = lazy(() => import('./ProfilePage'))
 const AboutPage = lazy(() => import('./AboutPage'))
+const PrintFormsPage = lazy(() => import('./PrintFormsPage'))
 
 type Page = 'products' | 'materials' | 'tasks' | 'directory' | 'settings' | 'employees' | 'dashboards' | 'profile' | 'about'
 
@@ -83,11 +84,22 @@ export default function Shell({ onLogout }: Props) {
   // перемонтування саме в цьому випадку — свіжий список замість "застряглої" картки.
   const [productsResetKey, setProductsResetKey] = useState(0)
   const [materialsResetKey, setMaterialsResetKey] = useState(0)
+
+  // Налаштування — вкладений вид без окремого запису в Page/drawer-меню
+  // (той самий підхід, що editId/viewId у ProductCatalog.tsx): 'hub' — картки
+  // валюти/зарплати/кастомних полів (CustomFieldsPage), 'printForms' —
+  // конструктор друкованих форм (PrintFormsPage), відкривається з картки в hub.
+  const [settingsView, setSettingsView] = useState<'hub' | 'printForms'>('hub')
   const goToPage = (id: Page) => {
     if (id === 'products' && page === 'products') setProductsResetKey(k => k + 1)
     if (id === 'materials' && page === 'materials') setMaterialsResetKey(k => k + 1)
     setPage(id)
   }
+
+  // Свіжий "hub" щоразу, як заходимо в Налаштування наново (не застрягти на PrintFormsPage).
+  useEffect(() => {
+    if (page !== 'settings') setSettingsView('hub')
+  }, [page])
 
   // Прибираємо параметр з адресного рядка, щоб не залишався в історії/при оновленні.
   useEffect(() => {
@@ -299,7 +311,12 @@ export default function Shell({ onLogout }: Props) {
               {page === 'materials' && isManager && <MaterialStock key={materialsResetKey} onNavigate={p => setPage(p as Page)} initialMaterialId={materialsResetKey === 0 ? deepLink.materialId : null} initialMaterialReturnTo={deepLink.returnTo} />}
               {page === 'tasks'     && <AssignmentsPage />}
               {page === 'directory' && pages.includes('directory') && <DirectoryCatalog onNavigate={p => setPage(p as Page)} />}
-              {page === 'settings'  && pages.includes('settings') && <CustomFieldsPage onBack={() => setPage('products')} />}
+              {page === 'settings'  && pages.includes('settings') && settingsView === 'hub' && (
+                <CustomFieldsPage onBack={() => setPage('products')} onOpenPrintForms={() => setSettingsView('printForms')} />
+              )}
+              {page === 'settings'  && pages.includes('settings') && settingsView === 'printForms' && (
+                <PrintFormsPage onBack={() => setSettingsView('hub')} />
+              )}
               {page === 'employees' && isAdmin && <EmployeesPage />}
               {page === 'dashboards' && isManager && <DashboardsPage initialDrilldown={deepLink.dashboardsDrilldown} />}
               {page === 'profile' && currentUser && <ProfilePage employeeId={currentUser.id} onBack={() => setPage(prevPage)} />}

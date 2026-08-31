@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useCatalog } from './hooks/useCatalog'
-import { useProducts, useProductPhotos, useProductVideos, useProductMutations, useProductStatuses, genProductArticle, MAX_PHOTO_SIZE, MAX_VIDEO_SIZE, type PhotoItem, type VideoItem } from './hooks/useProducts'
+import { useProducts, useProductPhotos, useProductVideos, useProductMutations, useProductStatuses, usePhotoStatuses, genProductArticle, MAX_PHOTO_SIZE, MAX_VIDEO_SIZE, type PhotoItem, type VideoItem } from './hooks/useProducts'
 import { compressImageToLimit } from './lib/imageCompress'
 import { useProductAttributeMutations } from './hooks/useProductAttributes'
 import { useCustomFieldDefinitions, useCustomFieldValues, useCustomFieldValueMutations } from './hooks/useCustomFields'
@@ -20,6 +20,7 @@ export default function ProductEditor({ productId, onBack }: Props) {
   const photosQ = useProductPhotos(productId)
   const videosQ = useProductVideos(productId)
   const statusesQ = useProductStatuses()
+  const photoStatusesQ = usePhotoStatuses()
   const { createProduct, updateProduct, isSaving } = useProductMutations()
   const { addAttributeValue, removeAttributeValue } = useProductAttributeMutations()
   const customFieldsQ = useCustomFieldDefinitions('product')
@@ -29,6 +30,8 @@ export default function ProductEditor({ productId, onBack }: Props) {
 
   const products = productsQ.data ?? []
   const statuses = statusesQ.data ?? []
+  const photoStatuses = photoStatusesQ.data ?? []
+  const defaultPhotoStatusId = photoStatuses.find(s => s.isDefault)?.id ?? null
   const existing = productId !== null ? products.find(p => p.id === productId) : null
   const isNew = !existing
   const sku = existing?.sku ?? genProductArticle(products)
@@ -105,7 +108,14 @@ export default function ProductEditor({ productId, onBack }: Props) {
         compressed.push(file.name)
         toAdd = result
       }
-      setPhotos(prev => [...prev, { key: crypto.randomUUID(), url: URL.createObjectURL(toAdd), file: toAdd }])
+      setPhotos(prev => [...prev, {
+        key: crypto.randomUUID(), url: URL.createObjectURL(toAdd), file: toAdd,
+        dbId: null, statusId: defaultPhotoStatusId, originalUrl: null, createdAt: null,
+        // Сирий файл тримаємо завжди (нічого не коштує в пам'яті) — реально
+        // вивантажується лише якщо користувач увімкне перемикач саме на
+        // цьому фото (keepOriginal за замовчуванням false, per-фото рішення).
+        originalFile: file, keepOriginal: false,
+      }])
     }
     if (compressed.length > 0) {
       setToast(t('productEditor.photoCompressed', { names: compressed.join(', '), limit: MAX_PHOTO_SIZE / (1024 * 1024) }))
@@ -119,6 +129,12 @@ export default function ProductEditor({ productId, onBack }: Props) {
 
   const removePhoto = (key: string) =>
     setPhotos(prev => prev.filter(p => p.key !== key))
+
+  const setPhotoStatus = (key: string, statusId: string) =>
+    setPhotos(prev => prev.map(p => p.key === key ? { ...p, statusId } : p))
+
+  const togglePhotoOriginal = (key: string) =>
+    setPhotos(prev => prev.map(p => p.key === key ? { ...p, keepOriginal: !p.keepOriginal } : p))
 
   const makeMainPhoto = (key: string) =>
     setPhotos(prev => {
@@ -136,7 +152,7 @@ export default function ProductEditor({ productId, onBack }: Props) {
     Array.from(files).forEach(file => {
       if (!file.type.startsWith('video/')) return
       if (file.size > MAX_VIDEO_SIZE) { tooLarge.push(file.name); return }
-      setVideos(prev => [...prev, { key: crypto.randomUUID(), url: URL.createObjectURL(file), file }])
+      setVideos(prev => [...prev, { key: crypto.randomUUID(), url: URL.createObjectURL(file), file, dbId: null, createdAt: null }])
     })
     if (tooLarge.length > 0) {
       setToast(t('productEditor.videoTooLarge', { names: tooLarge.join(', '), limit: MAX_VIDEO_SIZE / (1024 * 1024) }))
@@ -194,6 +210,18 @@ export default function ProductEditor({ productId, onBack }: Props) {
     setTimeout(() => { setSaved(false); setToast(null); onBack() }, 1100)
   }
 
+  // Сортування грідів фото/відео: найновіші зверху, найстаріші знизу. "Головне"
+  // фото (photos[0] — саме воно стає обкладинкою при збереженні) лишається
+  // закріпленим першим незалежно від дати — щоб ручний вибір користувача не
+  // "зісковзував" вниз при повторному відкритті редактора після нового фото.
+  // Щойно додані (ще не збережені, createdAt === null) вважаються найновішими.
+  const byNewestFirst = (a: { createdAt: number | null }, b: { createdAt: number | null }) =>
+    (b.createdAt ?? Infinity) - (a.createdAt ?? Infinity)
+  const sortedPhotos = photos.length > 1
+    ? [photos[0], ...photos.slice(1).slice().sort(byNewestFirst)]
+    : photos
+  const sortedVideos = videos.slice().sort(byNewestFirst)
+
   const canSave = name.trim().length > 0 && !isSaving
   const rootCats = categories.filter(c => c.parentId === null)
   // Характеристики — яка саме розгорнута в спадний список (одночасно лише одна)
@@ -237,30 +265,59 @@ export default function ProductEditor({ productId, onBack }: Props) {
           {/* Photo grid */}
           {photos.length > 0 && (
             <div className="flex gap-2 flex-wrap mb-3">
-              {photos.map((p, idx) => {
-                const isMain = idx === 0
+              {sortedPhotos.map(p => {
+                const isMain = p.key === photos[0]?.key
+                const status = photoStatuses.find(s => s.id === p.statusId)
                 return (
-                  <div key={p.key} className="relative h-24 w-24 shrink-0 cursor-pointer"
-                    onClick={() => makeMainPhoto(p.key)}
-                    style={isMain ? { outline: '2.5px solid #3b82f6', borderRadius: '1rem' } : {}}>
-                    <img src={p.url} alt="" loading="lazy" className="h-full w-full rounded-2xl object-cover bg-slate-100" />
-                    {isMain ? (
-                      <span className="absolute bottom-1.5 left-1.5 flex items-center gap-1 rounded-lg bg-blue-500 px-1.5 py-0.5 text-[9px] text-white font-medium">
-                        <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
-                          <path d="M1 4l1.8 1.8L7 2" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                        {t('productEditor.main')}
-                      </span>
-                    ) : (
-                      <span className="absolute bottom-1.5 left-1.5 rounded-lg bg-black/40 px-1.5 py-0.5 text-[9px] text-white/80">
-                        {t('productEditor.choose')}
-                      </span>
+                  <div key={p.key} className="w-24 shrink-0">
+                    <div className="relative h-24 w-24 cursor-pointer"
+                      onClick={() => makeMainPhoto(p.key)}
+                      style={isMain ? { outline: '2.5px solid #3b82f6', borderRadius: '1rem' } : {}}>
+                      <img src={p.url} alt="" loading="lazy" className="h-full w-full rounded-2xl object-cover bg-slate-100" />
+                      {isMain ? (
+                        <span className="absolute bottom-1.5 left-1.5 flex items-center gap-1 rounded-lg bg-blue-500 px-1.5 py-0.5 text-[9px] text-white font-medium">
+                          <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                            <path d="M1 4l1.8 1.8L7 2" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                          {t('productEditor.main')}
+                        </span>
+                      ) : (
+                        <span className="absolute bottom-1.5 left-1.5 rounded-lg bg-black/40 px-1.5 py-0.5 text-[9px] text-white/80">
+                          {t('productEditor.choose')}
+                        </span>
+                      )}
+                      <button
+                        onClick={e => { e.stopPropagation(); removePhoto(p.key) }}
+                        className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white text-[10px] shadow-md active:scale-90 transition-all">
+                        ✕
+                      </button>
+                    </div>
+                    {photoStatuses.length > 0 && (
+                      <select value={p.statusId ?? ''} onClick={e => e.stopPropagation()}
+                        onChange={e => setPhotoStatus(p.key, e.target.value)}
+                        className="mt-1 w-full rounded-lg border-none px-1 py-0.5 text-[9px] font-medium outline-none appearance-none text-center truncate"
+                        style={{ background: status ? `${status.color}22` : '#f1f5f9', color: status?.color ?? '#94a3b8' }}>
+                        {photoStatuses.map(s => <option key={s.id} value={s.id}>{tn(s.name, s.nameEn)}</option>)}
+                      </select>
                     )}
-                    <button
-                      onClick={e => { e.stopPropagation(); removePhoto(p.key) }}
-                      className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white text-[10px] shadow-md active:scale-90 transition-all">
-                      ✕
-                    </button>
+                    <p className="mt-1 truncate text-center text-[9px] text-slate-300">
+                      {p.createdAt ? new Date(p.createdAt).toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' }) : t('productEditor.justAdded')}
+                    </p>
+                    {p.originalUrl && (
+                      <a href={p.originalUrl} download onClick={e => e.stopPropagation()}
+                        className="mt-1 block truncate rounded-lg bg-slate-50 px-1 py-0.5 text-center text-[9px] text-slate-400 hover:text-slate-600">
+                        {t('common.downloadOriginal')}
+                      </a>
+                    )}
+                    {/* Рішення "зберігати оригінал" — per конкретне (щойно
+                       додане, ще не збережене) фото, не глобально на всі нові. */}
+                    {p.file && (
+                      <button onClick={e => { e.stopPropagation(); togglePhotoOriginal(p.key) }}
+                        className="mt-1 block w-full truncate rounded-lg px-1 py-0.5 text-center text-[9px] font-medium transition-all"
+                        style={p.keepOriginal ? { background: '#1e293b22', color: '#1e293b' } : { background: '#f1f5f9', color: '#94a3b8' }}>
+                        {t('productEditor.keepOriginal')}
+                      </button>
+                    )}
                   </div>
                 )
               })}
@@ -308,21 +365,26 @@ export default function ProductEditor({ productId, onBack }: Props) {
           {/* Video grid */}
           {videos.length > 0 && (
             <div className="flex gap-2 flex-wrap mb-3">
-              {videos.map(v => (
-                <div key={v.key} className="relative h-24 w-24 shrink-0">
-                  <video src={v.url} className="h-full w-full rounded-2xl object-cover bg-slate-100" muted playsInline />
-                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-black/40">
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                        <path d="M3 2l7 4-7 4V2z" fill="white"/>
-                      </svg>
+              {sortedVideos.map(v => (
+                <div key={v.key} className="w-24 shrink-0">
+                  <div className="relative h-24 w-24">
+                    <video src={v.url} className="h-full w-full rounded-2xl object-cover bg-slate-100" muted playsInline />
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-black/40">
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                          <path d="M3 2l7 4-7 4V2z" fill="white"/>
+                        </svg>
+                      </div>
                     </div>
+                    <button
+                      onClick={() => removeVideo(v.key)}
+                      className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white text-[10px] shadow-md active:scale-90 transition-all">
+                      ✕
+                    </button>
                   </div>
-                  <button
-                    onClick={() => removeVideo(v.key)}
-                    className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white text-[10px] shadow-md active:scale-90 transition-all">
-                    ✕
-                  </button>
+                  <p className="mt-1 truncate text-center text-[9px] text-slate-300">
+                    {v.createdAt ? new Date(v.createdAt).toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' }) : t('productEditor.justAdded')}
+                  </p>
                 </div>
               ))}
             </div>

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import QRCodeLib from 'react-qr-code'
 import { useCatalog, type ProductCategory } from './hooks/useCatalog'
 import { useCurrentUser } from './hooks/useCurrentUser'
-import { useProducts, useMaterials, useProductStatuses, useProductPhotos, useProductVideos, type PhotoItem, type VideoItem } from './hooks/useProducts'
+import { useProducts, useMaterials, useProductStatuses, useProductPhotos, useProductVideos, usePhotoStatuses, type PhotoItem, type VideoItem } from './hooks/useProducts'
 import { useAssignments } from './hooks/useAssignments'
 import { useStockMovements } from './hooks/useMaterialStock'
 import { useCustomFieldDefinitions, useCustomFieldValues } from './hooks/useCustomFields'
@@ -77,6 +77,7 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
   const customDefsQ = useCustomFieldDefinitions('product')
   const photosQ = useProductPhotos(productId)
   const videosQ = useProductVideos(productId)
+  const photoStatusesQ = usePhotoStatuses()
   const products = productsQ.data ?? []
   const materials = materialsQ.data ?? []
   const statuses = statusesQ.data ?? []
@@ -85,6 +86,10 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
   const customDefs = customDefsQ.data ?? []
   const photos = photosQ.data ?? []
   const videos = videosQ.data ?? []
+  const photoStatuses = photoStatusesQ.data ?? []
+  // Фото зі статусом isVisible=false (Довідники → "Статуси фото") не показуються
+  // у звичайному перегляді — той самий гейтинг, що й у друкованій формі.
+  const visiblePhotos = photos.filter(p => (photoStatuses.find(s => s.id === p.statusId)?.isVisible ?? true))
 
   // "Історія" — аудит-лог змін продукту (хто/коли змінив назву, опис,
   // категорію, статус) — та сама верстка, що й "Історія" у SpecificationPage.tsx.
@@ -178,11 +183,11 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
       ) : (
       <div className="px-4 pb-10 space-y-5 pt-4">
         {/* Photo + Video — окремі блоки в одній лінії */}
-        {(photos.length > 0 || videos.length > 0) && (
+        {(visiblePhotos.length > 0 || videos.length > 0) && (
           <div className="flex gap-3">
-            {photos.length > 0 && (
+            {visiblePhotos.length > 0 && (
               <div className="flex-1 min-w-0">
-                <ProductPhotoGallery photos={photos} productName={product.name} />
+                <ProductPhotoGallery photos={visiblePhotos} productName={product.name} />
               </div>
             )}
             {videos.length > 0 && (
@@ -488,6 +493,7 @@ function trackScrolled(setIdx: (i: number) => void) {
 }
 
 function ProductPhotoGallery({ photos, productName }: { photos: PhotoItem[]; productName: string }) {
+  const { t } = useLocale()
   const [activeIndex, setActiveIndex] = useState(0)
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const lightboxTrackRef = useRef<HTMLDivElement>(null)
@@ -535,12 +541,20 @@ function ProductPhotoGallery({ photos, productName }: { photos: PhotoItem[]; pro
           onClick={() => setLightboxOpen(false)}>
           <div className="flex shrink-0 items-center justify-between px-4 py-3" onClick={e => e.stopPropagation()}>
             <span className="text-xs font-medium text-white/70">{activeIndex + 1} / {photos.length}</span>
-            <button onClick={() => setLightboxOpen(false)}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white active:scale-95 transition-all">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-              </svg>
-            </button>
+            <div className="flex items-center gap-2">
+              {photos[activeIndex]?.originalUrl && (
+                <a href={photos[activeIndex].originalUrl!} download
+                  className="rounded-full bg-white/10 px-3 py-2 text-xs font-medium text-white active:scale-95 transition-all">
+                  {t('common.downloadOriginal')}
+                </a>
+              )}
+              <button onClick={() => setLightboxOpen(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white active:scale-95 transition-all">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                </svg>
+              </button>
+            </div>
           </div>
           <div
             ref={lightboxTrackRef}
