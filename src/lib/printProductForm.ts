@@ -1,5 +1,5 @@
 import { escapeHtml } from './html'
-import { isCustomFieldKey, customFieldDefinitionId, isPhotoStatusFieldKey, photoStatusIdFromFieldKey } from '../hooks/usePrintFormTemplates'
+import { isCustomFieldKey, customFieldDefinitionId, selectedPhotoStatusIds as computeSelectedPhotoStatusIds } from '../hooks/usePrintFormTemplates'
 import type { Product, ProductStatus } from '../hooks/useProducts'
 import type { ProductCategory } from '../hooks/useCatalog'
 import type { CustomFieldDefinition, BulkCustomFieldValue } from '../hooks/useCustomFields'
@@ -22,8 +22,9 @@ import type { CustomFieldDefinition, BulkCustomFieldValue } from '../hooks/useCu
    одного SVG — непропорційно для цієї задачі. */
 
 const MAX_PHOTOS = 4
-const HERO_PHOTO_WIDTH = 700
-const EXTRA_PHOTO_WIDTH = 500
+export const HERO_PHOTO_WIDTH = 550
+export const EXTRA_PHOTO_WIDTH = 360
+const PRINT_IMAGE_QUALITY = 65
 
 /** Supabase Storage віддає повний оригінал — реальні фото продукту часто
  *  кілька МБ (некомпресована камера телефону; ProductEditor.tsx стискає
@@ -32,13 +33,31 @@ const EXTRA_PHOTO_WIDTH = 500
  *  повного завантаження ВСІХ фото на сторінці одразу. Переписуємо URL на
  *  вбудовану трансформацію Supabase (render/image) — стиснута версія на
  *  льоту, ~10-15x менше за вагою (перевірено на реальних фото продукту),
- *  без помітної для друку втрати якості. */
-function toPrintImageUrl(url: string, width: number): string {
+ *  без помітної для друку втрати якості.
+ *
+ *  ВАЖЛИВО #1: перший запит саме такого url (унікальна комбінація
+ *  ширина+якість для цього фото) сам Supabase стискає "наживо" — це
+ *  повільніше за віддачу оригіналу (перевірено: ~1.2с проти ~0.8с).
+ *  Лише ПОВТОРНИЙ запит того самого url швидкий (кеш, ~0.15с). Тому
+ *  PrintFormsPage.tsx заздалегідь "прогріває" ці ж самі url у фоні,
+ *  поки користувач ще на екрані фільтра — до кліку "Сформувати" кеш
+ *  уже здебільшого теплий. exported, щоб той прогрів рахував URL
+ *  ідентично цій функції.
+ *
+ *  ВАЖЛИВО #2: якщо передати лише `width` (без `height`), для частини
+ *  реальних фото (з певною EXIF-орієнтацією камери) Supabase рахує
+ *  висоту неправильно — повертає геть інші пропорції замість
+ *  пропорційного масштабування (перевірено: замість ширини 550 і
+ *  очікуваної висоти ~413 повертав висоту 5712 — вузька смужка серед
+ *  білого поля). Обхідний шлях — завжди передавати квадратний
+ *  bounding box (`width`+`height`+`resize=contain`): фото вписується
+ *  в нього з правильними пропорціями, як і задумано. */
+export function toPrintImageUrl(url: string, boxSize: number): string {
   const marker = '/storage/v1/object/public/'
   const idx = url.indexOf(marker)
   if (idx === -1) return url
   const transformedPath = url.slice(0, idx) + '/storage/v1/render/image/public/' + url.slice(idx + marker.length)
-  return `${transformedPath}?width=${width}&quality=75`
+  return `${transformedPath}?width=${boxSize}&height=${boxSize}&resize=contain&quality=${PRINT_IMAGE_QUALITY}`
 }
 
 /** Одним рядком "Мітка: значення" — так само, як у Figma-референсі
@@ -145,9 +164,9 @@ export function printProductForm(
 ) {
   if (products.length === 0) return
 
-  const selectedPhotoStatusIds = new Set(fieldKeys.filter(isPhotoStatusFieldKey).map(photoStatusIdFromFieldKey))
+  const selectedStatusIds = computeSelectedPhotoStatusIds(fieldKeys)
   const pages = products
-    .map(p => buildProductPageHtml(p, fieldKeys, labelOf, categories, statuses, customDefs, customValues, qrSvgByProductId, orgName, selectedPhotoStatusIds, tn))
+    .map(p => buildProductPageHtml(p, fieldKeys, labelOf, categories, statuses, customDefs, customValues, qrSvgByProductId, orgName, selectedStatusIds, tn))
     .join('')
 
   const win = window.open('', '_blank')
