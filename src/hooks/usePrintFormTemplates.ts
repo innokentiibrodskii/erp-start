@@ -34,6 +34,12 @@ export const photoStatusFieldKey = (statusId: string) => `${PHOTO_STATUS_KEY_PRE
 export const isPhotoStatusFieldKey = (fieldKey: string) => fieldKey.startsWith(PHOTO_STATUS_KEY_PREFIX)
 export const photoStatusIdFromFieldKey = (fieldKey: string) => fieldKey.slice(PHOTO_STATUS_KEY_PREFIX.length)
 
+/** Набір явно обраних статусів фото (Довідники → "Статуси фото") із
+ *  fieldKeys шаблону — спільна логіка для printProductForm.ts (сам друк)
+ *  і PrintFormsPage.tsx (прогрів кешу трансформованих фото наперед). */
+export const selectedPhotoStatusIds = (fieldKeys: string[]): Set<string> =>
+  new Set(fieldKeys.filter(isPhotoStatusFieldKey).map(photoStatusIdFromFieldKey))
+
 export interface BuiltinField {
   key: string
   labelKey: TranslationKey

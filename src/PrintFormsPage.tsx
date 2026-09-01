@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import QRCodeLib from 'react-qr-code'
 import { useLocale } from './LocaleContext'
 import { useOrg } from './OrgContext'
@@ -7,12 +7,12 @@ import ConfirmDeleteModal from './ConfirmDeleteModal'
 import {
   usePrintFormTemplates, usePrintFormTemplateMutations, PRODUCT_BUILTIN_FIELDS,
   customFieldKey, isCustomFieldKey, customFieldDefinitionId,
-  photoStatusFieldKey, isPhotoStatusFieldKey, type PrintFormTemplate,
+  photoStatusFieldKey, isPhotoStatusFieldKey, selectedPhotoStatusIds, type PrintFormTemplate,
 } from './hooks/usePrintFormTemplates'
 import { useCustomFieldDefinitions, useAllCustomFieldValues, type CustomFieldDefinition } from './hooks/useCustomFields'
 import { useProducts, useProductStatuses, usePhotoStatuses } from './hooks/useProducts'
 import { useCatalog } from './hooks/useCatalog'
-import { printProductForm } from './lib/printProductForm'
+import { printProductForm, toPrintImageUrl, HERO_PHOTO_WIDTH, EXTRA_PHOTO_WIDTH } from './lib/printProductForm'
 
 /* ───────────────────────────────────────────────────────────
    Налаштування → "Друкована форма": іменовані шаблони полів для друку.
@@ -233,6 +233,33 @@ function PrintFilterView({ template, customDefs, fieldLabel, orgName, onBack }: 
     const matchField = matchingFieldProductIds === null || matchingFieldProductIds.has(p.id)
     return matchSearch && matchCat && matchStatus && matchField
   })
+
+  // Прогрів кешу трансформованих фото (Supabase render/image) у фоні, поки
+  // користувач ще на екрані фільтра. Перший запит кожного унікального
+  // url (ширина+якість) сам Supabase стискає "наживо" — це помітно
+  // повільніше за оригінал; лише ПОВТОРНИЙ запит того самого url швидкий
+  // (кеш). Без цього прогріву вся ця затримка припадала б на клік
+  // "Сформувати". Обмежено 40 продуктами (щоб не влаштовувати штурм мережі,
+  // якщо фільтр іще майже нічого не звузив) і дебаунсом 400 мс (щоб не
+  // палити запити на кожне натискання клавіші під час пошуку) —
+  // filteredIds замість самого filtered, бо новий масив-референс
+  // створюється щорендеру, навіть якщо список продуктів не змінився.
+  const filteredIds = filtered.map(p => p.id).join(',')
+  useEffect(() => {
+    if (!template.fieldKeys.includes('photo')) return
+    const timer = setTimeout(() => {
+      const statusIds = selectedPhotoStatusIds(template.fieldKeys)
+      for (const p of filtered.slice(0, 40)) {
+        const photos = (p.photos ?? [])
+          .filter(ph => statusIds.size > 0 ? (ph.statusId !== null && statusIds.has(ph.statusId)) : ph.isVisible)
+          .map(ph => ph.url)
+        if (photos[0]) new Image().src = toPrintImageUrl(photos[0], HERO_PHOTO_WIDTH)
+        for (const url of photos.slice(1, 4)) new Image().src = toPrintImageUrl(url, EXTRA_PHOTO_WIDTH)
+      }
+    }, 400)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredIds, template.fieldKeys])
 
   // "qr" друкується як інлайн-SVG-рядок, зчитаний з реально змонтованих
   // (прихованих) <QRCodeLib> нижче — той самий прийом, що вже є в
