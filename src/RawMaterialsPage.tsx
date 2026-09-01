@@ -369,8 +369,6 @@ function MaterialCard({ material, onClose }: { material: DraftRawMaterial; onClo
       <SheetTitle>{material.name}</SheetTitle>
       <div className="px-5 pb-6">
         <FieldSection title={t('rawMaterials.sectionMain')} rows={[
-          row('rawMaterials.field.code', material.code),
-          row('rawMaterials.field.article', material.article),
           row('rawMaterials.field.category', material.category),
           row('rawMaterials.field.color', material.color),
           row('rawMaterials.field.colorFamily', material.colorFamily),
@@ -383,7 +381,6 @@ function MaterialCard({ material, onClose }: { material: DraftRawMaterial; onClo
           row('rawMaterials.field.materialType', material.materialTypeName),
           row('rawMaterials.field.nomenclatureGroup', material.nomenclatureGroupName),
           row('rawMaterials.field.materialsGroup', material.materialsGroupName),
-          row('rawMaterials.field.hierarchyGroup', material.hierarchyGroupName),
           row('rawMaterials.field.hierarchyParentGroup', material.hierarchyParentGroupName),
           row('rawMaterials.field.appointment', material.appointmentName),
         ]} />
