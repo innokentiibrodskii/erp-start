@@ -17,15 +17,18 @@ const DashboardsPage = lazy(() => import('./DashboardsPage'))
 const ProfilePage = lazy(() => import('./ProfilePage'))
 const AboutPage = lazy(() => import('./AboutPage'))
 const PrintFormsPage = lazy(() => import('./PrintFormsPage'))
+const RawMaterialsPage = lazy(() => import('./RawMaterialsPage'))
 
-type Page = 'products' | 'materials' | 'tasks' | 'directory' | 'settings' | 'employees' | 'dashboards' | 'profile' | 'about'
+type Page = 'products' | 'materials' | 'tasks' | 'directory' | 'settings' | 'employees' | 'dashboards' | 'profile' | 'about' | 'rawMaterials'
 
 /** Які сторінки бачить кожна роль (крім tasks/profile/about — вони відкриті всім).
  *  manager_view: Продукти (лише перегляд — гейт на редагування/специфікацію
  *  всередині ProductCatalog.tsx/SpecificationPage.tsx), Довідники, Налаштування —
- *  без Матеріалів/Дашбордів/Працівників. */
+ *  без Матеріалів/Дашбордів/Працівників.
+ *  rawMaterials ("Information about raw materials") — лише admin: чернетка
+ *  імпорту сировини (draft.*), ще не звірена, не для щоденної роботи команди. */
 const ROLE_PAGES: Record<UserRole, Page[]> = {
-  admin: ['products', 'materials', 'directory', 'settings', 'employees', 'dashboards'],
+  admin: ['products', 'materials', 'directory', 'settings', 'employees', 'dashboards', 'rawMaterials'],
   manager: ['products', 'materials', 'directory', 'settings', 'dashboards'],
   manager_view: ['products', 'directory', 'settings'],
   performer: [],
@@ -213,6 +216,17 @@ export default function Shell({ onLogout }: Props) {
         </svg>
       ),
     },
+    {
+      id: 'rawMaterials',
+      label: t('nav.rawMaterials'),
+      icon: a => (
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+          <path d="M4 3h10l4 4v12a1 1 0 01-1 1H4a1 1 0 01-1-1V4a1 1 0 011-1z" stroke="currentColor" strokeWidth={a ? 2 : 1.5} fill={a ? 'currentColor' : 'none'} fillOpacity="0.1" strokeLinejoin="round"/>
+          <path d="M14 3v4h4" stroke="currentColor" strokeWidth={a ? 2 : 1.5} strokeLinejoin="round"/>
+          <path d="M6.5 12h9M6.5 15.5h6" stroke="currentColor" strokeWidth={a ? 2 : 1.5} strokeLinecap="round"/>
+        </svg>
+      ),
+    },
   ]
 
   const navItems = allNavItems.filter(item => item.id === 'tasks' || item.id === 'about' || pages.includes(item.id))
@@ -321,6 +335,7 @@ export default function Shell({ onLogout }: Props) {
               {page === 'dashboards' && isManager && <DashboardsPage initialDrilldown={deepLink.dashboardsDrilldown} />}
               {page === 'profile' && currentUser && <ProfilePage employeeId={currentUser.id} onBack={() => setPage(prevPage)} />}
               {page === 'about' && <AboutPage />}
+              {page === 'rawMaterials' && isAdmin && <RawMaterialsPage onBack={() => setPage('tasks')} />}
             </Suspense>
           </div>
         </main>
@@ -415,6 +430,13 @@ export default function Shell({ onLogout }: Props) {
                     icon={<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="3" y="2.5" width="12" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.4"/><path d="M6 7h6M6 10h6M6 13h3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>}
                     label={t('nav.directory')}
                     onClick={() => { setPage('directory'); setMenuOpen(false) }}
+                  />
+                )}
+                {pages.includes('rawMaterials') && (
+                  <DrawerItem
+                    icon={<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3.5 2.5h8l3.5 3.5v9.5a1 1 0 01-1 1h-10.5a1 1 0 01-1-1v-12a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/><path d="M5.5 10h7M5.5 13h5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>}
+                    label={t('nav.rawMaterials')}
+                    onClick={() => { setPage('rawMaterials'); setMenuOpen(false) }}
                   />
                 )}
                 {pages.includes('settings') && (
