@@ -87,6 +87,17 @@ export default function App() {
         if (list.length === 1) {
           setActiveOrgIdState(list[0].id)
           try { localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, list[0].id) } catch { /* ignore */ }
+        } else {
+          // Кілька компаній — відновлюємо раніше обрану з localStorage, якщо вона
+          // досі серед доступних. Без цього будь-який повний reload сторінки
+          // (напр. deep-link ?material=/?product= — window.location.href у
+          // DirectoryCatalog.tsx/DashboardsPage.tsx) скидав activeOrgId і кидав
+          // користувача назад на CompanyPicker — екран, візуально ідентичний
+          // входу (той самий степер/лого), де кнопка "Назад" ще й реально
+          // виконує signOut. Це й сприймалося як "вилогінення".
+          let saved: string | null = null
+          try { saved = localStorage.getItem(ACTIVE_ORG_STORAGE_KEY) } catch { /* ignore */ }
+          if (saved && list.some(m => m.id === saved)) setActiveOrgIdState(saved)
         }
       })
     return () => { cancelled = true }

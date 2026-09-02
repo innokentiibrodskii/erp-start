@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { safeStorageFileName } from '../lib/storageUpload'
 import { useActiveOrgId } from '../OrgContext'
 import { useLocale } from '../LocaleContext'
 import type { TranslationKey } from '../i18n'
@@ -86,7 +87,7 @@ interface MaterialFormArgs {
 }
 
 async function uploadMaterialPhoto(materialId: string, file: File): Promise<string> {
-  const path = `${materialId}/${Date.now()}-${file.name}`
+  const path = `${materialId}/${Date.now()}-${safeStorageFileName(file.name)}`
   const { error } = await supabase.storage.from('material-photos').upload(path, file)
   if (error) throw error
   const { data } = supabase.storage.from('material-photos').getPublicUrl(path)

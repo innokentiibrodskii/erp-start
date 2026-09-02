@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { safeStorageFileName } from '../lib/storageUpload'
 import { useActiveOrgId } from '../OrgContext'
 import { useLocale } from '../LocaleContext'
 import type { TranslationKey } from '../i18n'
@@ -58,6 +59,9 @@ export interface CustomFieldDefinition {
   isRequired: boolean
   position: number
   options: CustomFieldOption[]
+  /** Лише для entityType='material': чи показувати це поле колонкою в
+   *  Довідники → Матеріали → "Використовуються у продукціях". */
+  showInMaterialUsage: boolean
 }
 
 export interface CustomFieldFile {
@@ -90,7 +94,7 @@ export function useCustomFieldDefinitions(entityType: EntityType) {
     queryFn: async (): Promise<CustomFieldDefinition[]> => {
       const { data, error } = await supabase
         .from('custom_field_definitions')
-        .select('id, entity_type, name, name_en, field_type, is_required, position, custom_field_options(id, value, value_en, position)')
+        .select('id, entity_type, name, name_en, field_type, is_required, position, show_in_material_usage, custom_field_options(id, value, value_en, position)')
         .eq('entity_type', entityType)
         .eq('organization_id', orgId)
         .order('position')
@@ -103,6 +107,7 @@ export function useCustomFieldDefinitions(entityType: EntityType) {
         fieldType: d.field_type as FieldType,
         isRequired: d.is_required,
         position: d.position,
+        showInMaterialUsage: d.show_in_material_usage,
         options: (d.custom_field_options ?? [])
           .slice()
           .sort((a: { position: number }, b: { position: number }) => a.position - b.position)
@@ -120,9 +125,10 @@ export function useCustomFieldDefinitionMutations(entityType: EntityType) {
   const onErr = (error: { message: string; code?: string }) => showErrorToast(friendlyError(error, t))
 
   const add = useMutation({
-    mutationFn: async ({ name, nameEn, fieldType, isRequired, position }: { name: string; nameEn: string | null; fieldType: FieldType; isRequired: boolean; position: number }) => {
+    mutationFn: async ({ name, nameEn, fieldType, isRequired, position, showInMaterialUsage }: { name: string; nameEn: string | null; fieldType: FieldType; isRequired: boolean; position: number; showInMaterialUsage: boolean }) => {
       const { data, error } = await supabase.from('custom_field_definitions').insert({
         organization_id: orgId, entity_type: entityType, name, name_en: nameEn, field_type: fieldType, is_required: isRequired, position,
+        show_in_material_usage: showInMaterialUsage,
       }).select('id').single()
       if (error) throw error
       return data.id as string
@@ -132,9 +138,9 @@ export function useCustomFieldDefinitionMutations(entityType: EntityType) {
   })
 
   const update = useMutation({
-    mutationFn: async ({ id, name, nameEn, isRequired }: { id: string; name: string; nameEn: string | null; isRequired: boolean }) => {
+    mutationFn: async ({ id, name, nameEn, isRequired, showInMaterialUsage }: { id: string; name: string; nameEn: string | null; isRequired: boolean; showInMaterialUsage: boolean }) => {
       // Тип поля свідомо не редагується після створення — зміна типу зробила б наявні значення несумісними.
-      const { error } = await supabase.from('custom_field_definitions').update({ name, name_en: nameEn, is_required: isRequired }).eq('id', id)
+      const { error } = await supabase.from('custom_field_definitions').update({ name, name_en: nameEn, is_required: isRequired, show_in_material_usage: showInMaterialUsage }).eq('id', id)
       if (error) throw error
     },
     onSuccess: invalidate,
@@ -188,10 +194,10 @@ export function useCustomFieldDefinitionMutations(entityType: EntityType) {
   })
 
   return {
-    addDefinition: (args: { name: string; nameEn?: string | null; fieldType: FieldType; isRequired: boolean; position: number }) =>
-      add.mutateAsync({ ...args, nameEn: args.nameEn ?? null }) as Promise<string>,
-    updateDefinition: (args: { id: string; name: string; nameEn?: string | null; isRequired: boolean }) =>
-      update.mutateAsync({ ...args, nameEn: args.nameEn ?? null }),
+    addDefinition: (args: { name: string; nameEn?: string | null; fieldType: FieldType; isRequired: boolean; position: number; showInMaterialUsage?: boolean }) =>
+      add.mutateAsync({ ...args, nameEn: args.nameEn ?? null, showInMaterialUsage: args.showInMaterialUsage ?? false }) as Promise<string>,
+    updateDefinition: (args: { id: string; name: string; nameEn?: string | null; isRequired: boolean; showInMaterialUsage?: boolean }) =>
+      update.mutateAsync({ ...args, nameEn: args.nameEn ?? null, showInMaterialUsage: args.showInMaterialUsage ?? false }),
     removeDefinition: (id: string) => remove.mutate(id),
     addOption: (args: { fieldDefinitionId: string; value: string; valueEn?: string | null; position: number }) =>
       addOption.mutateAsync({ ...args, valueEn: args.valueEn ?? null }) as Promise<string>,
@@ -323,7 +329,7 @@ export function useCustomFieldValueMutations(entityType: EntityType) {
 
   const uploadFile = useMutation({
     mutationFn: async ({ entityId, fieldDefinitionId, file }: { entityId: string; fieldDefinitionId: string; file: File }) => {
-      const path = `${entityType}/${entityId}/${fieldDefinitionId}/${Date.now()}-${file.name}`
+      const path = `${entityType}/${entityId}/${fieldDefinitionId}/${Date.now()}-${safeStorageFileName(file.name)}`
       const { error: uploadError } = await supabase.storage.from('custom-field-files').upload(path, file)
       if (uploadError) throw uploadError
       const { data } = supabase.storage.from('custom-field-files').getPublicUrl(path)

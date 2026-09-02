@@ -20,6 +20,11 @@ import { printProductForm, toPrintImageUrl, HERO_PHOTO_WIDTH, EXTRA_PHOTO_WIDTH 
    Референс верстки друкованого виводу — Figma-макет, див. lib/printProductForm.ts.
 ─────────────────────────────────────────────────────────── */
 
+/** Псевдо-значення фільтра за кастомним полем: продукт, для якого це поле
+ *  взагалі не заповнене (не плутати з boolean=false — це відсутність рядка
+ *  в custom_field_values). */
+const FILTER_UNSET = '__unset__'
+
 export default function PrintFormsPage({ onBack }: { onBack: () => void }) {
   const { t, tn } = useLocale()
   const { activeOrgName } = useOrg()
@@ -207,22 +212,33 @@ function PrintFilterView({ template, customDefs, fieldLabel, orgName, onBack }: 
   const [categoryId, setCategoryId] = useState('')
   const [statusId, setStatusId] = useState('')
   // Фільтр за кастомним полем продукту — той самий двокроковий патерн
-  // (спершу яке поле, тоді яке значення), що вже є в ProductCatalog.tsx:
-  // лише select/boolean мають дискретні значення, зручні для фільтра.
+  // (спершу яке поле, тоді значення), що вже є в ProductCatalog.tsx, але тут
+  // друге значення — множинний вибір (fieldValueIds): можна позначити
+  // декілька варіантів одразу (об'єднання, OR), а FILTER_UNSET — окремий
+  // "псевдо-варіант" для продуктів, у яких це поле взагалі не заповнене
+  // (немає жодного рядка в custom_field_values для цього поля).
   const [fieldId, setFieldId] = useState('')
-  const [fieldValue, setFieldValue] = useState('')
+  const [fieldValueIds, setFieldValueIds] = useState<string[]>([])
   const filterableFields = customDefs.filter(f => f.fieldType === 'select' || f.fieldType === 'boolean')
   const field = customDefs.find(f => f.id === fieldId) ?? null
+  const toggleFieldValue = (id: string) =>
+    setFieldValueIds(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id])
 
   const matchingFieldProductIds = (() => {
-    if (!field || !fieldValue) return null
-    return new Set(
+    if (!field || fieldValueIds.length === 0) return null
+    const realIds = fieldValueIds.filter(id => id !== FILTER_UNSET)
+    const matches = new Set(
       customValues
         .filter(v => v.fieldDefinitionId === field.id && (
-          field.fieldType === 'boolean' ? String(v.valueBoolean) === fieldValue : v.valueOptionId === fieldValue
+          field.fieldType === 'boolean' ? realIds.includes(String(v.valueBoolean)) : v.valueOptionId !== null && realIds.includes(v.valueOptionId)
         ))
         .map(v => v.entityId)
     )
+    if (fieldValueIds.includes(FILTER_UNSET)) {
+      const withValueIds = new Set(customValues.filter(v => v.fieldDefinitionId === field.id).map(v => v.entityId))
+      for (const p of products) if (!withValueIds.has(p.id)) matches.add(p.id)
+    }
+    return matches
   })()
 
   const filtered = products.filter(p => {
@@ -301,19 +317,36 @@ function PrintFilterView({ template, customDefs, fieldLabel, orgName, onBack }: 
         </select>
         {filterableFields.length > 0 && (
           <>
-            <select value={fieldId} onChange={e => { setFieldId(e.target.value); setFieldValue('') }}
+            <select value={fieldId} onChange={e => { setFieldId(e.target.value); setFieldValueIds([]) }}
               className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-blue-400 transition-all">
               <option value="">{t('filters.allFields')}</option>
               {filterableFields.map(f => <option key={f.id} value={f.id}>{tn(f.name, f.nameEn)}</option>)}
             </select>
+            {/* Множинний вибір значень (чекбокси, а не select) + окремий
+               псевдо-варіант "Не заповнено" для продуктів без цього поля.
+               Нічого не позначено → фолбек на "будь-яке значення" (без
+               фільтра), той самий патерн, що й photoStatusFilter вище. */}
             {field && (
-              <select value={fieldValue} onChange={e => setFieldValue(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-blue-400 transition-all">
-                <option value="">{t('printForms.filterAnyValue')}</option>
-                {field.fieldType === 'boolean'
-                  ? [['true', t('common.yes')], ['false', t('common.no')]].map(([val, label]) => <option key={val} value={val}>{label}</option>)
-                  : field.options.map(o => <option key={o.id} value={o.id}>{tn(o.value, o.valueEn)}</option>)}
-              </select>
+              <div className="space-y-1.5 rounded-xl border border-slate-200 bg-slate-50 p-2">
+                <label className="flex items-center justify-between rounded-lg bg-white px-3 py-2 cursor-pointer"
+                  style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
+                  <span className="text-sm text-slate-600">{t('printForms.filterNotSet')}</span>
+                  <input type="checkbox" checked={fieldValueIds.includes(FILTER_UNSET)} onChange={() => toggleFieldValue(FILTER_UNSET)}
+                    className="h-4 w-4 rounded accent-slate-800" />
+                </label>
+                {(field.fieldType === 'boolean'
+                  ? [['true', t('common.yes')], ['false', t('common.no')]]
+                  : field.options.map(o => [o.id, tn(o.value, o.valueEn)] as [string, string])
+                ).map(([val, label]) => (
+                  <label key={val} className="flex items-center justify-between rounded-lg bg-white px-3 py-2 cursor-pointer"
+                    style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
+                    <span className="text-sm text-slate-600">{label}</span>
+                    <input type="checkbox" checked={fieldValueIds.includes(val)} onChange={() => toggleFieldValue(val)}
+                      className="h-4 w-4 rounded accent-slate-800" />
+                  </label>
+                ))}
+                <p className="text-[10px] text-slate-400 px-1">{t('printForms.filterValueHint')}</p>
+              </div>
             )}
           </>
         )}

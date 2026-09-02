@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
-import { uploadFileWithProgress } from '../lib/storageUpload'
+import { uploadFileWithProgress, safeStorageFileName } from '../lib/storageUpload'
 import { useActiveOrgId } from '../OrgContext'
 import { useLocale } from '../LocaleContext'
 import type { TranslationKey } from '../i18n'
@@ -408,14 +408,14 @@ async function persistPhotos(orgId: string, productId: string, photos: PhotoItem
     photos.map(async (p, i) => {
       let url = p.url
       if (p.file) {
-        const path = `${productId}/${Date.now()}-${i}-${p.file.name}`
+        const path = `${productId}/${Date.now()}-${i}-${safeStorageFileName(p.file.name)}`
         await uploadFileWithProgress('product-photos', path, p.file, loaded => onProgress?.(p.key, loaded))
         url = supabase.storage.from('product-photos').getPublicUrl(path).data.publicUrl
       }
       let originalUrl = p.originalUrl
       // keepOriginal — рішення per-фото (не глобальне на всі нові фото).
       if (p.originalFile && p.keepOriginal) {
-        const originalPath = `${productId}/originals/${Date.now()}-${i}-${p.originalFile.name}`
+        const originalPath = `${productId}/originals/${Date.now()}-${i}-${safeStorageFileName(p.originalFile.name)}`
         await uploadFileWithProgress('product-photos', originalPath, p.originalFile)
         originalUrl = supabase.storage.from('product-photos').getPublicUrl(originalPath).data.publicUrl
       }
@@ -448,7 +448,7 @@ async function persistVideos(orgId: string, productId: string, videos: VideoItem
     videos.map(async (v, i) => {
       let url = v.url
       if (v.file) {
-        const path = `${productId}/${Date.now()}-${i}-${v.file.name}`
+        const path = `${productId}/${Date.now()}-${i}-${safeStorageFileName(v.file.name)}`
         await uploadFileWithProgress('product-videos', path, v.file, loaded => onProgress?.(v.key, loaded))
         url = supabase.storage.from('product-videos').getPublicUrl(path).data.publicUrl
       }

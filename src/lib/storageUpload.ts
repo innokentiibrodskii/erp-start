@@ -1,5 +1,19 @@
 import { supabase } from './supabase'
 
+/** Supabase Storage приймає в ключах об'єктів лише безпечну ASCII-підмножину
+ *  символів — не-ASCII (кирилиця тощо) чи деякі спецсимволи в шляху сервер
+ *  відхиляє помилкою "Invalid key: ...". Оригінальна назва файлу (напр.
+ *  дефолтний скріншот macOS "Знімок екрана 2026-09-02 144456.png") раніше
+ *  йшла в шлях як є — звідси й помилка. Розширення лишається без змін,
+ *  решта імені зводиться до [a-zA-Z0-9._-], решта символів → "-". */
+export function safeStorageFileName(name: string): string {
+  const dot = name.lastIndexOf('.')
+  const base = dot > 0 ? name.slice(0, dot) : name
+  const ext = dot > 0 ? name.slice(dot).replace(/[^a-zA-Z0-9.]+/g, '') : ''
+  const safeBase = base.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/-{2,}/g, '-').replace(/^-+|-+$/g, '')
+  return (safeBase || 'file') + ext
+}
+
 /* ───────────────────────────────────────────────────────────
    Завантаження файлу в Supabase Storage з реальним прогресом (%).
 

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import QRCodeLib from 'react-qr-code'
 import { useCatalog } from './hooks/useCatalog'
 import { useProducts, useMaterials, useProductStatuses, useProductMutations, type Product } from './hooks/useProducts'
@@ -79,6 +79,16 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
   const [quickAction, setQuickAction] = useState<{ productId: string; type: QuickActionType } | null>(
     () => initialQuickActionProductId ? { productId: initialQuickActionProductId, type: 'materials' } : null
   )
+  // Позиція скролу списку в момент відкриття картки — щоб "назад" повертав
+  // саме туди, де стояв продукт у списку, а не на початок сторінки.
+  const listScrollY = useRef(0)
+  useEffect(() => {
+    if (viewId === null && editId === null && quickAction === null && listScrollY.current > 0) {
+      window.scrollTo({ top: listScrollY.current })
+      listScrollY.current = 0
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewId, editId, quickAction])
   // "Завдання" на картці продукту — та сама форма створення завдання, що на
   // сторінці "Завдання" (AssignmentFormSheet), лише з уже обраним продуктом.
   const [taskProductId, setTaskProductId] = useState<string | null>(null)
@@ -485,7 +495,7 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
                 {/* Main row — tap opens view; фото збільшене (за макетом Figma
                     node 72-36516), назва/sku/бейджі та кнопка "Специфікація"
                     стоять поруч у стовпчик на всю висоту фото. */}
-                <div role="button" tabIndex={0} onClick={() => setViewId(product.id)} onKeyDown={e => e.key === 'Enter' && setViewId(product.id)} className="flex w-full items-stretch gap-3 px-4 pt-4 pb-4 cursor-pointer">
+                <div role="button" tabIndex={0} onClick={() => { listScrollY.current = window.scrollY; setViewId(product.id) }} onKeyDown={e => { if (e.key === 'Enter') { listScrollY.current = window.scrollY; setViewId(product.id) } }} className="flex w-full items-stretch gap-3 px-4 pt-4 pb-4 cursor-pointer">
                   <div className="w-40 shrink-0 overflow-hidden rounded-xl bg-slate-100">
                     {product.photo
                       ? <img src={product.photo} alt={product.name} loading="lazy" className="h-full w-full object-cover" />

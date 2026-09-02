@@ -25,7 +25,8 @@ type Page = 'products' | 'materials' | 'tasks' | 'directory' | 'settings' | 'emp
  *  manager_view: Продукти (лише перегляд — гейт на редагування/специфікацію
  *  всередині ProductCatalog.tsx/SpecificationPage.tsx), Довідники, Налаштування —
  *  без Матеріалів/Дашбордів/Працівників.
- *  rawMaterials ("Information about raw materials") — лише admin: чернетка
+ *  rawMaterials ("Information about raw materials") — лише admin, і додатково
+ *  відфільтровується нижче (pages) до єдиної компанії LILY_EMBER_ORG_ID: чернетка
  *  імпорту сировини (draft.*), ще не звірена, не для щоденної роботи команди. */
 const ROLE_PAGES: Record<UserRole, Page[]> = {
   admin: ['products', 'materials', 'directory', 'settings', 'employees', 'dashboards', 'rawMaterials'],
@@ -39,6 +40,11 @@ const MOBILE_TABS_MANAGER: Page[] = ['products', 'materials']
 const MOBILE_TABS_MANAGER_VIEW: Page[] = ['products', 'tasks']
 const MOBILE_TABS_PERFORMER: Page[] = ['tasks']
 
+/** "Information about raw materials" — чернетка спільного (не мультитенантного)
+ *  імпорту сировини, актуальна лише для LILY EMBER. Іншим компаніям сторінка
+ *  взагалі не показується, навіть адмінам. */
+const LILY_EMBER_ORG_ID = 'f0604025-d304-4d16-9edb-84cd2d65f441'
+
 interface Props {
   onLogout: () => void
 }
@@ -48,8 +54,10 @@ export default function Shell({ onLogout }: Props) {
   const isAdmin = currentUser?.role === 'admin'
   const isManager = currentUser?.role === 'manager' || isAdmin
   const isManagerView = currentUser?.role === 'manager_view'
-  const pages = currentUser ? ROLE_PAGES[currentUser.role] : []
-  const { activeOrgName, canSwitch, requestSwitch } = useOrg()
+  const { activeOrgId, activeOrgName, canSwitch, requestSwitch } = useOrg()
+  const pages = currentUser
+    ? ROLE_PAGES[currentUser.role].filter(p => p !== 'rawMaterials' || activeOrgId === LILY_EMBER_ORG_ID)
+    : []
   const { locale, setLocale, t } = useLocale()
 
   // Діп-лінк із QR-коду (?material=... чи ?product=...) — відкриває картку одразу при вході.
@@ -335,7 +343,7 @@ export default function Shell({ onLogout }: Props) {
               {page === 'dashboards' && isManager && <DashboardsPage initialDrilldown={deepLink.dashboardsDrilldown} />}
               {page === 'profile' && currentUser && <ProfilePage employeeId={currentUser.id} onBack={() => setPage(prevPage)} />}
               {page === 'about' && <AboutPage />}
-              {page === 'rawMaterials' && isAdmin && <RawMaterialsPage onBack={() => setPage('tasks')} />}
+              {page === 'rawMaterials' && pages.includes('rawMaterials') && <RawMaterialsPage onBack={() => setPage('tasks')} />}
             </Suspense>
           </div>
         </main>
