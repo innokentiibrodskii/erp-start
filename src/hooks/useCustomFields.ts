@@ -60,7 +60,9 @@ export interface CustomFieldDefinition {
   position: number
   options: CustomFieldOption[]
   /** Лише для entityType='material': чи показувати це поле колонкою в
-   *  Довідники → Матеріали → "Використовуються у продукціях". */
+   *  Дашборди → "Матеріали, які використовуються у продукції"
+   *  (MaterialUsagePage.tsx; раніше — Довідники → Матеріали → "Використовуються
+   *  у продукціях", звідси й назва прапорця). */
   showInMaterialUsage: boolean
 }
 

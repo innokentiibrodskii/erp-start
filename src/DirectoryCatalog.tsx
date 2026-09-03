@@ -3,9 +3,8 @@ import { useCatalog, genCategoryShortCode } from './hooks/useCatalog'
 import { PRESET_COLORS } from './lib/colors'
 import { buildCatPath, fmt } from './lib/materialFormat'
 import type { Department, Position, ProductCategory, ProductAttribute, Operation, Warehouse, MaterialCategory, Unit, Supplier } from './hooks/useCatalog'
-import { useProducts, useProductStatuses, useProductStatusMutations, type ProductStatus, usePhotoStatuses, usePhotoStatusMutations, type PhotoStatus } from './hooks/useProducts'
-import { useMaterials } from './hooks/useMaterials'
-import { useCustomFieldDefinitions, useCustomFieldDefinitionMutations, useAllCustomFieldValues, type CustomFieldDefinition, type EntityType, type FieldType } from './hooks/useCustomFields'
+import { useProductStatuses, useProductStatusMutations, type ProductStatus, usePhotoStatuses, usePhotoStatusMutations, type PhotoStatus } from './hooks/useProducts'
+import { useCustomFieldDefinitions, useCustomFieldDefinitionMutations, type CustomFieldDefinition, type EntityType, type FieldType } from './hooks/useCustomFields'
 import { useMaterialCostCurrency, useSetMaterialCostCurrency, CURRENCIES, CURRENCY_LABEL_KEY } from './hooks/useOrgSettings'
 import { useCurrentUser } from './hooks/useCurrentUser'
 import { usePayrollSettings, useSetPayrollSettings, usePayrollClosures, useClosePayrollPeriod, computeMonthPayrollPhase } from './hooks/usePayroll'
@@ -25,7 +24,6 @@ type SubPage =
   | 'suppliers'
   | 'productStatuses'
   | 'photoStatuses'
-  | 'materialUsage'
 
 type DirectoryGroup = 'Продукт' | 'Матеріали' | 'Люди' | 'Системні каталоги'
 
@@ -51,9 +49,6 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
   const catalog = useCatalog()
   const statusesQ = useProductStatuses()
   const photoStatusesQ = usePhotoStatuses()
-  // Лише для лічильника на тайлі "Використовуються у продукціях" — той самий
-  // запит, що вже кешований і використовується на сторінці Продуктів.
-  const productsForUsageQ = useProducts()
 
   const toggleGroup = (g: DirectoryGroup) => setCollapsedGroups(prev => {
     const next = new Set(prev)
@@ -99,11 +94,6 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
       color: '#0284c7', bg: '#f0f9ff', count: () => catalog.units.length,
       icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 16L16 4M8 4h8v8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
     },
-    {
-      id: 'materialUsage', group: 'Матеріали', label: t('directory.tiles.materialUsage.label'), description: t('directory.tiles.materialUsage.desc'),
-      color: '#9333ea', bg: '#faf5ff', count: () => (productsForUsageQ.data ?? []).reduce((sum, p) => sum + p.materials.length, 0),
-      icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="4" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><rect x="11" y="4" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><rect x="6.5" y="13" width="7" height="4.5" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><path d="M5.5 11v1a1 1 0 001 1h7a1 1 0 001-1v-1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
-    },
     // ── Люди ──
     {
       id: 'positions', group: 'Люди', label: t('directory.tiles.positions.label'), description: t('directory.tiles.positions.desc'),
@@ -146,7 +136,6 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
   if (page === 'suppliers')          return <SuppliersPage          onBack={() => setPage(null)} />
   if (page === 'productStatuses')    return <ProductStatusesPage    onBack={() => setPage(null)} />
   if (page === 'photoStatuses')      return <PhotoStatusesPage      onBack={() => setPage(null)} />
-  if (page === 'materialUsage')      return <MaterialUsagePage      onBack={() => setPage(null)} />
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -1711,165 +1700,3 @@ function WarehousesPage({ onBack }: { onBack: () => void }) {
   )
 }
 
-/* ─── MATERIAL USAGE ("Використовуються у продукціях") ───
-   Довідники → Матеріали → таблиця "матеріал × продукт × кількість" —
-   зворотний до ProductCatalog/SpecificationPage погляд: не "які матеріали
-   в цьому продукті", а "у яких продуктах використовується цей матеріал".
-   Лише читання, дані повністю похідні від уже кешованих useProducts()/
-   useMaterials() (той самий product_materials, що й у специфікації
-   продукту) — окремого SQL-запиту не потрібно.
-
-   Кастомні поля матеріалу — лише ті, що адмін явно позначив чекбоксом
-   "показувати в цій таблиці" (Довідники → Кастомні поля → Матеріали,
-   showInMaterialUsage), щоб таблиця не роздувалась усіма полями підряд. */
-function MaterialUsagePage({ onBack }: { onBack: () => void }) {
-  const { t, tn } = useLocale()
-  const { data: currentUser } = useCurrentUser()
-  // Перехід у картку матеріалу веде на сторінку "Матеріали", недоступну
-  // ролі manager_view — там лише посилання на продукт лишається клікабельним.
-  const canOpenMaterial = currentUser?.role === 'admin' || currentUser?.role === 'manager'
-
-  const productsQ = useProducts()
-  const materialsQ = useMaterials()
-  const products = productsQ.data ?? []
-  const materials = materialsQ.data ?? []
-  const definitions = (useCustomFieldDefinitions('material').data ?? []).filter(d => d.showInMaterialUsage)
-  const values = useAllCustomFieldValues('material').data ?? []
-
-  const [search, setSearch] = useState('')
-
-  const rows = products
-    .flatMap(p => p.materials.map(pm => ({
-      key: pm.id,
-      productId: p.id,
-      productName: p.name,
-      productSku: p.sku,
-      material: materials.find(m => m.id === pm.materialId) ?? null,
-      qty: pm.qty,
-      unitShortName: pm.unitShortName,
-      unitShortNameEn: pm.unitShortNameEn,
-    })))
-    .filter(r => {
-      const term = search.trim().toLowerCase()
-      if (!term) return true
-      return (r.material ? tn(r.material.name, r.material.nameEn).toLowerCase() : '').includes(term)
-        || r.productName.toLowerCase().includes(term)
-        || (r.material?.code ?? '').toLowerCase().includes(term)
-        || r.productSku.toLowerCase().includes(term)
-    })
-
-  // Групування по матеріалу — комірка "Матеріал" (і кастомні поля, які теж
-  // належать матеріалу, а не парі матеріал-продукт) друкується один раз на
-  // групу через rowSpan, замість повтору в кожному рядку. Матеріал без
-  // самого запису (видалений) — своя окрема група на кожен такий рядок,
-  // бо об'єднувати різні видалені матеріали в одну групу нема сенсу.
-  type UsageRow = typeof rows[number]
-  const groups: { key: string; material: UsageRow['material']; rows: UsageRow[] }[] = []
-  const groupByKey = new Map<string, { key: string; material: UsageRow['material']; rows: UsageRow[] }>()
-  for (const r of rows) {
-    const gkey = r.material?.id ?? `none-${r.key}`
-    let g = groupByKey.get(gkey)
-    if (!g) { g = { key: gkey, material: r.material, rows: [] }; groupByKey.set(gkey, g); groups.push(g) }
-    g.rows.push(r)
-  }
-  groups.sort((a, b) => {
-    const an = a.material ? tn(a.material.name, a.material.nameEn) : ''
-    const bn = b.material ? tn(b.material.name, b.material.nameEn) : ''
-    return an.localeCompare(bn, 'uk')
-  })
-  for (const g of groups) g.rows.sort((a, b) => a.productName.localeCompare(b.productName, 'uk'))
-
-  const valueFor = (materialId: string, fieldId: string) => values.find(v => v.entityId === materialId && v.fieldDefinitionId === fieldId) ?? null
-  const fieldText = (materialId: string, d: CustomFieldDefinition): string => {
-    const v = valueFor(materialId, d.id)
-    if (!v) return ''
-    if (d.fieldType === 'boolean') return v.valueBoolean ? '✓' : ''
-    if (d.fieldType === 'number') return v.valueNumber !== null ? fmt(v.valueNumber) : ''
-    if (d.fieldType === 'select') {
-      const opt = d.options.find(o => o.id === v.valueOptionId)
-      return opt ? tn(opt.value, opt.valueEn) : ''
-    }
-    return v.valueText ?? ''
-  }
-
-  // Той самий deep-link механізм, що й QR-сканування/деталізація дашбордів
-  // (?product=id / ?material=id) — Shell.tsx читає ці параметри при
-  // завантаженні й одразу відкриває картку; from=directory повертає "назад"
-  // сюди, у Довідники (не саме в цю таблицю — прийнятне спрощення).
-  const goToProduct = (id: string) => { window.location.href = `${window.location.pathname}?product=${id}&from=directory` }
-  const goToMaterial = (id: string) => { window.location.href = `${window.location.pathname}?material=${id}&from=directory` }
-
-  const isLoading = productsQ.isLoading || materialsQ.isLoading
-
-  return (
-    <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      <SubPageHeader title={t('directory.tiles.materialUsage.label')} subtitle={t('directory.countRecords', { count: rows.length })} onBack={onBack} />
-      <div className="px-4 pt-4">
-        <div className="relative mb-4">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" width="15" height="15" viewBox="0 0 14 14" fill="none">
-            <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4"/>
-            <path d="M9.5 9.5l2.5 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-          </svg>
-          <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder={t('directory.materialUsageSearchPlaceholder')}
-            className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm outline-none placeholder:text-slate-300 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
-        </div>
-      </div>
-
-      <div className="px-4 pb-8">
-        {isLoading ? (
-          <div className="py-10 text-center text-sm text-slate-400">{t('common.loading')}</div>
-        ) : rows.length === 0 ? (
-          <div className="rounded-2xl bg-white py-12 text-center text-sm text-slate-400" style={{ border: '1px solid rgba(157,200,255,0.25)' }}>
-            {t('directory.materialUsageEmpty')}
-          </div>
-        ) : (
-          <div className="overflow-x-auto rounded-2xl bg-white" style={{ border: '1px solid rgba(157,200,255,0.22)', boxShadow: '0 1px 6px rgba(157,200,255,0.07)' }}>
-            <table className="w-full text-sm" style={{ borderCollapse: 'collapse', minWidth: `${480 + definitions.length * 140}px` }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid rgba(157,200,255,0.2)' }}>
-                  <th className="px-3 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('directory.materialUsageColMaterial')}</th>
-                  <th className="px-3 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('directory.materialUsageColProduct')}</th>
-                  <th className="px-3 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('directory.materialUsageColQty')}</th>
-                  {definitions.map(d => (
-                    <th key={d.id} className="px-3 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-400">{tn(d.name, d.nameEn)}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {groups.map((g, gi) => g.rows.map((r, ri) => (
-                  <tr key={r.key} className="hover:bg-slate-50 transition-colors"
-                    style={{ borderBottom: '1px solid rgba(157,200,255,0.12)', borderTop: ri === 0 && gi > 0 ? '1px solid rgba(157,200,255,0.28)' : undefined }}>
-                    {ri === 0 && (
-                      <td className="px-3 py-3 align-top" rowSpan={g.rows.length}>
-                        {g.material && canOpenMaterial ? (
-                          <button onClick={() => goToMaterial(g.material!.id)} className="font-medium text-blue-600 hover:underline text-left">
-                            {tn(g.material.name, g.material.nameEn)}
-                          </button>
-                        ) : (
-                          <span className="font-medium text-slate-800">{g.material ? tn(g.material.name, g.material.nameEn) : '—'}</span>
-                        )}
-                        {g.material?.code && <p className="text-xs text-slate-400">{g.material.code}</p>}
-                      </td>
-                    )}
-                    <td className="px-3 py-3">
-                      <button onClick={() => goToProduct(r.productId)} className="font-medium text-blue-600 hover:underline text-left">
-                        {r.productName}
-                      </button>
-                      <p className="text-xs text-slate-400">{r.productSku}</p>
-                    </td>
-                    <td className="px-3 py-3 font-mono text-slate-700 whitespace-nowrap">{fmt(r.qty)} {tn(r.unitShortName, r.unitShortNameEn)}</td>
-                    {ri === 0 && definitions.map(d => (
-                      <td key={d.id} className="px-3 py-3 text-slate-700 align-top" rowSpan={g.rows.length}>
-                        {g.material ? (fieldText(g.material.id, d) || '—') : '—'}
-                      </td>
-                    ))}
-                  </tr>
-                )))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}

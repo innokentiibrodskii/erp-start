@@ -2,13 +2,17 @@ import { useLocale } from './LocaleContext'
 
 interface Props {
   message: string
+  /** Необов'язкове додаткове попередження (напр. скільки пов'язаних записів
+   *  каскадно зникне разом із цим) — окремим виділеним блоком над
+   *  стандартним "дію не можна скасувати". */
+  warning?: string
   onCancel: () => void
   onConfirm: () => void
 }
 
 /** Спільна модалка підтвердження видалення — той самий вигляд для продуктів
  *  і матеріалів (ProductCatalog.tsx, MaterialStock.tsx). */
-export default function ConfirmDeleteModal({ message, onCancel, onConfirm }: Props) {
+export default function ConfirmDeleteModal({ message, warning, onCancel, onConfirm }: Props) {
   const { t } = useLocale()
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-6">
@@ -16,6 +20,11 @@ export default function ConfirmDeleteModal({ message, onCancel, onConfirm }: Pro
       <div className="relative z-10 w-full max-w-sm rounded-3xl bg-white px-6 py-6"
         style={{ boxShadow: '0 16px 48px rgba(0,0,0,0.18)' }}>
         <p className="text-base font-semibold text-slate-800 mb-2">{message}</p>
+        {warning && (
+          <div className="mb-3 rounded-2xl px-3.5 py-3 text-xs text-amber-700" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
+            {warning}
+          </div>
+        )}
         <p className="text-sm text-slate-500 mb-6">{t('common.actionIrreversible')}</p>
         <div className="flex gap-3">
           <button onClick={onCancel}

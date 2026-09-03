@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import QRCodeLib from 'react-qr-code'
 import { useCatalog } from './hooks/useCatalog'
-import { useProducts, useMaterials, useProductStatuses, useProductMutations, type Product } from './hooks/useProducts'
+import { useProducts, useMaterials, useProductStatuses, useProductMutations, useProductDeleteImpact, type Product } from './hooks/useProducts'
 import { useCurrentUser } from './hooks/useCurrentUser'
 import { useUsers } from './hooks/useUsers'
 import { useCustomFieldDefinitions, useAllCustomFieldValues } from './hooks/useCustomFields'
@@ -104,6 +104,12 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
   // Видалити продукт — лише адмін, підтвердження окремою модалкою (як і
   // видалення матеріалу в MaterialStock.tsx), а не одразу по кліку.
   const [confirmDelete, setConfirmDelete] = useState<Product | null>(null)
+  // На відміну від матеріалу (де БД сама блокує видалення, якщо він
+  // використовується — ON DELETE RESTRICT), у продукту всі зв'язки —
+  // ON DELETE CASCADE: видалення завжди пройде й мовчки забере із собою
+  // завдання/призначення/специфікації. БД навмисно не чіпаємо — попереджаємо
+  // про масштаб наслідків просто в модалці підтвердження.
+  const deleteImpactQ = useProductDeleteImpact(confirmDelete?.id ?? null)
   // Фільтр за кастомним полем продукту — спершу яке поле, тоді яке значення
   // (варіанти залежать від типу поля: select → його опції, boolean → так/ні).
   const [filterFieldId, setFilterFieldId] = useState<string | null>(null)
@@ -272,7 +278,13 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
     return <ProductView productId={viewId} onBack={backToOrigin} onEdit={() => { setEditId(viewId); setViewId(null) }} />
   }
   if (quickAction !== null) {
-    return <SpecificationPage productId={quickAction.productId} type={quickAction.type} onBack={() => setQuickAction(null)} />
+    // Той самий "назад до джерела" патерн, що й viewId вище — актуально для
+    // MaterialUsagePage.tsx (Дашборди), яка відкриває "Специфікацію" саме
+    // цим deep-link'ом (?product=...&view=materials&from=dashboards&sub=materialUsage).
+    const backToOrigin = quickAction.productId === initialQuickActionProductId && initialViewReturnTo
+      ? () => onNavigate(initialViewReturnTo)
+      : () => setQuickAction(null)
+    return <SpecificationPage productId={quickAction.productId} type={quickAction.type} onBack={backToOrigin} />
   }
 
   return (
@@ -630,14 +642,27 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
         />
       )}
 
-      {/* Підтвердження видалення — лише адмін */}
-      {confirmDelete && (
-        <ConfirmDeleteModal
-          message={t('products.deleteConfirm', { name: confirmDelete.name })}
-          onCancel={() => setConfirmDelete(null)}
-          onConfirm={() => { removeProduct(confirmDelete.id); setConfirmDelete(null) }}
-        />
-      )}
+      {/* Підтвердження видалення — лише адмін. БД тут нічого не блокує (products.id
+         скрізь ON DELETE CASCADE, на відміну від матеріалу), тож попереджаємо
+         про масштаб наслідків самі, до підтвердження. */}
+      {confirmDelete && (() => {
+        const impact = deleteImpactQ.data
+        const items = impact
+          ? [
+              impact.tasksCount > 0 ? t('products.deleteImpactTasks', { count: impact.tasksCount }) : null,
+              impact.assignmentsCount > 0 ? t('products.deleteImpactAssignments', { count: impact.assignmentsCount }) : null,
+              impact.specificationsCount > 0 ? t('products.deleteImpactSpecs', { count: impact.specificationsCount }) : null,
+            ].filter((s): s is string => s !== null)
+          : []
+        return (
+          <ConfirmDeleteModal
+            message={t('products.deleteConfirm', { name: confirmDelete.name })}
+            warning={items.length > 0 ? t('products.deleteImpactWarning', { items: items.join(', ') }) : undefined}
+            onCancel={() => setConfirmDelete(null)}
+            onConfirm={() => { removeProduct(confirmDelete.id); setConfirmDelete(null) }}
+          />
+        )
+      })()}
 
       {/* Toast */}
       <div className="pointer-events-none fixed top-5 left-1/2 z-50 -translate-x-1/2 transition-all duration-300"

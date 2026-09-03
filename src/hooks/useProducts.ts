@@ -478,6 +478,42 @@ async function getDefaultStatusId(orgId: string): Promise<string | null> {
   return data?.id ?? null
 }
 
+/** Скільки пов'язаних записів насправді зникне разом з продуктом при
+ *  видаленні — на відміну від матеріалу (де product_materials.material_id
+ *  має ON DELETE RESTRICT і БД сама блокує видалення "в роботі" матеріалу),
+ *  усі зв'язки products.id → ON DELETE CASCADE: жодного блокування на
+ *  рівні БД немає, видалення продукту-адміном завжди проходить і мовчки
+ *  стирає його завдання/призначення/історію специфікацій. Це попереджає
+ *  користувача про масштаб наслідків ДО підтвердження — не блокує саму дію
+ *  (навмисне рішення, БД не чіпаємо). */
+export interface ProductDeleteImpact {
+  tasksCount: number
+  assignmentsCount: number
+  specificationsCount: number
+}
+
+export function useProductDeleteImpact(productId: string | null) {
+  return useQuery({
+    queryKey: ['product-delete-impact', productId],
+    enabled: productId !== null,
+    queryFn: async (): Promise<ProductDeleteImpact> => {
+      const [tasksRes, assignmentsRes, specsRes] = await Promise.all([
+        supabase.from('tasks').select('id', { count: 'exact', head: true }).eq('product_id', productId as string),
+        supabase.from('assignments').select('id', { count: 'exact', head: true }).eq('product_id', productId as string),
+        supabase.from('product_specifications').select('id', { count: 'exact', head: true }).eq('product_id', productId as string),
+      ])
+      if (tasksRes.error) throw tasksRes.error
+      if (assignmentsRes.error) throw assignmentsRes.error
+      if (specsRes.error) throw specsRes.error
+      return {
+        tasksCount: tasksRes.count ?? 0,
+        assignmentsCount: assignmentsRes.count ?? 0,
+        specificationsCount: specsRes.count ?? 0,
+      }
+    },
+  })
+}
+
 export function useProductMutations() {
   const qc = useQueryClient()
   const orgId = useActiveOrgId()

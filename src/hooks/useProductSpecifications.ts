@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { useActiveOrgId } from '../OrgContext'
 import { showErrorToast } from '../lib/toast'
 import type { ProductMaterialLink, ProductOperationLink } from './useProducts'
 
@@ -65,6 +66,50 @@ export function useProductSpecifications(productId: string | null) {
         statusChangedAt: s.status_changed_at ? new Date(s.status_changed_at).getTime() : null,
         restoredFromVersionNumber: s.restored_from_id ? (versionNumberById.get(s.restored_from_id) ?? null) : null,
       }))
+    },
+  })
+}
+
+/** Найновіша версія специфікації кожного продукту одразу (не однієї
+ *  конкретної, як useProductSpecifications) — для колонок "Статус
+ *  специфікації"/"Дата активності" у MaterialUsagePage.tsx (Дашборди),
+ *  де потрібен статус одразу по всіх продуктах у таблиці, а не по одному. */
+export interface LatestProductSpecification {
+  productId: string
+  status: ProductSpecificationVersionStatus
+  /** Дата, коли САМЕ ЦЯ версія стала активною — це created_at, не
+   *  status_changed_at: останнє проставляється тригером лише при ЗАКРИТТІ
+   *  версії (коли її витісняє наступна), тож для поточної активної версії
+   *  завжди null (saveVersion у цьому файлі вставляє новий рядок одразу
+   *  зі status:'active', без status_changed_at). */
+  activatedAt: number
+}
+
+export function useLatestProductSpecifications() {
+  const orgId = useActiveOrgId()
+  return useQuery({
+    queryKey: ['latest-product-specifications', orgId],
+    queryFn: async (): Promise<LatestProductSpecification[]> => {
+      const { data, error } = await supabase
+        .from('product_specifications')
+        .select('product_id, status, created_at, version_number')
+        .eq('organization_id', orgId)
+        .order('version_number', { ascending: false })
+      if (error) throw error
+      // Перший рядок на product_id після сортування за version_number desc — і є
+      // найновіша версія (той самий "data[0]", що latestVersion у SpecificationPage.tsx).
+      const seen = new Set<string>()
+      const result: LatestProductSpecification[] = []
+      for (const s of data) {
+        if (seen.has(s.product_id)) continue
+        seen.add(s.product_id)
+        result.push({
+          productId: s.product_id,
+          status: s.status as ProductSpecificationVersionStatus,
+          activatedAt: new Date(s.created_at).getTime(),
+        })
+      }
+      return result
     },
   })
 }

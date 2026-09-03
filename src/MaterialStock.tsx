@@ -240,6 +240,7 @@ export default function MaterialStock({ onNavigate, initialMaterialId, initialMa
           stock={totalFor(balances, mat.id)}
           fields={materialFields}
           onBack={backToOrigin}
+          onEdit={() => openEdit(mat)}
         />
       </>
     )
@@ -623,7 +624,7 @@ function MaterialQRPage({ material, categoryPath, stock, onBack }: {
 /* ═══════════════════════════════════════════════════════════
    Material Detail — read-only view
 ═══════════════════════════════════════════════════════════ */
-function MaterialDetail({ material, categoryPath, suppliers, warehouses, movements, stock, fields, onBack }: {
+function MaterialDetail({ material, categoryPath, suppliers, warehouses, movements, stock, fields, onBack, onEdit }: {
   material: Material
   categoryPath: string
   suppliers: ReturnType<typeof useCatalog>['suppliers']
@@ -632,6 +633,7 @@ function MaterialDetail({ material, categoryPath, suppliers, warehouses, movemen
   stock: number
   fields: CustomFieldDefinition[]
   onBack: () => void
+  onEdit: () => void
 }) {
   const { t, tn } = useLocale()
   const productsQ = useProducts()
@@ -668,6 +670,10 @@ function MaterialDetail({ material, categoryPath, suppliers, warehouses, movemen
           </svg>
         </button>
         <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="flex-1 text-lg text-slate-800 truncate">{tn(material.name, material.nameEn)}</h1>
+        <button onClick={onEdit} title={t('common.edit')}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 active:scale-95 transition-all">
+          <PencilIcon />
+        </button>
       </div>
 
       <div className="px-4 pt-5 pb-10 space-y-4">

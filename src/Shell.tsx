@@ -65,6 +65,9 @@ export default function Shell({ onLogout }: Props) {
   // звичайного списку; порожньо для QR-сканування, де "назад" і має вести в список.
   // ?field=...&value=... — з якої саме деталізації дашборду зайшли (definitionId/optionId),
   // щоб "назад" відновило точно той самий список значень, а не верхній рівень дашбордів.
+  // ?sub=materialUsage — той самий підхід для MaterialUsagePage.tsx (Дашборди →
+  // "Матеріали, які використовуються у продукції"): "назад" з картки матеріалу чи
+  // специфікації продукту має відкрити саме цю таблицю, а не верхній рівень дашбордів.
   const [deepLink] = useState(() => {
     const params = new URLSearchParams(window.location.search)
     const materialId = params.get('material')
@@ -73,10 +76,11 @@ export default function Shell({ onLogout }: Props) {
     const field = params.get('field')
     const value = params.get('value')
     const view = params.get('view')
+    const sub = params.get('sub')
     const dashboardsDrilldown: DrilldownTarget | null = returnTo === 'dashboards' && field && value && (productId || materialId)
       ? { entityType: productId ? 'product' : 'material', definitionId: field, optionId: value }
       : null
-    return { materialId, productId, returnTo, dashboardsDrilldown, view }
+    return { materialId, productId, returnTo, dashboardsDrilldown, view, sub }
   })
 
   const [page, setPage] = useState<Page>(() => {
@@ -340,7 +344,9 @@ export default function Shell({ onLogout }: Props) {
                 <PrintFormsPage onBack={() => setSettingsView('hub')} />
               )}
               {page === 'employees' && isAdmin && <EmployeesPage />}
-              {page === 'dashboards' && isManager && <DashboardsPage initialDrilldown={deepLink.dashboardsDrilldown} />}
+              {page === 'dashboards' && isManager && (
+                <DashboardsPage initialDrilldown={deepLink.dashboardsDrilldown} initialMaterialUsageOpen={deepLink.sub === 'materialUsage'} />
+              )}
               {page === 'profile' && currentUser && <ProfilePage employeeId={currentUser.id} onBack={() => setPage(prevPage)} />}
               {page === 'about' && <AboutPage />}
               {page === 'rawMaterials' && pages.includes('rawMaterials') && <RawMaterialsPage onBack={() => setPage('tasks')} />}

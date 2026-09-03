@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { useDashboardStats, useDrilldownRecords, SPECIFICATION_FIELD_ID, type DashboardFieldStat } from './hooks/useDashboardStats'
 import { usePositionTaskStats, usePositionEmployeeBreakdown } from './hooks/usePeopleDashboardStats'
 import type { EntityType } from './hooks/useCustomFields'
@@ -7,6 +7,10 @@ import { useMaterialCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings
 import { fmt } from './lib/materialFormat'
 import { useLocale } from './LocaleContext'
 import type { TranslationKey } from './i18n'
+// Лінива підгрузка — тягне xlsx (~350 kB), не варто вантажити його всім,
+// хто просто відкрив "Дашборди" й жодного разу не заходив у цю таблицю
+// (той самий підхід, що й до сторінок верхнього рівня в Shell.tsx).
+const MaterialUsagePage = lazy(() => import('./MaterialUsagePage'))
 
 /* ───────────────────────────────────────────────────────────
    "Дашборди" — агрегована статистика по кастомних select-полях
@@ -62,15 +66,26 @@ export interface DrilldownTarget {
   optionId: string
 }
 
-export default function DashboardsPage({ initialDrilldown = null }: { initialDrilldown?: DrilldownTarget | null }) {
+export default function DashboardsPage({ initialDrilldown = null, initialMaterialUsageOpen = false }: { initialDrilldown?: DrilldownTarget | null; initialMaterialUsageOpen?: boolean }) {
   const { t } = useLocale()
   const [search, setSearch] = useState('')
   const [drilldown, setDrilldown] = useState<DrilldownTarget | null>(initialDrilldown)
   const [positionDrilldown, setPositionDrilldown] = useState<string | null>(null)
+  // "Матеріали, які використовуються у продукції" — перенесено сюди з
+  // Довідники → Матеріали → "Використовуються у продукціях" (MaterialUsagePage.tsx).
+  // initialMaterialUsageOpen — deep-link ?sub=materialUsage (Shell.tsx): "назад" із
+  // картки матеріалу/специфікації продукту, відкритих із цієї таблиці, повертає
+  // одразу сюди, а не на верхній рівень дашбордів.
+  const [materialUsageOpen, setMaterialUsageOpen] = useState(initialMaterialUsageOpen)
   const q = search.trim().toLowerCase()
 
   if (drilldown) return <DrilldownPage target={drilldown} onBack={() => setDrilldown(null)} />
   if (positionDrilldown !== null) return <PositionDrilldownPage positionId={positionDrilldown} onBack={() => setPositionDrilldown(null)} />
+  if (materialUsageOpen) return (
+    <Suspense fallback={<div className="px-4 pt-8 text-center text-sm text-slate-400">{t('common.loading')}</div>}>
+      <MaterialUsagePage onBack={() => setMaterialUsageOpen(false)} />
+    </Suspense>
+  )
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -89,6 +104,22 @@ export default function DashboardsPage({ initialDrilldown = null }: { initialDri
       </div>
 
       <div className="px-4 space-y-3 pb-8">
+        <button onClick={() => setMaterialUsageOpen(true)}
+          className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white p-4 text-left active:scale-[0.99] transition-all"
+          style={{ border: '1px solid rgba(157,200,255,0.25)', boxShadow: '0 1px 8px rgba(157,200,255,0.08)' }}>
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ background: '#faf5ff', color: '#9333ea' }}>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="4" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><rect x="11" y="4" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><rect x="6.5" y="13" width="7" height="4.5" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><path d="M5.5 11v1a1 1 0 001 1h7a1 1 0 001-1v-1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-800 truncate">{t('materialUsage.title')}</p>
+              <p className="text-xs text-slate-400 truncate">{t('dashboards.materialUsage.desc')}</p>
+            </div>
+          </div>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="shrink-0 text-slate-300 -rotate-90">
+            <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
         <PeopleCard search={q} onSelectPosition={setPositionDrilldown} />
         {ENTITIES.map(entityType => (
           <EntityCard key={entityType} entityType={entityType} search={q} onSelectValue={setDrilldown} />
