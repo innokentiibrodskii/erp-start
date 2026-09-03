@@ -79,11 +79,57 @@ export type { Material } from './useMaterials'
 export { useMaterials } from './useMaterials'
 
 /** Артикул продукту: P + поточний рік + порядковий номер за цей рік
- *  (напр. "P-2026-01") — лічильник скидається щороку. */
+ *  (напр. "P-2026-01") — лічильник скидається щороку.
+ *
+ *  Важливо: береться МАКСИМАЛЬНИЙ вже використаний номер за цей рік, а не
+ *  кількість продуктів з таким префіксом — інакше при "дірці" в послідовності
+ *  (напр. якийсь продукт видалили насправді, не заархівували) кількість стає
+ *  меншою за максимальний номер, і згенерований артикул колізить із уже
+ *  існуючим (products_sku_org_unique) — саме так і трапилось: 54 продукти
+ *  "P-2026-*", але максимальний номер серед них — 55. */
 export function genProductArticle(products: Product[], now = new Date()): string {
   const prefix = `P-${now.getFullYear()}-`
-  const seq = products.filter(p => p.sku.startsWith(prefix)).length + 1
-  return `${prefix}${String(seq).padStart(2, '0')}`
+  const maxSeq = products.reduce((max, p) => {
+    if (!p.sku.startsWith(prefix)) return max
+    const n = Number(p.sku.slice(prefix.length))
+    return Number.isFinite(n) && n > max ? n : max
+  }, 0)
+  return `${prefix}${String(maxSeq + 1).padStart(2, '0')}`
+}
+
+/** Той самий розрахунок, що й genProductArticle, але напряму з БД — легкий
+ *  запит лише по колонці sku (без фото/матеріалів/операцій, які тягне повний
+ *  useProducts()) цієї організації. Використовується у двох місцях:
+ *   - useNextProductSku() — щоб показати в формі нового продукту вже
+ *     перевірений артикул, а не порахований із можливо застарілого чи ще
+ *     не завантаженого кешу products;
+ *   - safety-net у create-мутації при повторній спробі після 23505 (напр.
+ *     два продукти створюються один за одним швидше, ніж встигає
+ *     інвалідуватись react-query кеш). */
+export async function nextAvailableProductSku(orgId: string, now = new Date()): Promise<string> {
+  const prefix = `P-${now.getFullYear()}-`
+  const { data, error } = await supabase.from('products').select('sku').eq('organization_id', orgId).like('sku', `${prefix}%`)
+  if (error) throw error
+  const maxSeq = (data ?? []).reduce((max, p) => {
+    const n = Number(p.sku.slice(prefix.length))
+    return Number.isFinite(n) && n > max ? n : max
+  }, 0)
+  return `${prefix}${String(maxSeq + 1).padStart(2, '0')}`
+}
+
+/** Артикул для форми нового продукту — напряму з БД (легкий запит, а не
+ *  похідне від важкого useProducts()), тож не залежить від того, чи вже
+ *  завантажився/актуальний загальний кеш продуктів. `enabled` — вмикати лише
+ *  для нового продукту (existing === null), не для редагування наявного. */
+export function useNextProductSku(enabled: boolean) {
+  const orgId = useActiveOrgId()
+  return useQuery({
+    queryKey: ['next-product-sku', orgId],
+    queryFn: () => nextAvailableProductSku(orgId),
+    enabled,
+    // Не тримати "застиглим" між відкриттями форми — щоразу перевіряти наново.
+    staleTime: 0,
+  })
 }
 
 export interface ProductStatus {
@@ -525,19 +571,31 @@ export function useProductMutations() {
     mutationFn: async ({ name, description, categoryId, sku, photos, videos, onProgress }: { name: string; description: string; categoryId: string | null; sku: string; photos: PhotoItem[]; videos: VideoItem[]; onProgress?: (key: string, loadedBytes: number) => void }) => {
       // Новий продукт завжди отримує дефолтний статус каталогу (зазвичай "Активний")
       const statusId = await getDefaultStatusId(orgId)
-      const { data, error } = await supabase
-        .from('products')
-        .insert({ name, description, category_id: categoryId, status_id: statusId, sku, organization_id: orgId })
-        .select('id')
-        .single()
-      if (error) throw error
+      // Артикул, переданий з форми, порахований із кешу products на клієнті —
+      // теоретично може вже застаріти (напр. другий продукт створюють одразу
+      // за першим, до інвалідації кешу). Якщо БД відхилить через колізію
+      // (products_sku_org_unique, 23505) — перерахувати артикул напряму з БД
+      // і спробувати ще раз, замість технічної помилки "такий запис уже існує".
+      let attemptSku = sku
+      let productId: string | null = null
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const { data, error } = await supabase
+          .from('products')
+          .insert({ name, description, category_id: categoryId, status_id: statusId, sku: attemptSku, organization_id: orgId })
+          .select('id')
+          .single()
+        if (!error) { productId = data.id; break }
+        if (error.code === '23505' && attempt < 4) { attemptSku = await nextAvailableProductSku(orgId); continue }
+        throw error
+      }
+      if (!productId) throw new Error('Не вдалось згенерувати унікальний артикул продукту')
       // Фото й відео вантажаться паралельно, а не одне за одним — на повільній мережі
       // це помітно скорочує загальний час збереження продукту.
       await Promise.all([
-        persistPhotos(orgId, data.id, photos, onProgress),
-        persistVideos(orgId, data.id, videos, onProgress),
+        persistPhotos(orgId, productId, photos, onProgress),
+        persistVideos(orgId, productId, videos, onProgress),
       ])
-      return data.id as string
+      return productId
     },
     onSuccess: invalidate,
     onError: onErr,

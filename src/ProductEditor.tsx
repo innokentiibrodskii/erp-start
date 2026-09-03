@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useCatalog } from './hooks/useCatalog'
-import { useProducts, useProductPhotos, useProductVideos, useProductMutations, useProductStatuses, usePhotoStatuses, genProductArticle, MAX_PHOTO_SIZE, MAX_VIDEO_SIZE, type PhotoItem, type VideoItem } from './hooks/useProducts'
+import { useProducts, useProductPhotos, useProductVideos, useProductMutations, useProductStatuses, usePhotoStatuses, useNextProductSku, genProductArticle, MAX_PHOTO_SIZE, MAX_VIDEO_SIZE, type PhotoItem, type VideoItem } from './hooks/useProducts'
 import { compressImageToLimit } from './lib/imageCompress'
 import { useProductAttributeMutations } from './hooks/useProductAttributes'
 import { useCustomFieldDefinitions, useCustomFieldValues, useCustomFieldValueMutations } from './hooks/useCustomFields'
@@ -17,6 +17,11 @@ export default function ProductEditor({ productId, onBack }: Props) {
   const { t, tn } = useLocale()
   const { categories, attributes } = useCatalog()
   const productsQ = useProducts()
+  // Артикул нового продукту — напряму з БД (легкий запит лише по sku), а не
+  // порахований із важкого useProducts(), який для нового продукту може ще
+  // не встигнути завантажитись/оновитись. genProductArticle(products) нижче —
+  // лише миттєвий приблизний фолбек на час завантаження цього запиту.
+  const nextSkuQ = useNextProductSku(productId === null)
   const photosQ = useProductPhotos(productId)
   const videosQ = useProductVideos(productId)
   const statusesQ = useProductStatuses()
@@ -34,7 +39,7 @@ export default function ProductEditor({ productId, onBack }: Props) {
   const defaultPhotoStatusId = photoStatuses.find(s => s.isDefault)?.id ?? null
   const existing = productId !== null ? products.find(p => p.id === productId) : null
   const isNew = !existing
-  const sku = existing?.sku ?? genProductArticle(products)
+  const sku = existing?.sku ?? nextSkuQ.data ?? genProductArticle(products)
 
   const [name, setName] = useState(existing?.name ?? '')
   const [description, setDescription] = useState(existing?.description ?? '')
