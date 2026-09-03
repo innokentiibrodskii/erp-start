@@ -65,9 +65,10 @@ export default function Shell({ onLogout }: Props) {
   // звичайного списку; порожньо для QR-сканування, де "назад" і має вести в список.
   // ?field=...&value=... — з якої саме деталізації дашборду зайшли (definitionId/optionId),
   // щоб "назад" відновило точно той самий список значень, а не верхній рівень дашбордів.
-  // ?sub=materialUsage — той самий підхід для MaterialUsagePage.tsx (Дашборди →
-  // "Матеріали, які використовуються у продукції"): "назад" з картки матеріалу чи
-  // специфікації продукту має відкрити саме цю таблицю, а не верхній рівень дашбордів.
+  // ?sub=materialUsage|productCost — той самий підхід для MaterialUsagePage.tsx
+  // ("Матеріали, які використовуються у продукції") і ProductCostPage.tsx
+  // ("Собівартість продукції"): "назад" з картки матеріалу чи специфікації
+  // продукту має відкрити саме цю таблицю, а не верхній рівень дашбордів.
   const [deepLink] = useState(() => {
     const params = new URLSearchParams(window.location.search)
     const materialId = params.get('material')
@@ -345,7 +346,7 @@ export default function Shell({ onLogout }: Props) {
               )}
               {page === 'employees' && isAdmin && <EmployeesPage />}
               {page === 'dashboards' && isManager && (
-                <DashboardsPage initialDrilldown={deepLink.dashboardsDrilldown} initialMaterialUsageOpen={deepLink.sub === 'materialUsage'} />
+                <DashboardsPage initialDrilldown={deepLink.dashboardsDrilldown} initialMaterialUsageOpen={deepLink.sub === 'materialUsage'} initialProductCostOpen={deepLink.sub === 'productCost'} />
               )}
               {page === 'profile' && currentUser && <ProfilePage employeeId={currentUser.id} onBack={() => setPage(prevPage)} />}
               {page === 'about' && <AboutPage />}

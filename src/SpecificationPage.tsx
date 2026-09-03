@@ -8,6 +8,7 @@ import { useProductSpecifications, useProductSpecificationMutations } from './ho
 import ProductSpecificationVersionsPage from './ProductSpecificationVersionsPage'
 import MaterialPickerSheet from './MaterialPickerSheet'
 import OperationPickerSheet from './OperationPickerSheet'
+import { useOperationCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
 import { fmt } from './lib/materialFormat'
 import { useLocale } from './LocaleContext'
 import type { TranslationKey } from './i18n'
@@ -48,6 +49,8 @@ export default function SpecificationPage({ productId, type, onBack }: {
   onBack: () => void
 }) {
   const { t, tn } = useLocale()
+  const operationCurrencyQ = useOperationCostCurrency()
+  const operationCurrencySymbol = CURRENCY_SYMBOL[operationCurrencyQ.data ?? 'UAH']
   const { operations } = useCatalog()
   const productsQ = useProducts()
   const materialsQ = useMaterials()
@@ -384,7 +387,7 @@ export default function SpecificationPage({ productId, type, onBack }: {
                       <td className="px-3 py-3 text-right font-mono text-slate-600">
                         {po.durationMinutes ? `${po.durationMinutes} ${t('common.minutesShort')}` : ''}
                         {po.durationMinutes && po.cost ? ' · ' : ''}
-                        {po.cost ? `${po.cost} ₴` : ''}
+                        {po.cost ? `${po.cost} ${operationCurrencySymbol}` : ''}
                       </td>
                       <td className="px-3 py-3">
                         <div className="flex items-center justify-end gap-1">

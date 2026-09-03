@@ -6,7 +6,7 @@ import { useProducts, useMaterials, useProductStatuses, useProductPhotos, usePro
 import { useAssignments } from './hooks/useAssignments'
 import { useStockMovements } from './hooks/useMaterialStock'
 import { useCustomFieldDefinitions, useCustomFieldValues } from './hooks/useCustomFields'
-import { useMaterialCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
+import { useMaterialCostCurrency, useOperationCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
 import { useProductEvents, type ProductEvent, type ProductEventType } from './hooks/useProductEvents'
 import { fmt } from './lib/materialFormat'
 import { useLocale } from './LocaleContext'
@@ -71,6 +71,8 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
   const materialsQ = useMaterials()
   const currencyQ = useMaterialCostCurrency()
   const currencySymbol = CURRENCY_SYMBOL[currencyQ.data ?? 'UAH']
+  const operationCurrencyQ = useOperationCostCurrency()
+  const operationCurrencySymbol = CURRENCY_SYMBOL[operationCurrencyQ.data ?? 'UAH']
   const statusesQ = useProductStatuses()
   const assignmentsQ = useAssignments()
   const movementsQ = useStockMovements()
@@ -210,7 +212,7 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
             [t('filters.category'), catPath || '—'],
             ...(isManagerView ? [] : [
               [t('productView.materialsCost'), `${fmt(materialsCost)} ${currencySymbol}`],
-              [t('productView.operationsCost'), `${fmt(operationsCost)} ₴`],
+              [t('productView.operationsCost'), `${fmt(operationsCost)} ${operationCurrencySymbol}`],
             ]),
             [t('productView.statusLabel'), status ? tn(status.name, status.nameEn) : '—'],
           ].map(([label, value], i, arr) => (
@@ -309,7 +311,7 @@ export default function ProductView({ productId, onBack, onEdit }: Props) {
                     <span className="text-xs font-mono text-slate-600 shrink-0 text-right">
                       {po.durationMinutes ? `${po.durationMinutes} ${t('common.minutesShort')}` : ''}
                       {po.durationMinutes && po.cost ? ' · ' : ''}
-                      {po.cost ? `${po.cost} ₴` : ''}
+                      {po.cost ? `${po.cost} ${operationCurrencySymbol}` : ''}
                     </span>
                   </div>
                 )

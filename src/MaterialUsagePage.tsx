@@ -722,7 +722,7 @@ export default function MaterialUsagePage({ onBack }: { onBack: () => void }) {
                       <span className="self-stretch flex items-center text-xs font-medium text-slate-500" style={CELL_BORDER}>{t('materialUsage.productsCount', { count: g.rows.length })}</span>
                       <span className="self-stretch flex items-center justify-center text-xs text-slate-300" style={CELL_BORDER}>—</span>
                       <span className="self-stretch flex items-center justify-center text-xs text-slate-300">—</span>
-                      <div className="relative group-hover:bg-slate-50" style={stickyStyle(null, 0, '#fff', 'right')} onClick={e => e.stopPropagation()}>
+                      <div className="relative group-hover:bg-slate-50" style={{ ...stickyStyle(null, 0, '#fff', 'right'), zIndex: openMenu === `m-${g.material.id}` ? 50 : 5 }} onClick={e => e.stopPropagation()}>
                         <button onClick={() => setOpenMenu(openMenu === `m-${g.material.id}` ? null : `m-${g.material.id}`)}
                           className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:text-blue-500 hover:bg-slate-100 transition-all">
                           <MoreIcon />
@@ -765,7 +765,7 @@ export default function MaterialUsagePage({ onBack }: { onBack: () => void }) {
                           )}
                         </span>
                         <span className="self-stretch flex items-center justify-center text-xs text-slate-500 whitespace-nowrap">{spec?.activatedAt ? dateStr(spec.activatedAt) : '—'}</span>
-                        <div className="relative group-hover:bg-slate-50" style={stickyStyle(null, 0, '#f8fbff', 'right')} onClick={e => e.stopPropagation()}>
+                        <div className="relative group-hover:bg-slate-50" style={{ ...stickyStyle(null, 0, '#f8fbff', 'right'), zIndex: openMenu === `p-${r.key}` ? 50 : 5 }} onClick={e => e.stopPropagation()}>
                           <button onClick={() => setOpenMenu(openMenu === `p-${r.key}` ? null : `p-${r.key}`)}
                             className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:text-blue-500 hover:bg-slate-100 transition-all">
                             <MoreIcon />

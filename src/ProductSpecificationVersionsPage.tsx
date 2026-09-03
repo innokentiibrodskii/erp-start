@@ -5,6 +5,7 @@ import {
   useProductSpecifications, useProductSpecificationDetail, useProductSpecificationEvents,
   useProductSpecificationMutations, type ProductSpecificationEvent, type ProductSpecificationEventType,
 } from './hooks/useProductSpecifications'
+import { useOperationCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
 import { fmt } from './lib/materialFormat'
 import { useLocale } from './LocaleContext'
 import type { TranslationKey } from './i18n'
@@ -33,6 +34,8 @@ export default function ProductSpecificationVersionsPage({ productId, onRestored
   onRestored: () => void
 }) {
   const { t, tn } = useLocale()
+  const operationCurrencyQ = useOperationCostCurrency()
+  const operationCurrencySymbol = CURRENCY_SYMBOL[operationCurrencyQ.data ?? 'UAH']
   const { operations } = useCatalog()
   const materialsQ = useMaterials()
   const materials = materialsQ.data ?? []
@@ -97,7 +100,7 @@ export default function ProductSpecificationVersionsPage({ productId, onRestored
                         <span className="shrink-0 text-right font-mono text-xs text-slate-600">
                           {o.durationMinutes ? `${o.durationMinutes} ${t('common.minutesShort')}` : ''}
                           {o.durationMinutes && o.cost ? ' · ' : ''}
-                          {o.cost ? `${o.cost} ₴` : ''}
+                          {o.cost ? `${o.cost} ${operationCurrencySymbol}` : ''}
                         </span>
                       </div>
                     )

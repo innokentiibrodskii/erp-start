@@ -5,7 +5,7 @@ import { buildCatPath, fmt } from './lib/materialFormat'
 import type { Department, Position, ProductCategory, ProductAttribute, Operation, Warehouse, MaterialCategory, Unit, Supplier } from './hooks/useCatalog'
 import { useProductStatuses, useProductStatusMutations, type ProductStatus, usePhotoStatuses, usePhotoStatusMutations, type PhotoStatus } from './hooks/useProducts'
 import { useCustomFieldDefinitions, useCustomFieldDefinitionMutations, type CustomFieldDefinition, type EntityType, type FieldType } from './hooks/useCustomFields'
-import { useMaterialCostCurrency, useSetMaterialCostCurrency, CURRENCIES, CURRENCY_LABEL_KEY } from './hooks/useOrgSettings'
+import { useMaterialCostCurrency, useSetMaterialCostCurrency, useOperationCostCurrency, useSetOperationCostCurrency, CURRENCIES, CURRENCY_LABEL_KEY } from './hooks/useOrgSettings'
 import { useCurrentUser } from './hooks/useCurrentUser'
 import { usePayrollSettings, useSetPayrollSettings, usePayrollClosures, useClosePayrollPeriod, computeMonthPayrollPhase } from './hooks/usePayroll'
 import { useLocale } from './LocaleContext'
@@ -24,6 +24,9 @@ type SubPage =
   | 'suppliers'
   | 'productStatuses'
   | 'photoStatuses'
+  | 'materialCustomFields'
+  | 'supplierCustomFields'
+  | 'productCustomFields'
 
 type DirectoryGroup = 'Продукт' | 'Матеріали' | 'Люди' | 'Системні каталоги'
 
@@ -49,6 +52,9 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
   const catalog = useCatalog()
   const statusesQ = useProductStatuses()
   const photoStatusesQ = usePhotoStatuses()
+  const materialFieldsQ = useCustomFieldDefinitions('material')
+  const supplierFieldsQ = useCustomFieldDefinitions('supplier')
+  const productFieldsQ = useCustomFieldDefinitions('product')
 
   const toggleGroup = (g: DirectoryGroup) => setCollapsedGroups(prev => {
     const next = new Set(prev)
@@ -73,6 +79,11 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
       color: '#0891b2', bg: '#ecfeff', count: () => catalog.attributes.length,
       icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5"/><path d="M10 6v4l3 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
     },
+    {
+      id: 'productCustomFields', group: 'Продукт', label: t('directory.tiles.productCustomFields.label'), description: t('directory.tiles.productCustomFields.desc'),
+      color: '#4f46e5', bg: '#eef2ff', count: () => productFieldsQ.data?.length ?? 0,
+      icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="4" width="16" height="4" rx="1.3" stroke="currentColor" strokeWidth="1.5"/><rect x="2" y="12" width="16" height="4" rx="1.3" stroke="currentColor" strokeWidth="1.5"/><circle cx="14" cy="6" r="0.9" fill="currentColor"/><circle cx="14" cy="14" r="0.9" fill="currentColor"/></svg>,
+    },
     // ── Матеріали ──
     {
       id: 'materialCategories', group: 'Матеріали', label: t('directory.tiles.materialCategories.label'), description: t('directory.tiles.materialCategories.desc'),
@@ -93,6 +104,16 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
       id: 'units', group: 'Матеріали', label: t('directory.tiles.units.label'), description: t('directory.tiles.units.desc'),
       color: '#0284c7', bg: '#f0f9ff', count: () => catalog.units.length,
       icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 16L16 4M8 4h8v8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+    },
+    {
+      id: 'materialCustomFields', group: 'Матеріали', label: t('directory.tiles.materialCustomFields.label'), description: t('directory.tiles.materialCustomFields.desc'),
+      color: '#4f46e5', bg: '#eef2ff', count: () => materialFieldsQ.data?.length ?? 0,
+      icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="4" width="16" height="4" rx="1.3" stroke="currentColor" strokeWidth="1.5"/><rect x="2" y="12" width="16" height="4" rx="1.3" stroke="currentColor" strokeWidth="1.5"/><circle cx="14" cy="6" r="0.9" fill="currentColor"/><circle cx="14" cy="14" r="0.9" fill="currentColor"/></svg>,
+    },
+    {
+      id: 'supplierCustomFields', group: 'Матеріали', label: t('directory.tiles.supplierCustomFields.label'), description: t('directory.tiles.supplierCustomFields.desc'),
+      color: '#4f46e5', bg: '#eef2ff', count: () => supplierFieldsQ.data?.length ?? 0,
+      icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="4" width="16" height="4" rx="1.3" stroke="currentColor" strokeWidth="1.5"/><rect x="2" y="12" width="16" height="4" rx="1.3" stroke="currentColor" strokeWidth="1.5"/><circle cx="14" cy="6" r="0.9" fill="currentColor"/><circle cx="14" cy="14" r="0.9" fill="currentColor"/></svg>,
     },
     // ── Люди ──
     {
@@ -136,6 +157,9 @@ export default function DirectoryCatalog({ onNavigate: _onNavigate }: Props) {
   if (page === 'suppliers')          return <SuppliersPage          onBack={() => setPage(null)} />
   if (page === 'productStatuses')    return <ProductStatusesPage    onBack={() => setPage(null)} />
   if (page === 'photoStatuses')      return <PhotoStatusesPage      onBack={() => setPage(null)} />
+  if (page === 'materialCustomFields') return <CustomFieldsForEntityPage entityType="material" title={t('directory.tiles.materialCustomFields.label')} onBack={() => setPage(null)} />
+  if (page === 'supplierCustomFields') return <CustomFieldsForEntityPage entityType="supplier" title={t('directory.tiles.supplierCustomFields.label')} onBack={() => setPage(null)} />
+  if (page === 'productCustomFields')  return <CustomFieldsForEntityPage entityType="product"  title={t('directory.tiles.productCustomFields.label')}  onBack={() => setPage(null)} />
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -1235,11 +1259,8 @@ function PhotoStatusesPage({ onBack }: { onBack: () => void }) {
   )
 }
 
-/* ─── CUSTOM FIELDS (системний конструктор для 3 сутностей) ─── */
-const ENTITY_TAB_IDS: EntityType[] = ['material', 'supplier', 'product']
-const ENTITY_TAB_LABEL_KEY: Record<EntityType, TranslationKey> = {
-  material: 'nav.materials', supplier: 'materials.suppliers', product: 'nav.products',
-}
+/* ─── CUSTOM FIELDS (системний конструктор для 3 сутностей — три окремі
+   тайли в Довідниках, по одному в групі, до якої сутність відноситься) ─── */
 const FIELD_TYPE_LABEL_KEY: Record<FieldType, TranslationKey> = {
   text: 'customField.typeText', number: 'customField.typeNumber', boolean: 'customField.typeBoolean',
   file: 'customField.typeFile', select: 'customField.typeSelect',
@@ -1263,14 +1284,11 @@ function FieldDefBody({ d }: { d: CustomFieldDefinition }) {
 }
 
 export function CustomFieldsPage({ onBack, onOpenPrintForms }: { onBack: () => void; onOpenPrintForms: () => void }) {
-  const [entityType, setEntityType] = useState<EntityType>('material')
-  const definitionsQ = useCustomFieldDefinitions(entityType)
-  const definitions = definitionsQ.data ?? []
-  const { addDefinition, updateDefinition, removeDefinition, addOption, updateOption, removeOption } = useCustomFieldDefinitionMutations(entityType)
-
   const currencyQ = useMaterialCostCurrency()
   const setCurrency = useSetMaterialCostCurrency()
-  const { t, tn } = useLocale()
+  const operationCurrencyQ = useOperationCostCurrency()
+  const setOperationCurrency = useSetOperationCostCurrency()
+  const { t } = useLocale()
 
   // Зарплатний період — визначає й закриває лише адмін (менеджер, який теж
   // потрапляє на цю сторінку, тут нічого не бачить/не змінює).
@@ -1300,70 +1318,9 @@ export function CustomFieldsPage({ onBack, onOpenPrintForms }: { onBack: () => v
     return { year: d.getFullYear(), month: d.getMonth() + 1 }
   })
 
-  const [form, setForm] = useState<{ open: boolean; editing: CustomFieldDefinition | null; name: string; nameEn: string; fieldType: FieldType; isRequired: boolean; showInMaterialUsage: boolean }>
-    ({ open: false, editing: null, name: '', nameEn: '', fieldType: 'text', isRequired: false, showInMaterialUsage: false })
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [newOptionInputs, setNewOptionInputs] = useState<Record<string, string>>({})
-  const [newOptionEnInputs, setNewOptionEnInputs] = useState<Record<string, string>>({})
-  const [editingOption, setEditingOption] = useState<{ id: string; value: string; valueEn: string } | null>(null)
-
-  // Значення списку, які користувач додає прямо у формі "Тип поля: Список" —
-  // ще без field_definition_id (поле щойно створюється), тож зберігаємо чернеткою
-  // й записуємо в базу одразу після появи id нового поля.
-  const [pendingOptions, setPendingOptions] = useState<{ value: string; valueEn: string }[]>([])
-  const [pendingOptionValue, setPendingOptionValue] = useState('')
-  const [pendingOptionValueEn, setPendingOptionValueEn] = useState('')
-
-  const openAdd  = () => { setForm({ open: true, editing: null, name: '', nameEn: '', fieldType: 'text', isRequired: false, showInMaterialUsage: false }); setPendingOptions([]); setPendingOptionValue(''); setPendingOptionValueEn('') }
-  const openEdit = (d: CustomFieldDefinition) => { setForm({ open: true, editing: d, name: d.name, nameEn: d.nameEn ?? '', fieldType: d.fieldType, isRequired: d.isRequired, showInMaterialUsage: d.showInMaterialUsage }); setPendingOptions([]); setPendingOptionValue(''); setPendingOptionValueEn('') }
-  const close    = () => setForm(f => ({ ...f, open: false }))
-
-  const addPendingOption = () => {
-    const v = pendingOptionValue.trim()
-    if (!v) return
-    setPendingOptions(prev => [...prev, { value: v, valueEn: pendingOptionValueEn.trim() || null as unknown as string }])
-    setPendingOptionValue('')
-    setPendingOptionValueEn('')
-  }
-  const removePendingOption = (idx: number) => setPendingOptions(prev => prev.filter((_, i) => i !== idx))
-
-  // Під час редагування вже існуючого поля-списку значення додаються/видаляються одразу
-  // в базі (той самий шлях, що й у розгорнутому рядку списку нижче).
-  const editingLiveDef = form.editing ? (definitions.find(d => d.id === form.editing!.id) ?? form.editing) : null
-
-  const save = async () => {
-    if (!form.name.trim()) return
-    const nameEn = form.nameEn.trim() || null
-    if (form.editing) {
-      updateDefinition({ id: form.editing.id, name: form.name.trim(), nameEn, isRequired: form.isRequired, showInMaterialUsage: form.showInMaterialUsage })
-    } else {
-      const newId = await addDefinition({ name: form.name.trim(), nameEn, fieldType: form.fieldType, isRequired: form.isRequired, position: definitions.length, showInMaterialUsage: form.showInMaterialUsage })
-      for (let i = 0; i < pendingOptions.length; i++) {
-        const opt = pendingOptions[i]
-        await addOption({ fieldDefinitionId: newId, value: opt.value, valueEn: opt.valueEn || null, position: i })
-      }
-    }
-    close()
-  }
-
-  const addOptionValue = (fieldId: string) => {
-    const v = newOptionInputs[fieldId]?.trim()
-    if (!v) return
-    const def = definitions.find(d => d.id === fieldId)
-    addOption({ fieldDefinitionId: fieldId, value: v, valueEn: newOptionEnInputs[fieldId]?.trim() || null, position: def?.options.length ?? 0 })
-    setNewOptionInputs(p => ({ ...p, [fieldId]: '' }))
-    setNewOptionEnInputs(p => ({ ...p, [fieldId]: '' }))
-  }
-
-  const saveOptionEdit = () => {
-    if (!editingOption || !editingOption.value.trim()) return
-    updateOption({ id: editingOption.id, value: editingOption.value.trim(), valueEn: editingOption.valueEn.trim() || null })
-    setEditingOption(null)
-  }
-
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      <SubPageHeader title={t('directory.customFieldsTitle')} subtitle={t('directory.countFields', { count: definitions.length })} onBack={onBack} onAdd={openAdd} />
+      <SubPageHeader title={t('nav.settings')} subtitle="" onBack={onBack} />
 
       <div className="px-4 pt-3">
         <div className="rounded-2xl bg-white p-4" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>
@@ -1378,6 +1335,22 @@ export function CustomFieldsPage({ onBack, onOpenPrintForms }: { onBack: () => v
             </svg>
           </div>
           <p className="mt-1.5 text-[10px] text-slate-300">{t('directory.currencyHint')}</p>
+        </div>
+      </div>
+
+      <div className="px-4 pt-3">
+        <div className="rounded-2xl bg-white p-4" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">{t('directory.operationCostCurrencyLabel')}</label>
+          <div className="relative">
+            <select value={operationCurrencyQ.data ?? 'UAH'} onChange={e => setOperationCurrency(e.target.value as typeof CURRENCIES[number])}
+              className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 pl-3 pr-9 py-2.5 text-sm outline-none focus:border-blue-400 transition-all">
+              {CURRENCIES.map(c => <option key={c} value={c}>{t(CURRENCY_LABEL_KEY[c])}</option>)}
+            </select>
+            <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" width="11" height="11" viewBox="0 0 11 11" fill="none">
+              <path d="M2 3.5l3.5 4 3.5-4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <p className="mt-1.5 text-[10px] text-slate-300">{t('directory.operationCurrencyHint')}</p>
         </div>
       </div>
 
@@ -1447,18 +1420,85 @@ export function CustomFieldsPage({ onBack, onOpenPrintForms }: { onBack: () => v
           </div>
         </div>
       )}
+    </div>
+  )
+}
 
-      <div className="px-4 pt-3">
-        <div className="flex gap-1.5 rounded-2xl bg-white p-1" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>
-          {ENTITY_TAB_IDS.map(id => (
-            <button key={id} onClick={() => { setEntityType(id); setExpandedId(null) }}
-              className="flex-1 rounded-xl py-2 text-xs font-medium transition-all"
-              style={entityType === id ? { background: '#1e293b', color: '#fff' } : { color: '#64748b' }}>
-              {t(ENTITY_TAB_LABEL_KEY[id])}
-            </button>
-          ))}
-        </div>
-      </div>
+/** Той самий редактор кастомних полів, що раніше жив однією сторінкою з
+ *  табами (Матеріали/Постачальники/Продукти) у Налаштуваннях — тепер три
+ *  окремі тайли в Довідниках, кожен у своїй групі (Матеріали/Продукт), той
+ *  самий компонент, лише entityType/title приходять пропсами замість
+ *  локального перемикача табів. */
+function CustomFieldsForEntityPage({ entityType, title, onBack }: { entityType: EntityType; title: string; onBack: () => void }) {
+  const definitionsQ = useCustomFieldDefinitions(entityType)
+  const definitions = definitionsQ.data ?? []
+  const { addDefinition, updateDefinition, removeDefinition, addOption, updateOption, removeOption } = useCustomFieldDefinitionMutations(entityType)
+  const { t, tn } = useLocale()
+
+  const [form, setForm] = useState<{ open: boolean; editing: CustomFieldDefinition | null; name: string; nameEn: string; fieldType: FieldType; isRequired: boolean; showInMaterialUsage: boolean }>
+    ({ open: false, editing: null, name: '', nameEn: '', fieldType: 'text', isRequired: false, showInMaterialUsage: false })
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [newOptionInputs, setNewOptionInputs] = useState<Record<string, string>>({})
+  const [newOptionEnInputs, setNewOptionEnInputs] = useState<Record<string, string>>({})
+  const [editingOption, setEditingOption] = useState<{ id: string; value: string; valueEn: string } | null>(null)
+
+  // Значення списку, які користувач додає прямо у формі "Тип поля: Список" —
+  // ще без field_definition_id (поле щойно створюється), тож зберігаємо чернеткою
+  // й записуємо в базу одразу після появи id нового поля.
+  const [pendingOptions, setPendingOptions] = useState<{ value: string; valueEn: string }[]>([])
+  const [pendingOptionValue, setPendingOptionValue] = useState('')
+  const [pendingOptionValueEn, setPendingOptionValueEn] = useState('')
+
+  const openAdd  = () => { setForm({ open: true, editing: null, name: '', nameEn: '', fieldType: 'text', isRequired: false, showInMaterialUsage: false }); setPendingOptions([]); setPendingOptionValue(''); setPendingOptionValueEn('') }
+  const openEdit = (d: CustomFieldDefinition) => { setForm({ open: true, editing: d, name: d.name, nameEn: d.nameEn ?? '', fieldType: d.fieldType, isRequired: d.isRequired, showInMaterialUsage: d.showInMaterialUsage }); setPendingOptions([]); setPendingOptionValue(''); setPendingOptionValueEn('') }
+  const close    = () => setForm(f => ({ ...f, open: false }))
+
+  const addPendingOption = () => {
+    const v = pendingOptionValue.trim()
+    if (!v) return
+    setPendingOptions(prev => [...prev, { value: v, valueEn: pendingOptionValueEn.trim() || null as unknown as string }])
+    setPendingOptionValue('')
+    setPendingOptionValueEn('')
+  }
+  const removePendingOption = (idx: number) => setPendingOptions(prev => prev.filter((_, i) => i !== idx))
+
+  // Під час редагування вже існуючого поля-списку значення додаються/видаляються одразу
+  // в базі (той самий шлях, що й у розгорнутому рядку списку нижче).
+  const editingLiveDef = form.editing ? (definitions.find(d => d.id === form.editing!.id) ?? form.editing) : null
+
+  const save = async () => {
+    if (!form.name.trim()) return
+    const nameEn = form.nameEn.trim() || null
+    if (form.editing) {
+      updateDefinition({ id: form.editing.id, name: form.name.trim(), nameEn, isRequired: form.isRequired, showInMaterialUsage: form.showInMaterialUsage })
+    } else {
+      const newId = await addDefinition({ name: form.name.trim(), nameEn, fieldType: form.fieldType, isRequired: form.isRequired, position: definitions.length, showInMaterialUsage: form.showInMaterialUsage })
+      for (let i = 0; i < pendingOptions.length; i++) {
+        const opt = pendingOptions[i]
+        await addOption({ fieldDefinitionId: newId, value: opt.value, valueEn: opt.valueEn || null, position: i })
+      }
+    }
+    close()
+  }
+
+  const addOptionValue = (fieldId: string) => {
+    const v = newOptionInputs[fieldId]?.trim()
+    if (!v) return
+    const def = definitions.find(d => d.id === fieldId)
+    addOption({ fieldDefinitionId: fieldId, value: v, valueEn: newOptionEnInputs[fieldId]?.trim() || null, position: def?.options.length ?? 0 })
+    setNewOptionInputs(p => ({ ...p, [fieldId]: '' }))
+    setNewOptionEnInputs(p => ({ ...p, [fieldId]: '' }))
+  }
+
+  const saveOptionEdit = () => {
+    if (!editingOption || !editingOption.value.trim()) return
+    updateOption({ id: editingOption.id, value: editingOption.value.trim(), valueEn: editingOption.valueEn.trim() || null })
+    setEditingOption(null)
+  }
+
+  return (
+    <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
+      <SubPageHeader title={title} subtitle={t('directory.countFields', { count: definitions.length })} onBack={onBack} onAdd={openAdd} />
 
       <div className="px-4 py-4 space-y-3 pb-8">
         {definitions.length === 0 && (

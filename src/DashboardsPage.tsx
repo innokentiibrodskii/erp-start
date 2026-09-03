@@ -3,7 +3,7 @@ import { useDashboardStats, useDrilldownRecords, SPECIFICATION_FIELD_ID, type Da
 import { usePositionTaskStats, usePositionEmployeeBreakdown } from './hooks/usePeopleDashboardStats'
 import type { EntityType } from './hooks/useCustomFields'
 import type { AssignmentStatus } from './hooks/useAssignments'
-import { useMaterialCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
+import { useMaterialCostCurrency, useOperationCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
 import { fmt } from './lib/materialFormat'
 import { useLocale } from './LocaleContext'
 import type { TranslationKey } from './i18n'
@@ -11,6 +11,7 @@ import type { TranslationKey } from './i18n'
 // хто просто відкрив "Дашборди" й жодного разу не заходив у цю таблицю
 // (той самий підхід, що й до сторінок верхнього рівня в Shell.tsx).
 const MaterialUsagePage = lazy(() => import('./MaterialUsagePage'))
+const ProductCostPage = lazy(() => import('./ProductCostPage'))
 
 /* ───────────────────────────────────────────────────────────
    "Дашборди" — агрегована статистика по кастомних select-полях
@@ -66,7 +67,7 @@ export interface DrilldownTarget {
   optionId: string
 }
 
-export default function DashboardsPage({ initialDrilldown = null, initialMaterialUsageOpen = false }: { initialDrilldown?: DrilldownTarget | null; initialMaterialUsageOpen?: boolean }) {
+export default function DashboardsPage({ initialDrilldown = null, initialMaterialUsageOpen = false, initialProductCostOpen = false }: { initialDrilldown?: DrilldownTarget | null; initialMaterialUsageOpen?: boolean; initialProductCostOpen?: boolean }) {
   const { t } = useLocale()
   const [search, setSearch] = useState('')
   const [drilldown, setDrilldown] = useState<DrilldownTarget | null>(initialDrilldown)
@@ -77,6 +78,9 @@ export default function DashboardsPage({ initialDrilldown = null, initialMateria
   // картки матеріалу/специфікації продукту, відкритих із цієї таблиці, повертає
   // одразу сюди, а не на верхній рівень дашбордів.
   const [materialUsageOpen, setMaterialUsageOpen] = useState(initialMaterialUsageOpen)
+  // "Собівартість продукції" (ProductCostPage.tsx) — той самий deep-link підхід,
+  // ?sub=productCost.
+  const [productCostOpen, setProductCostOpen] = useState(initialProductCostOpen)
   const q = search.trim().toLowerCase()
 
   if (drilldown) return <DrilldownPage target={drilldown} onBack={() => setDrilldown(null)} />
@@ -84,6 +88,11 @@ export default function DashboardsPage({ initialDrilldown = null, initialMateria
   if (materialUsageOpen) return (
     <Suspense fallback={<div className="px-4 pt-8 text-center text-sm text-slate-400">{t('common.loading')}</div>}>
       <MaterialUsagePage onBack={() => setMaterialUsageOpen(false)} />
+    </Suspense>
+  )
+  if (productCostOpen) return (
+    <Suspense fallback={<div className="px-4 pt-8 text-center text-sm text-slate-400">{t('common.loading')}</div>}>
+      <ProductCostPage onBack={() => setProductCostOpen(false)} />
     </Suspense>
   )
 
@@ -114,6 +123,22 @@ export default function DashboardsPage({ initialDrilldown = null, initialMateria
             <div className="min-w-0">
               <p className="text-sm font-semibold text-slate-800 truncate">{t('materialUsage.title')}</p>
               <p className="text-xs text-slate-400 truncate">{t('dashboards.materialUsage.desc')}</p>
+            </div>
+          </div>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="shrink-0 text-slate-300 -rotate-90">
+            <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+        <button onClick={() => setProductCostOpen(true)}
+          className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white p-4 text-left active:scale-[0.99] transition-all"
+          style={{ border: '1px solid rgba(157,200,255,0.25)', boxShadow: '0 1px 8px rgba(157,200,255,0.08)' }}>
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ background: '#fefce8', color: '#ca8a04' }}>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.5"/><path d="M10 6v8M12.5 8.2c0-1.05-1.12-1.9-2.5-1.9s-2.5.85-2.5 1.9S8.62 10.1 10 10.1s2.5.85 2.5 1.9-1.12 1.9-2.5 1.9-2.5-.85-2.5-1.9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-800 truncate">{t('productCost.title')}</p>
+              <p className="text-xs text-slate-400 truncate">{t('dashboards.productCost.desc')}</p>
             </div>
           </div>
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="shrink-0 text-slate-300 -rotate-90">
@@ -286,6 +311,8 @@ function DrilldownPage({ target, onBack }: { target: DrilldownTarget; onBack: ()
   const navigable = target.entityType !== 'supplier'
   const currencyQ = useMaterialCostCurrency()
   const currencySymbol = CURRENCY_SYMBOL[currencyQ.data ?? 'UAH']
+  const operationCurrencyQ = useOperationCostCurrency()
+  const operationCurrencySymbol = CURRENCY_SYMBOL[operationCurrencyQ.data ?? 'UAH']
 
   // Підписи деталізації — не з URL, а свіжо підтягнуті зі статистики (та сама
   // логіка, що й на верхньому рівні), щоб точно збігались і не застарівали.
@@ -351,7 +378,7 @@ function DrilldownPage({ target, onBack }: { target: DrilldownTarget; onBack: ()
                       <p className="text-[10px] text-slate-400">{r.materialsCount ?? 0} {t('dashboards.specTable.itemsShort')}</p>
                     </td>
                     <td className="px-3 py-3 text-right">
-                      <p className="font-medium text-slate-700">{fmt(r.operationsCost ?? 0)} ₴</p>
+                      <p className="font-medium text-slate-700">{fmt(r.operationsCost ?? 0)} {operationCurrencySymbol}</p>
                       <p className="text-[10px] text-slate-400">{r.operationsCount ?? 0} {t('dashboards.specTable.itemsShort')}</p>
                     </td>
                     <td className="pr-3">

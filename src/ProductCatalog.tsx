@@ -11,7 +11,7 @@ import SpecificationPage from './SpecificationPage'
 import { AssignmentFormSheet } from './AssignmentsPage'
 import ConfirmDeleteModal from './ConfirmDeleteModal'
 import { CategoryTreeNode } from './CategoryTreeNode'
-import { useMaterialCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
+import { useMaterialCostCurrency, useOperationCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
 import { useLocale } from './LocaleContext'
 import { fmt } from './lib/materialFormat'
 import { escapeHtml } from './lib/html'
@@ -51,6 +51,8 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
   const productStatuses = statusesQ.data ?? []
   const currencyQ = useMaterialCostCurrency()
   const currencySymbol = CURRENCY_SYMBOL[currencyQ.data ?? 'UAH']
+  const operationCurrencyQ = useOperationCostCurrency()
+  const operationCurrencySymbol = CURRENCY_SYMBOL[operationCurrencyQ.data ?? 'UAH']
   const { t, tn } = useLocale()
   const { data: currentUser } = useCurrentUser()
   const isManager = currentUser?.role === 'manager' || currentUser?.role === 'admin'
@@ -243,7 +245,7 @@ export default function ProductCatalog({ onNavigate, initialViewId, initialViewR
       </tr>
       <tr>
         <td class="label">${esc(t('costExport.collectionName'))}</td><td>${esc(catName)}</td>
-        <td class="label pink">${esc(t('productView.operationsCost'))}</td><td class="pink">${fmt(operationsCost)} ₴</td>
+        <td class="label pink">${esc(t('productView.operationsCost'))}</td><td class="pink">${fmt(operationsCost)} ${operationCurrencySymbol}</td>
         <td colspan="3"></td>
       </tr>
     </table>

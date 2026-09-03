@@ -8,6 +8,7 @@ import type { Operation } from './hooks/useCatalog'
 import { useProductTasks, type ProductTask } from './hooks/useProductOperations'
 import { useAssignments, useAssignmentMutations, isAssignmentLocked, isArchivedCompleted, type Assignment, type AssignmentStatus, type AssignmentPriority } from './hooks/useAssignments'
 import { usePayrollSettings, usePayrollClosures, useAssignmentEvents, computePayrollPeriodStatus, kyivDateParts, type AssignmentEventType } from './hooks/usePayroll'
+import { useOperationCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
 import { useLocale } from './LocaleContext'
 import type { TranslationKey } from './i18n'
 
@@ -778,6 +779,8 @@ function AssignmentDetailPage({ assignment, currentUser, isManager, canManageTas
 }) {
   const { t, tn } = useLocale()
   const { updateAssignment, removeAssignment, isSaving } = useAssignmentMutations()
+  const currencyQ = useOperationCostCurrency()
+  const currencySymbol = CURRENCY_SYMBOL[currencyQ.data ?? 'UAH']
   const payrollSettingsQ = usePayrollSettings()
   const payrollClosuresQ = usePayrollClosures()
   const [view, setView] = useState<'detail' | 'history'>('detail')
@@ -1001,7 +1004,7 @@ function AssignmentDetailPage({ assignment, currentUser, isManager, canManageTas
               {canManageTasks && (
                 <div className="flex items-center justify-between px-4 py-3">
                   <span className="text-xs text-slate-400">{t('assignments.costLabel')}</span>
-                  <span className="text-sm font-medium text-slate-700">{assignment.cost !== null ? `${assignment.cost} ₴` : '—'}</span>
+                  <span className="text-sm font-medium text-slate-700">{assignment.cost !== null ? `${assignment.cost} ${currencySymbol}` : '—'}</span>
                 </div>
               )}
               <div className="flex items-center justify-between px-4 py-3">

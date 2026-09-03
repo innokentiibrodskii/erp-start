@@ -3,6 +3,7 @@ import type { Operation } from './hooks/useCatalog'
 import { createOperationDirect } from './hooks/useCatalog'
 import { useProductTasks, useProductOperationMutations, type ProductTask } from './hooks/useProductOperations'
 import { useActiveOrgId } from './OrgContext'
+import { useOperationCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
 import { useLocale } from './LocaleContext'
 
 /* ───────────────────────────────────────────────────────────
@@ -21,6 +22,8 @@ export default function OperationPickerSheet({ productId, allOperations, already
 }) {
   const { t, tn } = useLocale()
   const orgId = useActiveOrgId()
+  const currencyQ = useOperationCostCurrency()
+  const currencySymbol = CURRENCY_SYMBOL[currencyQ.data ?? 'UAH']
   const productTasksQ = useProductTasks(productId)
   const productTasks = productTasksQ.data ?? []
   const { addWithNewTask, addWithExistingTask, isSaving, addTaskError, resetAddErrors } = useProductOperationMutations()
@@ -199,7 +202,7 @@ export default function OperationPickerSheet({ productId, allOperations, already
                         <p className="text-sm font-medium text-slate-800 truncate">{pt.name}</p>
                       </div>
                       <span className="text-xs text-slate-400 shrink-0">
-                        {pt.durationMinutes ? `${pt.durationMinutes} ${t('common.minutesShort')}` : ''}{pt.durationMinutes && pt.cost ? ' · ' : ''}{pt.cost ? `${pt.cost} ₴` : ''}
+                        {pt.durationMinutes ? `${pt.durationMinutes} ${t('common.minutesShort')}` : ''}{pt.durationMinutes && pt.cost ? ' · ' : ''}{pt.cost ? `${pt.cost} ${currencySymbol}` : ''}
                       </span>
                     </button>
                   ))}
