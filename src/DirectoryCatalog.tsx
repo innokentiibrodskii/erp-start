@@ -5,7 +5,7 @@ import { buildCatPath, fmt } from './lib/materialFormat'
 import type { Department, Position, ProductCategory, ProductAttribute, Operation, Warehouse, MaterialCategory, Unit, Supplier } from './hooks/useCatalog'
 import { useProductStatuses, useProductStatusMutations, type ProductStatus, usePhotoStatuses, usePhotoStatusMutations, type PhotoStatus } from './hooks/useProducts'
 import { useCustomFieldDefinitions, useCustomFieldDefinitionMutations, type CustomFieldDefinition, type EntityType, type FieldType } from './hooks/useCustomFields'
-import { useMaterialCostCurrency, useSetMaterialCostCurrency, useOperationCostCurrency, useSetOperationCostCurrency, CURRENCIES, CURRENCY_LABEL_KEY } from './hooks/useOrgSettings'
+import { useMaterialCostCurrency, useSetMaterialCostCurrency, useOperationCostCurrency, useSetOperationCostCurrency, useMaterialSkuMode, useSetMaterialSkuMode, CURRENCIES, CURRENCY_LABEL_KEY, type MaterialSkuMode } from './hooks/useOrgSettings'
 import { useCurrentUser } from './hooks/useCurrentUser'
 import { usePayrollSettings, useSetPayrollSettings, usePayrollClosures, useClosePayrollPeriod, computeMonthPayrollPhase } from './hooks/usePayroll'
 import { useLocale } from './LocaleContext'
@@ -1288,6 +1288,8 @@ export function CustomFieldsPage({ onBack, onOpenPrintForms }: { onBack: () => v
   const setCurrency = useSetMaterialCostCurrency()
   const operationCurrencyQ = useOperationCostCurrency()
   const setOperationCurrency = useSetOperationCostCurrency()
+  const skuModeQ = useMaterialSkuMode()
+  const setSkuMode = useSetMaterialSkuMode()
   const { t } = useLocale()
 
   // Зарплатний період — визначає й закриває лише адмін (менеджер, який теж
@@ -1351,6 +1353,23 @@ export function CustomFieldsPage({ onBack, onOpenPrintForms }: { onBack: () => v
             </svg>
           </div>
           <p className="mt-1.5 text-[10px] text-slate-300">{t('directory.operationCurrencyHint')}</p>
+        </div>
+      </div>
+
+      <div className="px-4 pt-3">
+        <div className="rounded-2xl bg-white p-4" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">{t('directory.materialSkuModeLabel')}</label>
+          <div className="relative">
+            <select value={skuModeQ.data ?? 'auto'} onChange={e => setSkuMode(e.target.value as MaterialSkuMode)}
+              className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 pl-3 pr-9 py-2.5 text-sm outline-none focus:border-blue-400 transition-all">
+              <option value="auto">{t('directory.materialSkuModeAuto')}</option>
+              <option value="manual">{t('directory.materialSkuModeManual')}</option>
+            </select>
+            <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" width="11" height="11" viewBox="0 0 11 11" fill="none">
+              <path d="M2 3.5l3.5 4 3.5-4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <p className="mt-1.5 text-[10px] text-slate-300">{t('directory.materialSkuModeHint')}</p>
         </div>
       </div>
 

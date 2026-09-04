@@ -58,9 +58,20 @@ export function buildArticlePrefix(categoryId: string | null, all: MaterialCateg
     .join('-')
 }
 
-/** Артикул матеріалу: префікс категорії + "-" + порядковий номер у цій категорії */
-export function genMaterialArticle(categoryId: string | null, all: MaterialCategory[], seq: number): string {
+/** Артикул матеріалу для режиму "Авто" (organizations.material_sku_mode,
+ *  sql/material_sku_mode.sql) — префікс зі скорочень категорій (buildArticlePrefix,
+ *  напр. "T-O") + "-" + порядковий номер У МЕЖАХ ЦІЄЇ Ж КАТЕГОРІЇ (напр. "T-O-01").
+ *  Береться МАКСИМАЛЬНИЙ уже використаний номер серед матеріалів цієї категорії
+ *  з таким префіксом, а не їх кількість — інакше "дірка" в послідовності (напр.
+ *  видалений матеріал) дає номер, який уже зайнятий (той самий урок, що й
+ *  genProductArticle у hooks/useProducts.ts). */
+export function genMaterialArticle(categoryId: string | null, all: MaterialCategory[], materials: { categoryId: string | null; code: string | null }[]): string {
   const prefix = buildArticlePrefix(categoryId, all)
   if (!prefix) return ''
-  return `${prefix}-${String(seq).padStart(2, '0')}`
+  const maxSeq = materials.reduce((max, m) => {
+    if (m.categoryId !== categoryId || !m.code || !m.code.startsWith(`${prefix}-`)) return max
+    const n = Number(m.code.slice(prefix.length + 1))
+    return Number.isFinite(n) && n > max ? n : max
+  }, 0)
+  return `${prefix}-${String(maxSeq + 1).padStart(2, '0')}`
 }

@@ -380,8 +380,12 @@ export default function MaterialUsagePage({ onBack }: { onBack: () => void }) {
       <SubPageHeader title={t('materialUsage.title')} subtitle={t('directory.countRecords', { count: filteredRows.length })} onBack={onBack} />
 
       <div className="px-4 pt-3 space-y-3">
-        <div className="flex gap-2">
-          <div className="relative flex-1">
+        {/* flex-wrap — на вузьких екранах кнопка переноситься на другий рядок
+           замість того, щоб розпирати сторінку по горизонталі (сторінка сама
+           ніколи не повинна скролитись вбік — лише таблиця, у власному
+           overflow-x-auto нижче). */}
+        <div className="flex flex-wrap gap-2">
+          <div className="relative flex-1 min-w-[160px]">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" width="15" height="15" viewBox="0 0 14 14" fill="none">
               <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4"/>
               <path d="M9.5 9.5l2.5 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
@@ -390,9 +394,9 @@ export default function MaterialUsagePage({ onBack }: { onBack: () => void }) {
               className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm outline-none placeholder:text-slate-300 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
           </div>
           <button onClick={exportExcel} disabled={filteredRows.length === 0}
-            className="flex items-center gap-1.5 rounded-2xl bg-slate-800 px-4 py-2.5 text-xs font-semibold text-white active:scale-95 transition-all shrink-0 disabled:opacity-40">
+            className="flex items-center gap-1.5 rounded-2xl bg-slate-800 px-3.5 sm:px-4 py-2.5 text-xs font-semibold text-white active:scale-95 transition-all shrink-0 disabled:opacity-40">
             <DownloadIcon />
-            {t('materialUsage.exportButton')}
+            <span className="hidden sm:inline">{t('materialUsage.exportButton')}</span>
           </button>
           <button onClick={() => setFilterOpen(v => !v)}
             className="relative flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-2xl border transition-all active:scale-95"
@@ -404,7 +408,7 @@ export default function MaterialUsagePage({ onBack }: { onBack: () => void }) {
           </button>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <div className="flex items-center gap-2.5 rounded-xl bg-white px-3 py-2" style={{ border: '1px solid rgba(157,200,255,0.3)' }}>
             <span className="text-2xl font-semibold text-slate-800">{distinctProductCount}</span>
             <span className="text-[11px] leading-tight text-slate-400 max-w-[70px]">{t('materialUsage.statProducts')}</span>

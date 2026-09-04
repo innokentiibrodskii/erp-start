@@ -6,8 +6,10 @@ import { useMaterials, useMaterialMutations, type Material } from './hooks/useMa
 import { useProducts, useProductStatuses } from './hooks/useProducts'
 import {
   useStockMovements, computeBalances, balanceFor, totalFor, useStockMutations,
-  type MovementType, type StockMovement,
+  type MovementType, type StockMovement, type MovementSeries,
 } from './hooks/useMaterialStock'
+import { useMaterialEvents, type MaterialEvent, type MaterialEventType } from './hooks/useMaterialEvents'
+import { useMaterialCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
 import {
   useCustomFieldDefinitions, useCustomFieldValues, useCustomFieldValueMutations,
   type CustomFieldDefinition,
@@ -18,6 +20,7 @@ import MaterialEditorPage, { type PendingDelivery, type CustomFieldInput } from 
 import ConfirmDeleteModal from './ConfirmDeleteModal'
 import { CategoryTreeNode } from './CategoryTreeNode'
 import { useLocale } from './LocaleContext'
+import type { TranslationKey } from './i18n'
 
 interface Props { onNavigate: (page: string) => void; initialMaterialId?: string | null; initialMaterialReturnTo?: string | null }
 
@@ -26,6 +29,7 @@ type View =
   | { type: 'detail'; materialId: string }
   | { type: 'stock'; materialId: string; mode: MovementType }
   | { type: 'qr'; materialId: string }
+  | { type: 'seriesQr'; materialId: string; series: MovementSeries }
   | { type: 'edit'; materialId: string | null }
 
 export default function MaterialStock({ onNavigate, initialMaterialId, initialMaterialReturnTo }: Props) {
@@ -136,22 +140,22 @@ export default function MaterialStock({ onNavigate, initialMaterialId, initialMa
     const handleSaveMaterial = async (args: {
       name: string; nameEn: string | null; code: string; categoryId: string | null; unitId: string; cost: number | null
       photoFile: File | null; photoUrl: string | null
-      primarySupplierId: string | null; supplierIds: string[]
+      primarySupplierId: string | null; primarySupplierPrice: number | null; supplierIds: string[]
       customInputs: Record<string, CustomFieldInput>
       pendingDeliveries: PendingDelivery[]
     }) => {
       let materialId: string
       if (editing) {
         await updateMaterial({
-          id: editing.id, name: args.name, nameEn: args.nameEn, categoryId: args.categoryId, unitId: args.unitId, cost: args.cost,
+          id: editing.id, name: args.name, nameEn: args.nameEn, code: args.code, categoryId: args.categoryId, unitId: args.unitId, cost: args.cost,
           photoFile: args.photoFile, photoUrl: args.photoUrl,
-          primarySupplierId: args.primarySupplierId, supplierIds: args.supplierIds,
+          primarySupplierId: args.primarySupplierId, primarySupplierPrice: args.primarySupplierPrice, supplierIds: args.supplierIds,
         })
         materialId = editing.id
       } else {
         materialId = await createMaterial({
           name: args.name, nameEn: args.nameEn, code: args.code, categoryId: args.categoryId, unitId: args.unitId, cost: args.cost, photoFile: args.photoFile,
-          primarySupplierId: args.primarySupplierId, supplierIds: args.supplierIds,
+          primarySupplierId: args.primarySupplierId, primarySupplierPrice: args.primarySupplierPrice, supplierIds: args.supplierIds,
         })
         for (const d of args.pendingDeliveries) {
           if (!d.warehouseId) continue
@@ -177,6 +181,7 @@ export default function MaterialStock({ onNavigate, initialMaterialId, initialMa
           deliveries={materialDeliveries}
           nextBatchSeq={nextBatchSeq}
           isSaving={isSaving}
+          onPrintSeriesQr={editing ? series => setView({ type: 'seriesQr', materialId: editing.id, series }) : undefined}
           onBack={() => setView({ type: 'list' })}
           onSave={handleSaveMaterial}
         />
@@ -207,12 +212,37 @@ export default function MaterialStock({ onNavigate, initialMaterialId, initialMa
   if (view.type === 'qr') {
     const mat = materials.find(m => m.id === view.materialId)
     if (!mat) { setView({ type: 'list' }); return null }
+    const categoryPath = buildCatPath(mat.categoryId, materialCategories, tn)
+    const stock = totalFor(balances, mat.id)
     return (
-      <MaterialQRPage
-        material={mat}
-        categoryPath={buildCatPath(mat.categoryId, materialCategories, tn)}
-        stock={totalFor(balances, mat.id)}
+      <QrLabelPage
+        title={t('materials.qrLabelTitle')}
+        name={tn(mat.name, mat.nameEn)}
+        code={mat.code}
+        // QR веде на сторінку перегляду матеріалу в застосунку — сканування відкриває картку.
+        qrValue={`${window.location.origin}/?material=${mat.id}`}
+        fileNameBase={`qr-${mat.code ?? mat.id}`}
+        largeStat={{ label: t('materials.inStock'), value: `${fmt(stock)} ${tn(mat.unitShortName, mat.unitShortNameEn)}`, color: stock > 0 ? '#16a34a' : '#94a3b8' }}
+        infoRows={categoryPath ? [{ label: t('filters.category'), value: categoryPath }] : []}
         onBack={() => setView({ type: 'list' })}
+      />
+    )
+  }
+
+  if (view.type === 'seriesQr') {
+    const mat = materials.find(m => m.id === view.materialId)
+    if (!mat) { setView({ type: 'list' }); return null }
+    return (
+      <QrLabelPage
+        title={t('materials.seriesQrLabelTitle')}
+        name={tn(mat.name, mat.nameEn)}
+        code={view.series.code}
+        // Для серії немає окремої сторінки в застосунку — QR кодує сам код
+        // серії текстом (звірка на складі з накладною), не url.
+        qrValue={view.series.code}
+        fileNameBase={`qr-${view.series.code}`}
+        infoRows={[{ label: t('materials.seriesQty'), value: `${fmt(view.series.qty)} ${tn(mat.unitShortName, mat.unitShortNameEn)}` }]}
+        onBack={() => setView({ type: 'edit', materialId: mat.id })}
       />
     )
   }
@@ -234,7 +264,13 @@ export default function MaterialStock({ onNavigate, initialMaterialId, initialMa
         <MaterialDetail
           material={mat}
           categoryPath={buildCatPath(mat.categoryId, materialCategories, tn)}
-          suppliers={suppliers.filter(s => mat.supplierIds.includes(s.id))}
+          // Постачальники в картці — і додаткові (supplierIds), і основний
+          // (primarySupplierId сам окремо не потрапляє в supplierIds — див.
+          // useMaterials.ts), інакше рядок "Постачальники" показує "—",
+          // навіть коли нижче видно "Ціна постачальника" саме основного.
+          suppliers={suppliers.filter(s => mat.supplierIds.includes(s.id) || s.id === mat.primarySupplierId)}
+          allCategories={materialCategories}
+          allSuppliers={suppliers}
           warehouses={warehouses}
           movements={movements.filter(mv => mv.materialId === mat.id)}
           stock={totalFor(balances, mat.id)}
@@ -537,20 +573,29 @@ function TrashIcon() {
 /* ═══════════════════════════════════════════════════════════
    Material QR — сторінка друку етикетки
 ═══════════════════════════════════════════════════════════ */
-function MaterialQRPage({ material, categoryPath, stock, onBack }: {
-  material: Material
-  categoryPath: string
-  stock: number
+/** Спільний екран друку QR-мітки (40×58мм: назва → код → QR) — і для
+ *  матеріалу (QR веде на картку матеріалу в застосунку, `?material=<id>`),
+ *  і для серії поставки (QR кодує сам код серії текстом — для серії немає
+ *  окремої сторінки в застосунку, сканування на складі частіше про звірку
+ *  коду з накладною, ніж про перехід). `infoRows` — довідкові дані під
+ *  прев'ю, на саму етикетку не друкуються. */
+function QrLabelPage({ title, name, code, qrValue, fileNameBase, largeStat, infoRows, onBack }: {
+  title: string
+  name: string
+  code: string | null
+  qrValue: string
+  fileNameBase: string
+  /** Виділений великим шрифтом рядок над звичайними info-рядками (напр.
+   *  "На складі" для матеріалу) — опційно, серія його не використовує. */
+  largeStat?: { label: string; value: string; color: string }
+  infoRows: { label: string; value: string }[]
   onBack: () => void
 }) {
-  const { t, tn } = useLocale()
-  // QR веде на сторінку перегляду матеріалу в застосунку — сканування відкриває картку.
-  const qrValue = `${window.location.origin}/?material=${material.id}`
-  const materialName = tn(material.name, material.nameEn)
-  const labelContent = { svgElementId: 'mat-qr-svg', name: materialName, code: material.code }
+  const { t } = useLocale()
+  const labelContent = { svgElementId: 'qr-label-svg', name, code }
 
-  const handlePrint = () => printQrLabel(labelContent, materialName)
-  const handleDownloadImage = () => downloadQrLabelPng(labelContent, `qr-${material.code ?? material.id}.png`)
+  const handlePrint = () => printQrLabel(labelContent, name)
+  const handleDownloadImage = () => downloadQrLabelPng(labelContent, `${fileNameBase}.png`)
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -564,7 +609,7 @@ function MaterialQRPage({ material, categoryPath, stock, onBack }: {
             <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </button>
-        <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="flex-1 text-lg text-slate-800">{t('materials.qrLabelTitle')}</h1>
+        <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="flex-1 text-lg text-slate-800">{title}</h1>
         <button onClick={handleDownloadImage}
           className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 active:scale-95 transition-all">
           <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
@@ -586,34 +631,36 @@ function MaterialQRPage({ material, categoryPath, stock, onBack }: {
         <div className="w-full max-w-xs rounded-3xl bg-white px-6 py-7 flex flex-col items-center gap-4"
           style={{ border: '1.5px solid rgba(157,200,255,0.35)', boxShadow: '0 4px 32px rgba(157,200,255,0.15)' }}>
           <div className="text-center">
-            <p style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800 leading-snug">{tn(material.name, material.nameEn)}</p>
-            {material.code && (
-              <p className="mt-1 text-xs text-slate-500">{material.code}</p>
+            <p style={{ fontFamily: "'DM Serif Display', serif" }} className="text-xl text-slate-800 leading-snug">{name}</p>
+            {code && (
+              <p className="mt-1 text-xs text-slate-500">{code}</p>
             )}
           </div>
 
           <div className="rounded-2xl bg-white p-4"
             style={{ border: '1px solid rgba(157,200,255,0.25)', boxShadow: '0 2px 12px rgba(157,200,255,0.1)' }}>
-            <QRCodeLib id="mat-qr-svg" value={qrValue} size={180} />
+            <QRCodeLib id="qr-label-svg" value={qrValue} size={180} />
           </div>
         </div>
 
         {/* Додаткова інформація — довідково в застосунку, на етикетку не друкується */}
-        <div className="w-full max-w-xs mt-4 rounded-2xl bg-white px-5 py-4 space-y-2.5"
-          style={{ border: '1px solid rgba(157,200,255,0.2)' }}>
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('materials.inStock')}</span>
-            <span className="text-2xl font-bold" style={{ color: stock > 0 ? '#16a34a' : '#94a3b8' }}>
-              {fmt(stock)} <span className="text-sm font-semibold text-slate-400">{tn(material.unitShortName, material.unitShortNameEn)}</span>
-            </span>
+        {(largeStat || infoRows.length > 0) && (
+          <div className="w-full max-w-xs mt-4 rounded-2xl bg-white px-5 py-4 space-y-2.5"
+            style={{ border: '1px solid rgba(157,200,255,0.2)' }}>
+            {largeStat && (
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{largeStat.label}</span>
+                <span className="text-2xl font-bold" style={{ color: largeStat.color }}>{largeStat.value}</span>
+              </div>
+            )}
+            {infoRows.map(row => (
+              <div key={row.label} className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{row.label}</span>
+                <span className="text-xs font-medium text-slate-700 text-right max-w-[55%] truncate">{row.value}</span>
+              </div>
+            ))}
           </div>
-          {categoryPath && (
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('filters.category')}</span>
-              <span className="text-xs font-medium text-slate-700 text-right max-w-[55%] truncate">{categoryPath}</span>
-            </div>
-          )}
-        </div>
+        )}
 
         <p className="mt-5 text-xs text-slate-400 text-center">{t('materials.qrPrintHint')}</p>
       </div>
@@ -624,10 +671,15 @@ function MaterialQRPage({ material, categoryPath, stock, onBack }: {
 /* ═══════════════════════════════════════════════════════════
    Material Detail — read-only view
 ═══════════════════════════════════════════════════════════ */
-function MaterialDetail({ material, categoryPath, suppliers, warehouses, movements, stock, fields, onBack, onEdit }: {
+function MaterialDetail({ material, categoryPath, suppliers, allCategories, allSuppliers, warehouses, movements, stock, fields, onBack, onEdit }: {
   material: Material
   categoryPath: string
   suppliers: ReturnType<typeof useCatalog>['suppliers']
+  /** Повні списки (не лише пов'язані з цим матеріалом) — для резолву
+   *  category_id/primary_supplier_id зі старих значень у "Історії" (подія
+   *  могла лишити id категорії/постачальника, що вже відв'язаний). */
+  allCategories: ReturnType<typeof useCatalog>['materialCategories']
+  allSuppliers: ReturnType<typeof useCatalog>['suppliers']
   warehouses: ReturnType<typeof useCatalog>['warehouses']
   movements: StockMovement[]
   stock: number
@@ -641,6 +693,11 @@ function MaterialDetail({ material, categoryPath, suppliers, warehouses, movemen
   const usedIn = products.filter(p => p.materials.some(pm => pm.materialId === material.id))
 
   const lastDelivery = movements.filter(m => m.type === 'in').sort((a, b) => b.createdAt - a.createdAt)[0]
+  const currency = useMaterialCostCurrency().data ?? 'UAH'
+  const currencySymbol = CURRENCY_SYMBOL[currency]
+  const hasMaterialPrice = material.cost !== null
+  const hasSupplierPrice = !!material.primarySupplierId && material.primarySupplierPrice !== null
+  const hasLastDeliveryPrice = !!lastDelivery?.cost
 
   const valuesQ = useCustomFieldValues('material', material.id)
   const filledFields = fields.filter(def => {
@@ -656,8 +713,39 @@ function MaterialDetail({ material, categoryPath, suppliers, warehouses, movemen
 
   const [openUsedIn, setOpenUsedIn] = useState(false)
   const [openHistory, setOpenHistory] = useState(false)
+  // "Історія" — аудит-лог змін матеріалу (хто/коли змінив назву, категорію,
+  // артикул, вартість, основного постачальника, архівацію), той самий
+  // патерн, що й "Історія" у ProductView.tsx.
+  const [view, setView] = useState<'detail' | 'events'>('detail')
+  const eventsQ = useMaterialEvents(view === 'events' ? material.id : null)
 
   const recentMovements = movements.slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, 8)
+
+  if (view === 'events') {
+    return (
+      <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
+        <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3"
+          style={{ background: 'rgba(248,251,255,0.96)', backdropFilter: 'blur(14px)', borderBottom: '1px solid rgba(157,200,255,0.2)' }}>
+          <button onClick={() => setView('detail')}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 active:scale-95 transition-all">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+          <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="flex-1 text-lg text-slate-800 truncate">{t('assignments.historyTab')}</h1>
+        </div>
+        <div className="px-4 pb-8 pt-4 space-y-2">
+          {eventsQ.isLoading ? (
+            <p className="py-8 text-center text-sm text-slate-400">{t('common.loading')}</p>
+          ) : (eventsQ.data ?? []).length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-400">{t('assignments.noHistoryYet')}</p>
+          ) : (eventsQ.data ?? []).map(ev => (
+            <MaterialEventRow key={ev.id} event={ev} categories={allCategories} suppliers={allSuppliers} />
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -670,6 +758,13 @@ function MaterialDetail({ material, categoryPath, suppliers, warehouses, movemen
           </svg>
         </button>
         <h1 style={{ fontFamily: "'DM Serif Display', serif" }} className="flex-1 text-lg text-slate-800 truncate">{tn(material.name, material.nameEn)}</h1>
+        <button onClick={() => setView('events')} title={t('assignments.historyTab')}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 active:scale-95 transition-all">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.4"/>
+            <path d="M8 4.5V8l2.5 1.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
         <button onClick={onEdit} title={t('common.edit')}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 active:scale-95 transition-all">
           <PencilIcon />
@@ -726,7 +821,9 @@ function MaterialDetail({ material, categoryPath, suppliers, warehouses, movemen
             [t('filters.category'), categoryPath || '—'],
             [t('materials.unit'), tn(material.unitShortName, material.unitShortNameEn) || '—'],
             [t('materials.suppliers'), suppliers.length > 0 ? suppliers.map(s => tn(s.name, s.nameEn)).join(', ') : '—'],
-            ...(lastDelivery?.cost ? [[t('materials.pricePerUnit'), `${lastDelivery.cost} ₴`]] : []),
+            ...(hasMaterialPrice ? [[t('materials.materialPrice'), `${fmt(material.cost as number)} ${currencySymbol}`]] : []),
+            ...(hasSupplierPrice ? [[t('materials.supplierPrice'), `${fmt(material.primarySupplierPrice as number)} ${currencySymbol}`]] : []),
+            ...(hasLastDeliveryPrice ? [[t('materials.pricePerUnit'), `${lastDelivery!.cost} ₴`]] : []),
           ].map((row, i, arr) => (
             <div key={row[0]} className="flex items-center justify-between px-4 py-3"
               style={{ borderBottom: i < arr.length - 1 ? '1px solid rgba(157,200,255,0.15)' : 'none' }}>
@@ -735,6 +832,17 @@ function MaterialDetail({ material, categoryPath, suppliers, warehouses, movemen
             </div>
           ))}
         </div>
+
+        {/* Три різні поля ціни легко сплутати — коротка підказка, лише для
+           тих із них, що реально видно в рядках вище, і лише коли видно
+           більше однієї одночасно (інакше плутати нема з чим). */}
+        {[hasMaterialPrice, hasSupplierPrice, hasLastDeliveryPrice].filter(Boolean).length > 1 && (
+          <div className="rounded-2xl px-4 py-3 text-[11px] leading-relaxed text-slate-500 space-y-1" style={{ background: '#f8fbff', border: '1px solid rgba(157,200,255,0.2)' }}>
+            {hasMaterialPrice && <p><span className="font-semibold text-slate-600">{t('materials.materialPrice')}</span> — {t('materials.materialPriceHint')}</p>}
+            {hasSupplierPrice && <p><span className="font-semibold text-slate-600">{t('materials.supplierPrice')}</span> — {t('materials.supplierPriceHint')}</p>}
+            {hasLastDeliveryPrice && <p><span className="font-semibold text-slate-600">{t('materials.pricePerUnit')}</span> — {t('materials.pricePerUnitHint')}</p>}
+          </div>
+        )}
 
         {filledFields.length > 0 && (
           <div>
@@ -856,6 +964,62 @@ function MaterialDetail({ material, categoryPath, suppliers, warehouses, movemen
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+const MATERIAL_EVENT_LABEL_KEY: Record<MaterialEventType, TranslationKey> = {
+  created: 'materialEvent.created',
+  name_changed: 'materialEvent.nameChanged',
+  category_changed: 'materialEvent.categoryChanged',
+  code_changed: 'materialEvent.codeChanged',
+  cost_changed: 'materialEvent.costChanged',
+  primary_supplier_changed: 'materialEvent.primarySupplierChanged',
+  archived_changed: 'materialEvent.archivedChanged',
+}
+
+/** Один рядок "Історії" матеріалу — подія + деталі зміни (стара → нова) +
+ *  хто й коли. category_changed/primary_supplier_changed зберігають id —
+ *  резолвимо назву за вже завантаженим каталогом (той самий підхід, що й
+ *  ProductEventRow у ProductView.tsx). */
+function MaterialEventRow({ event, categories, suppliers }: {
+  event: MaterialEvent
+  categories: ReturnType<typeof useCatalog>['materialCategories']
+  suppliers: ReturnType<typeof useCatalog>['suppliers']
+}) {
+  const { t, tn } = useLocale()
+
+  const catName = (id: unknown) => {
+    if (typeof id !== 'string') return '—'
+    const c = categories.find(x => x.id === id)
+    return c ? tn(c.name, c.nameEn) : '—'
+  }
+  const supName = (id: unknown) => {
+    if (typeof id !== 'string') return '—'
+    const s = suppliers.find(x => x.id === id)
+    return s ? tn(s.name, s.nameEn) : '—'
+  }
+
+  const detail = (() => {
+    if (event.eventType === 'created' && event.newValue && typeof event.newValue === 'object') return (event.newValue as { name: string }).name
+    if (event.eventType === 'category_changed') return `${catName(event.oldValue)} → ${catName(event.newValue)}`
+    if (event.eventType === 'primary_supplier_changed') return `${supName(event.oldValue)} → ${supName(event.newValue)}`
+    if (event.eventType === 'archived_changed') return `${event.oldValue ? t('materials.archived') : t('common.no')} → ${event.newValue ? t('materials.archived') : t('common.no')}`
+    if ((typeof event.oldValue === 'string' || typeof event.oldValue === 'number') && (typeof event.newValue === 'string' || typeof event.newValue === 'number'))
+      return `${event.oldValue} → ${event.newValue}`
+    return null
+  })()
+
+  return (
+    <div className="rounded-2xl bg-white px-4 py-3" style={{ border: '1px solid rgba(157,200,255,0.22)' }}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-medium text-slate-700 truncate">{t(MATERIAL_EVENT_LABEL_KEY[event.eventType])}</span>
+        <span className="text-[10px] text-slate-400 shrink-0">
+          {new Date(event.occurredAt).toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+        </span>
+      </div>
+      {detail && <p className="text-xs text-slate-500 mt-0.5 truncate">{detail}</p>}
+      <p className="text-xs text-slate-400 mt-0.5">{event.actorName}</p>
     </div>
   )
 }

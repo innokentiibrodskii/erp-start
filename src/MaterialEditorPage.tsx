@@ -4,8 +4,8 @@ import { CategoryTreeNode } from './CategoryTreeNode'
 import { CustomFieldsSection, Field, emptyCustomInput, type CustomFieldInput } from './CustomFieldsEditor'
 import type { Material } from './hooks/useMaterials'
 import { useCustomFieldValues, type CustomFieldDefinition } from './hooks/useCustomFields'
-import type { StockMovement } from './hooks/useMaterialStock'
-import { useMaterialCostCurrency, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
+import type { StockMovement, MovementSeries } from './hooks/useMaterialStock'
+import { useMaterialCostCurrency, useMaterialSkuMode, CURRENCY_SYMBOL } from './hooks/useOrgSettings'
 import { fmt, dateStr, buildCatPath, genBatchCode, genSeries, genMaterialArticle } from './lib/materialFormat'
 import { PRESET_COLORS } from './lib/colors'
 import { useLocale } from './LocaleContext'
@@ -33,6 +33,10 @@ interface Props {
   deliveries: StockMovement[]
   nextBatchSeq: number
   isSaving: boolean
+  /** Друк QR-мітки серії (назва матеріалу + код серії) — доступно лише для
+   *  вже збережених серій (з реальним id з material_stock_movement_series),
+   *  тож для нового матеріалу (ще не збереженого) проп не передається. */
+  onPrintSeriesQr?: (series: MovementSeries) => void
   onBack: () => void
   onSave: (args: {
     name: string
@@ -44,6 +48,7 @@ interface Props {
     photoFile: File | null
     photoUrl: string | null
     primarySupplierId: string | null
+    primarySupplierPrice: number | null
     supplierIds: string[]
     customInputs: Record<string, CustomFieldInput>
     pendingDeliveries: PendingDelivery[]
@@ -51,7 +56,7 @@ interface Props {
 }
 
 export default function MaterialEditorPage({
-  editing, categories, units, suppliers, fields, warehouses, materials, deliveries, nextBatchSeq, isSaving, onBack, onSave,
+  editing, categories, units, suppliers, fields, warehouses, materials, deliveries, nextBatchSeq, isSaving, onPrintSeriesQr, onBack, onSave,
 }: Props) {
   const { t, tn } = useLocale()
   const isNew = editing === null
@@ -69,6 +74,7 @@ export default function MaterialEditorPage({
   const currencyQ = useMaterialCostCurrency()
   const currency = currencyQ.data ?? 'UAH'
   const [primarySupplierId, setPrimarySupplierId] = useState<string | null>(editing?.primarySupplierId ?? null)
+  const [primarySupplierPrice, setPrimarySupplierPrice] = useState(editing?.primarySupplierPrice != null ? String(editing.primarySupplierPrice) : '')
   const [supplierIds, setSupplierIds] = useState<string[]>(editing?.supplierIds ?? [])
   const [supSearch, setSupSearch] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -123,8 +129,46 @@ export default function MaterialEditorPage({
   const primarySupplier = primarySupplierId ? suppliers.find(s => s.id === primarySupplierId) ?? null : null
   const catLabel = buildCatPath(categoryId, categories, tn)
   const selectedUnit = units.find(u => u.id === unitId)
-  const categorySeq = categoryId ? materials.filter(m => m.categoryId === categoryId).length + 1 : 1
-  const code = editing?.code ?? genMaterialArticle(categoryId, categories, categorySeq)
+  // Режим "Авто"/"Вручну" (organizations.material_sku_mode, Налаштування) —
+  // лише для нового матеріалу: у "Авто" код рахується від категорії (префікс
+  // зі скорочень категорій + порядковий номер у межах неї, genMaterialArticle),
+  // у "Вручну" користувач вводить сам. Код наявного матеріалу незмінний після
+  // створення — завжди лише читання, незалежно від режиму.
+  const skuModeQ = useMaterialSkuMode()
+  const skuMode = skuModeQ.data ?? 'auto'
+  const [manualCode, setManualCode] = useState('')
+  // Зміна категорії існуючого матеріалу в режимі "Авто" — артикул
+  // прив'язаний до категорії (buildArticlePrefix), тож зміна категорії
+  // сама по собі код НЕ перераховує (щоб не міняти щось важливе без явної
+  // згоди користувача) — показуємо попередження при виборі іншої категорії
+  // (categoryConfirm нижче) і кнопку "Згенерувати новий артикул", яка
+  // з'являється, поки обрана категорія відрізняється від збереженої.
+  // regeneratedCode — новий код, порахований по кліку на цю кнопку;
+  // саме він (не editing.code) іде в onSave, коли заповнений.
+  const originalCategoryId = editing?.categoryId ?? null
+  const [regeneratedCode, setRegeneratedCode] = useState<string | null>(null)
+  const [categoryConfirm, setCategoryConfirm] = useState<string | null>(null) // id категорії, що чекає підтвердження
+  const categoryChangedPendingRegen = editing !== null && skuMode === 'auto' && categoryId !== originalCategoryId
+  const code = editing
+    ? (regeneratedCode ?? editing.code ?? '')
+    : skuMode === 'auto' ? genMaterialArticle(categoryId, categories, materials) : manualCode
+  const handleRegenerateCode = () => setRegeneratedCode(genMaterialArticle(categoryId, categories, materials))
+  const selectCategory = (id: string | null) => {
+    if (editing && skuMode === 'auto' && id !== categoryId) {
+      setCategoryConfirm(id ?? '__none__')
+      setShowCatPicker(false)
+      return
+    }
+    setCategoryId(id); setErrors(p => ({ ...p, category: '' })); setShowCatPicker(false)
+  }
+  const confirmCategoryChange = () => {
+    if (categoryConfirm === null) return
+    setCategoryId(categoryConfirm === '__none__' ? null : categoryConfirm)
+    setErrors(p => ({ ...p, category: '' }))
+    setRegeneratedCode(null)
+    setCategoryConfirm(null)
+    setShowCatPicker(false)
+  }
 
   /* ── Поставки (лише для нового матеріалу) ── */
   const [pendingDeliveries, setPendingDeliveries] = useState<PendingDelivery[]>([])
@@ -167,7 +211,7 @@ export default function MaterialEditorPage({
     if (Object.keys(errs).length > 0) return
     onSave({
       name: name.trim(), nameEn: nameEn.trim() || null, code, categoryId, unitId: unitId!, cost: cost.trim() === '' ? null : Number(cost), photoFile, photoUrl,
-      primarySupplierId, supplierIds, customInputs, pendingDeliveries,
+      primarySupplierId, primarySupplierPrice: primarySupplierPrice.trim() === '' ? null : Number(primarySupplierPrice), supplierIds, customInputs, pendingDeliveries,
     })
   }
 
@@ -262,9 +306,28 @@ export default function MaterialEditorPage({
           </Field>
 
           <Field label={t('materialEditor.codeLabel')}>
-            <div className="w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3.5 text-sm font-mono text-slate-600 select-all">
-              {code || <span className="text-slate-400 font-sans">{t('materialEditor.codeHint')}</span>}
-            </div>
+            {!editing && skuMode === 'manual' ? (
+              <input type="text" value={manualCode} onChange={e => setManualCode(e.target.value)}
+                placeholder={t('materialEditor.codePlaceholder')}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm font-mono outline-none transition-all focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+            ) : (
+              <div className={`w-full rounded-2xl border px-4 py-3.5 text-sm font-mono select-all ${regeneratedCode ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-100 bg-slate-50 text-slate-600'}`}>
+                {code || <span className="text-slate-400 font-sans">{t('materialEditor.codeHint')}</span>}
+              </div>
+            )}
+            {categoryChangedPendingRegen && (
+              <div className="mt-2 flex items-center justify-between gap-2 rounded-xl px-3 py-2.5" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
+                <p className="text-xs text-amber-700">
+                  {regeneratedCode ? t('materialEditor.codeRegeneratedHint', { code: regeneratedCode }) : t('materialEditor.codeStaleHint')}
+                </p>
+                {!regeneratedCode && (
+                  <button onClick={handleRegenerateCode}
+                    className="shrink-0 rounded-lg bg-amber-500 px-2.5 py-1.5 text-[11px] font-semibold text-white active:scale-95 transition-all">
+                    {t('materialEditor.regenerateCodeButton')}
+                  </button>
+                )}
+              </div>
+            )}
           </Field>
 
           <Field label={t('materialEditor.categoryLabel')} error={errors.category}>
@@ -311,6 +374,14 @@ export default function MaterialEditorPage({
                 <path d="M2.5 4l4 4.5 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </button>
+            {primarySupplierId && (
+              <div className="mt-2 relative">
+                <input type="number" min="0" step="any" value={primarySupplierPrice} onChange={e => setPrimarySupplierPrice(e.target.value)}
+                  placeholder={t('materialEditor.supplierPricePlaceholder')}
+                  className="w-full rounded-2xl border border-slate-200 bg-white pl-4 pr-10 py-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
+                <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm text-slate-400">{CURRENCY_SYMBOL[currency]}</span>
+              </div>
+            )}
           </div>
 
           <div>
@@ -493,7 +564,20 @@ export default function MaterialEditorPage({
                           {d.series.map(s => (
                             <div key={s.id} className="flex items-center justify-between rounded-lg px-2.5 py-2 bg-blue-50">
                               <span className="text-blue-700 font-mono text-[11px]">{s.code}</span>
-                              <span className="text-blue-500 font-bold shrink-0">{fmt(s.qty)}</span>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="text-blue-500 font-bold">{fmt(s.qty)}</span>
+                                {onPrintSeriesQr && (
+                                  <button onClick={() => onPrintSeriesQr(s)} title={t('products.printQr')}
+                                    className="flex h-6 w-6 items-center justify-center rounded-md text-blue-400 hover:text-blue-600 hover:bg-blue-100 transition-colors active:scale-90">
+                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                                      <rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.4"/>
+                                      <rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.4"/>
+                                      <rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.4"/>
+                                      <path d="M9 9h2.5v2.5M13.5 9H14M9 13.5v.5M11.5 11.5H14v2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                                    </svg>
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -527,7 +611,7 @@ export default function MaterialEditorPage({
               </button>
             </div>
             <div className="flex-1 overflow-y-auto px-5 space-y-2 pb-2">
-              <button onClick={() => { setCategoryId(null); setErrors(p => ({ ...p, category: '' })); setShowCatPicker(false) }}
+              <button onClick={() => selectCategory(null)}
                 className="w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all"
                 style={!categoryId ? { background: '#eff6ff', border: '1.5px solid #93c5fd' } : { background: 'white', border: '1px solid rgba(157,200,255,0.25)' }}>
                 <div className="h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0" style={{ borderColor: !categoryId ? '#3b82f6' : '#cbd5e1' }}>
@@ -541,7 +625,7 @@ export default function MaterialEditorPage({
               {topLevelCats.map(cat => (
                 <CategoryTreeNode key={cat.id} cat={cat} depth={0} allCats={categories} selectedId={categoryId}
                   expandedIds={expandedCats}
-                  onSelect={id => { setCategoryId(id); setErrors(p => ({ ...p, category: '' })); setShowCatPicker(false) }}
+                  onSelect={id => selectCategory(id)}
                   onToggleExpand={toggleExpand} />
               ))}
 
@@ -595,7 +679,7 @@ export default function MaterialEditorPage({
               </button>
             </div>
             <div className="px-5 space-y-2 max-h-72 overflow-y-auto">
-              <button onClick={() => { setPrimarySupplierId(null); setShowSupplierPicker(false) }}
+              <button onClick={() => { setPrimarySupplierId(null); setPrimarySupplierPrice(''); setShowSupplierPicker(false) }}
                 className="w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all"
                 style={!primarySupplierId ? { background: '#f0f6ff', border: '1.5px solid #93c5fd' } : { background: 'white', border: '1px solid rgba(157,200,255,0.25)' }}>
                 <div className="h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0" style={{ borderColor: !primarySupplierId ? '#3b82f6' : '#cbd5e1' }}>
@@ -607,7 +691,7 @@ export default function MaterialEditorPage({
               {suppliers.map(s => {
                 const sel = primarySupplierId === s.id
                 return (
-                  <button key={s.id} onClick={() => { setPrimarySupplierId(s.id); setSupplierIds(p => p.filter(id => id !== s.id)); setShowSupplierPicker(false) }}
+                  <button key={s.id} onClick={() => { if (s.id !== primarySupplierId) setPrimarySupplierPrice(''); setPrimarySupplierId(s.id); setSupplierIds(p => p.filter(id => id !== s.id)); setShowSupplierPicker(false) }}
                     className="w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all"
                     style={sel ? { background: '#f0f6ff', border: '1.5px solid #93c5fd' } : { background: 'white', border: '1px solid rgba(157,200,255,0.25)' }}>
                     <div className="h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0" style={{ borderColor: sel ? '#3b82f6' : '#cbd5e1' }}>
@@ -650,6 +734,26 @@ export default function MaterialEditorPage({
                   {t('materialEditor.addSupplier')}
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {categoryConfirm !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-6">
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setCategoryConfirm(null)} />
+          <div className="relative z-10 w-full max-w-sm rounded-3xl bg-white px-6 py-6" style={{ boxShadow: '0 16px 48px rgba(0,0,0,0.18)' }}>
+            <p className="text-base font-semibold text-slate-800 mb-2">{t('materialEditor.categoryChangeConfirmTitle')}</p>
+            <p className="text-sm text-slate-500 mb-6">{t('materialEditor.categoryChangeConfirmHint')}</p>
+            <div className="flex gap-3">
+              <button onClick={() => setCategoryConfirm(null)}
+                className="flex-1 rounded-2xl border border-slate-200 py-3 text-sm font-medium text-slate-500 active:scale-[0.98]">
+                {t('common.cancel')}
+              </button>
+              <button onClick={confirmCategoryChange}
+                className="flex-1 rounded-2xl bg-blue-600 py-3 text-sm font-semibold text-white active:scale-[0.98]">
+                {t('materialEditor.categoryChangeConfirmButton')}
+              </button>
             </div>
           </div>
         </div>

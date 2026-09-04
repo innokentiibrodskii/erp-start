@@ -354,8 +354,12 @@ export default function ProductCostPage({ onBack }: { onBack: () => void }) {
       <SubPageHeader title={t('productCost.title')} subtitle={t('directory.countRecords', { count: sortedRows.length })} onBack={onBack} />
 
       <div className="px-4 pt-3 space-y-3">
-        <div className="flex gap-2">
-          <div className="relative flex-1">
+        {/* flex-wrap — на вузьких екранах кнопки (з текстом лише від sm:)
+           переносяться на другий рядок замість того, щоб розпирати сторінку
+           по горизонталі (сторінка сама ніколи не повинна скролитись вбік —
+           лише таблиця нижче, у власному overflow-x-auto). */}
+        <div className="flex flex-wrap gap-2">
+          <div className="relative flex-1 min-w-[160px]">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" width="15" height="15" viewBox="0 0 14 14" fill="none">
               <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4"/>
               <path d="M9.5 9.5l2.5 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
@@ -364,14 +368,14 @@ export default function ProductCostPage({ onBack }: { onBack: () => void }) {
               className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm outline-none placeholder:text-slate-300 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
           </div>
           <button onClick={handleLock} disabled={!canLock || isLocking} title={!canLock ? t('productCost.noRateHint') : undefined}
-            className="flex items-center gap-1.5 rounded-2xl bg-amber-500 px-4 py-2.5 text-xs font-semibold text-white active:scale-95 transition-all shrink-0 disabled:opacity-40">
+            className="flex items-center gap-1.5 rounded-2xl bg-amber-500 px-3.5 sm:px-4 py-2.5 text-xs font-semibold text-white active:scale-95 transition-all shrink-0 disabled:opacity-40">
             <LockIcon />
-            {t('productCost.lockButton')}
+            <span className="hidden sm:inline">{t('productCost.lockButton')}</span>
           </button>
           <button onClick={exportExcel} disabled={sortedRows.length === 0}
-            className="flex items-center gap-1.5 rounded-2xl bg-slate-800 px-4 py-2.5 text-xs font-semibold text-white active:scale-95 transition-all shrink-0 disabled:opacity-40">
+            className="flex items-center gap-1.5 rounded-2xl bg-slate-800 px-3.5 sm:px-4 py-2.5 text-xs font-semibold text-white active:scale-95 transition-all shrink-0 disabled:opacity-40">
             <DownloadIcon />
-            {t('productCost.exportButton')}
+            <span className="hidden sm:inline">{t('productCost.exportButton')}</span>
           </button>
           <button onClick={() => setFilterOpen(v => !v)}
             className="relative flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-2xl border transition-all active:scale-95"
@@ -387,8 +391,10 @@ export default function ProductCostPage({ onBack }: { onBack: () => void }) {
            (кастомних полів) більше, ніж влазить, зайві ховаються під
            overflow:hidden, і шеврон розгортає другий рядок. "Валюта
            прорахунку"/"Курс" — поза цим рядком що переносить, завжди
-           закріплені у верхній частині, ніколи не переносяться самі. */}
-        <div className="flex items-start gap-2">
+           закріплені у верхній частині, ніколи не переносяться самі.
+           flex-wrap — на вузьких екранах валюта/курс/шеврон переносяться під
+           бейджі замість того, щоб розпирати сторінку по горизонталі. */}
+        <div className="flex flex-wrap items-start gap-2">
           {/* CSS grid (не flex) — усі бейджі однакової ширини колонки,
              незалежно від довжини цифри/підпису (напр. "60" проти "2"). */}
           <div className="flex-1 min-w-0 overflow-hidden"

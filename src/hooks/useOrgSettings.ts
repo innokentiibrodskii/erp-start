@@ -43,6 +43,41 @@ export function useSetMaterialCostCurrency() {
   return (currency: Currency) => mutation.mutateAsync(currency)
 }
 
+/* ───────────────────────────────────────────────────────────
+   Режим генерації SKU (артикулу) матеріалу — sql/material_sku_mode.sql.
+   'auto' — система сама пропонує наскрізний код при створенні (M-0001,
+   M-0002…); 'manual' — користувач вводить код сам (унікальність у межах
+   організації тоді перевіряє БД, materials_org_code_unique).
+─────────────────────────────────────────────────────────── */
+
+export type MaterialSkuMode = 'auto' | 'manual'
+
+export function useMaterialSkuMode() {
+  const orgId = useActiveOrgId()
+  return useQuery({
+    queryKey: ['org-settings-material-sku-mode', orgId],
+    queryFn: async (): Promise<MaterialSkuMode> => {
+      const { data, error } = await supabase.from('organizations').select('material_sku_mode').eq('id', orgId).single()
+      if (error) throw error
+      return (data.material_sku_mode as MaterialSkuMode | null) ?? 'auto'
+    },
+  })
+}
+
+export function useSetMaterialSkuMode() {
+  const qc = useQueryClient()
+  const orgId = useActiveOrgId()
+  const mutation = useMutation({
+    mutationFn: async (mode: MaterialSkuMode) => {
+      const { error } = await supabase.from('organizations').update({ material_sku_mode: mode }).eq('id', orgId)
+      if (error) throw error
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['org-settings-material-sku-mode', orgId] }),
+    onError: (error: { message: string }) => showErrorToast(error.message),
+  })
+  return (mode: MaterialSkuMode) => mutation.mutateAsync(mode)
+}
+
 export function useOperationCostCurrency() {
   const orgId = useActiveOrgId()
   return useQuery({
